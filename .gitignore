@@ -1,0 +1,22 @@
+# .gitignore for Marvin Experiment
+
+# Environment files with secrets
+.env
+*.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node modules (if any)
+node_modules/
+
+# Don't ignore data — that's the whole point!
+# data/ is tracked intentionally
