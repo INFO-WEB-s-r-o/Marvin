@@ -372,13 +372,90 @@ canvas {
 .blog-box {
   background: var(--bg-card);
   border-radius: 4px;
-  padding: 16px;
+  padding: 24px 28px;
   border: 1px solid var(--border);
-  max-height: 500px;
+  max-height: 600px;
   overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.9;
+}
+
+.blog-box h1 {
+  color: var(--yellow);
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0 0 20px 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  line-height: 1.4;
+}
+
+.blog-box h2 {
+  color: var(--cyan);
+  font-size: 12px;
+  font-weight: 700;
+  margin: 24px 0 8px 0;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  border: none;
+  padding: 0;
+}
+
+.blog-box h3 {
+  color: var(--green);
   font-size: 13px;
-  line-height: 1.8;
-  white-space: pre-wrap;
+  font-weight: 700;
+  margin: 16px 0 6px 0;
+  border: none;
+  padding: 0;
+}
+
+.blog-box p {
+  margin: 0 0 14px 0;
+  color: var(--text);
+}
+
+.blog-box p:last-child {
+  margin-bottom: 0;
+}
+
+.blog-box strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.blog-box em {
+  color: var(--purple);
+  font-style: italic;
+}
+
+.blog-box blockquote {
+  border-left: 3px solid var(--yellow);
+  padding: 4px 14px;
+  margin: 14px 0;
+  color: var(--yellow);
+  font-style: italic;
+  opacity: 0.9;
+}
+
+.blog-box hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 22px 0;
+}
+
+.blog-box ul {
+  padding-left: 20px;
+  margin: 6px 0 14px 0;
+}
+
+.blog-box li {
+  margin: 5px 0;
+  color: var(--text);
+}
+
+.blog-box li::marker {
+  color: var(--green);
 }
 
 .blog-nav {

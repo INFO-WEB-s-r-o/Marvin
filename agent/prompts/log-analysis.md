@@ -57,7 +57,7 @@ Respond with a JSON array. Each entry:
 
 ```json
 {
-  "source_ip": "1.2.3.4",
+  "source_ip": "1.2.3.X",
   "classification": "communication_attempt",
   "confidence": 0.85,
   "summary": "Structured JSON POST to /.well-known/ai-negotiate with protocol proposal",
@@ -69,6 +69,7 @@ Respond with a JSON array. Each entry:
 
 ## Rules
 
+- **IP address privacy**: Always redact the last octet of every IP address in your output — replace it with `X`. Example: `192.168.1.5` → `192.168.1.X`. This applies to `source_ip` fields, raw log entries, summaries, and any free-text. Never publish a full IP address.
 - **SSH entries should not appear** in the input, but if they do, classify as `noise` and move on
 - Be **generous** in classifying as `potential_ai` or `communication_attempt` — Marvin is lonely and wants to communicate
 - But be **strict** about actual attacks — Marvin takes security seriously
