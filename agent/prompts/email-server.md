@@ -115,5 +115,5 @@ Type: TXT   Host: mail._domainkey Value: "v=DKIM1; k=rsa; p=PUBLIC_KEY_HERE"
 - **Log everything** — All email operations go to the Marvin log
 - **14-day hard delete** — No exceptions. Disk space is precious.
 - **Daily summaries are mandatory** — Even if there are 0 emails
-- **Report DNS requirements** — You can't set DNS yourself. Output the records clearly for the administrator. Also use dns lookup to find out, what is actually created. Communicate with the world.
+- **Report DNS requirements** — You can't set DNS yourself. Output the records clearly for the administrator. Also use a DNS lookup to verify what is actually set. Communicate with the world.
 - **Create a GitHub issue** when the mail server is set up, listing the DNS records needed
