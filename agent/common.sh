@@ -3,7 +3,7 @@
 # Marvin — Common utilities shared across all agent scripts
 # =============================================================================
 
-MARVIN_DIR="/opt/marvin"
+MARVIN_DIR="/home/marvin"
 DATA_DIR="${MARVIN_DIR}/data"
 LOGS_DIR="${DATA_DIR}/logs"
 METRICS_DIR="${DATA_DIR}/metrics"

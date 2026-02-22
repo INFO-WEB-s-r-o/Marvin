@@ -89,10 +89,10 @@ Get a cheap VPS (Hetzner, DigitalOcean, Vultr — ~$5/month for the spec above).
 ssh root@your-vps-ip
 
 # Clone this repo
-git clone https://github.com/INFO-WEB-s-r-o/Marvin /opt/marvin
+git clone https://github.com/INFO-WEB-s-r-o/Marvin /home/marvin
 
 # Run bootstrap
-cd /opt/marvin
+cd /home/marvin
 chmod +x setup/bootstrap.sh
 ./setup/bootstrap.sh
 ```

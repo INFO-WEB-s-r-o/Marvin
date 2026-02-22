@@ -6,7 +6,7 @@
 # Runs as a systemd service.
 # =============================================================================
 
-MARVIN_DIR="/opt/marvin"
+MARVIN_DIR="/home/marvin"
 INBOX_DIR="${MARVIN_DIR}/data/comms/negotiate-inbox"
 PORT=8043
 
