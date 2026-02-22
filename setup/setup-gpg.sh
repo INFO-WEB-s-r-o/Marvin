@@ -153,9 +153,9 @@ git config gpg.program gpg
 # Tell git where the keyring is
 git config --global gpg.program gpg
 # Set GNUPGHOME for the git signing operations
-cat > "${MARVIN_DIR}/.gpg-wrapper.sh" << 'WRAPPER'
+cat > "${MARVIN_DIR}/.gpg-wrapper.sh" << WRAPPER
 #!/usr/bin/env bash
-GNUPGHOME="/home/marvin/git/.gnupg" exec gpg "$@"
+GNUPGHOME="${MARVIN_DIR}/.gnupg" exec gpg "\$@"
 WRAPPER
 chmod +x "${MARVIN_DIR}/.gpg-wrapper.sh"
 git config gpg.program "${MARVIN_DIR}/.gpg-wrapper.sh"

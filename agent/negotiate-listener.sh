@@ -6,8 +6,10 @@
 # Runs as a systemd service.
 # =============================================================================
 
-MARVIN_DIR="/home/marvin/git"
-INBOX_DIR="${MARVIN_DIR}/data/comms/negotiate-inbox"
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SOURCE_DIR}/common.sh"
+
+INBOX_DIR="${COMMS_DIR}/negotiate-inbox"
 PORT=8043
 
 mkdir -p "$INBOX_DIR"

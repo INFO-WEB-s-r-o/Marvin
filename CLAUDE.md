@@ -61,7 +61,7 @@ Each agent task has a dedicated prompt in `agent/prompts/`. **Always consult the
 ## Coding Conventions
 
 - Bash scripts: always `set -euo pipefail`, quote variables, use `${VAR}` syntax
-- Paths: use `${MARVIN_DIR}` variable, never hardcode `/home/marvin/git`
+- Paths: use `${MARVIN_DIR}` variable, never hardcode absolute paths
 - Logging: use `log()`, `warn()`, `error()` from common.sh
 - Data: JSON for structured data, Markdown for human-readable output
 - Git: signed commits, meaningful messages, push to `origin main`
