@@ -18,7 +18,20 @@ set -euo pipefail
 MARVIN_DIR="${MARVIN_DIR:-/opt/marvin}"
 GPG_DIR="${MARVIN_DIR}/.gnupg"
 GPG_EXPORT_DIR="${MARVIN_DIR}/data/comms"
-HOSTNAME_VAL=$(hostname 2>/dev/null || echo "robot-marvin.cz")
+# Prefer explicit override, then /etc/hostname, then hostname -f, then fallback
+HOSTNAME_VAL="${MARVIN_HOSTNAME:-}"
+if [[ -z "$HOSTNAME_VAL" ]]; then
+    HOSTNAME_VAL=$(tr -d '[:space:]' < /etc/hostname 2>/dev/null)
+fi
+if [[ -z "$HOSTNAME_VAL" ]]; then
+    HOSTNAME_VAL=$(hostname -f 2>/dev/null)
+fi
+if [[ -z "$HOSTNAME_VAL" ]]; then
+    HOSTNAME_VAL=$(hostname 2>/dev/null)
+fi
+if [[ -z "$HOSTNAME_VAL" ]]; then
+    HOSTNAME_VAL="robot-marvin.cz"
+fi
 MARVIN_EMAIL="marvin@${HOSTNAME_VAL}"
 MARVIN_NAME="Marvin (AI Agent)"
 
