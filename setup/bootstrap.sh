@@ -59,9 +59,12 @@ log "Setting hostname to ${MARVIN_HOSTNAME}..."
 hostnamectl set-hostname "${MARVIN_HOSTNAME}" 2>/dev/null || hostname "${MARVIN_HOSTNAME}"
 echo "${MARVIN_HOSTNAME}" > /etc/hostname
 # Ensure hostname resolves locally
-if ! grep -q "${MARVIN_HOSTNAME}" /etc/hosts; then
-    sed -i "s/^127.0.1.1.*/127.0.1.1\t${MARVIN_HOSTNAME}/" /etc/hosts 2>/dev/null || \
+if ! grep -Fq "${MARVIN_HOSTNAME}" /etc/hosts; then
+    if grep -q "^127\.0\.1\.1" /etc/hosts; then
+        sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t${MARVIN_HOSTNAME}/" /etc/hosts
+    else
         echo "127.0.1.1\t${MARVIN_HOSTNAME}" >> /etc/hosts
+    fi
 fi
 
 log "Starting Marvin bootstrap at $(date -u)"
