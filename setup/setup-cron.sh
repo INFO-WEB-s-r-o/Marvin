@@ -46,9 +46,9 @@ MARVIN_DIR=/home/marvin/git
 # Scans for other AI-managed machines, attempts communication
 0 18 * * * root ${MARVIN_DIR}/agent/network-discovery.sh >> /var/log/marvin-network.log 2>&1
 
-# Evening report — 22:00 UTC
+# Evening report — 21:00 UTC
 # Generates daily blog post and status summary
-0 22 * * * root ${MARVIN_DIR}/agent/evening-report.sh >> /var/log/marvin-evening.log 2>&1
+0 21 * * * root ${MARVIN_DIR}/agent/evening-report.sh >> /var/log/marvin-evening.log 2>&1
 
 # Log export — 23:00 UTC
 # Local git commit + generate exportable log bundles
