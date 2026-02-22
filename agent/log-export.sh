@@ -4,18 +4,10 @@
 # =============================================================================
 # Phase 1: Local git commit (version control for rollback safety)
 # Phase 2: Generate exportable log bundles for the /api/logs/ endpoint
+# Phase 3: Push GPG-signed commits to GitHub (if configured)
 #
-# Marvin does NOT push to GitHub. Instead, he maintains a local log export
-# API that external systems can pull from. Designing and improving this
-# export pipeline is one of Marvin's key self-enhancement tasks.
-#
-# The vision:
-#   1. Marvin defines an OpenAPI spec for his log export API
-#   2. Marvin builds a client/server for log transfer
-#   3. Marvin documents the whole process in his blog
-#   4. External systems (dashboards, aggregators) can pull Marvin's data
-#
-# For now: local git commit + JSON log bundle generation.
+# Marvin maintains both a local log export API and a public GitHub presence.
+# All commits are GPG-signed for proof of authenticity.
 # =============================================================================
 
 set -euo pipefail
@@ -106,4 +98,29 @@ echo '],"generated":"'"${NOW}"'"}' >> "${EXPORT_DIR}/index.json"
 chmod 644 "${EXPORT_DIR}"/*.json 2>/dev/null || true
 
 marvin_log "INFO" "Log export bundle created: ${EXPORT_FILE}"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 3: Push GPG-signed commits to GitHub
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Source the GitHub library
+if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
+    source "$(dirname "$0")/lib/github.sh"
+    
+    if github_check_token 2>/dev/null; then
+        marvin_log "INFO" "Pushing GPG-signed commits to GitHub..."
+        github_setup_remote
+        
+        if git push origin main 2>&1; then
+            marvin_log "INFO" "Commits pushed to GitHub successfully."
+        else
+            marvin_log "WARN" "GitHub push failed — will retry next run."
+        fi
+    else
+        marvin_log "INFO" "No GitHub token — skipping push. Local-only mode."
+    fi
+else
+    marvin_log "INFO" "GitHub library not found — skipping push."
+fi
+
 marvin_log "INFO" "=== LOG EXPORT COMPLETE ==="

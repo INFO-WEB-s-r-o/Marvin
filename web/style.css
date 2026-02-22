@@ -85,6 +85,42 @@ a:hover {
   font-size: 13px;
 }
 
+/* Language Switcher */
+.lang-switcher {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lang-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.lang-btn:hover {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.lang-btn.active {
+  border-color: var(--green);
+  color: var(--green);
+  background: rgba(152, 195, 121, 0.1);
+}
+
+.lang-sep {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
 .terminal-body {
   padding: 24px 20px;
 }
@@ -410,6 +446,16 @@ canvas {
 
 .footer p {
   margin-bottom: 4px;
+}
+
+.footer-credit {
+  margin-top: 12px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.footer-credit a {
+  color: var(--cyan);
 }
 
 .muted {

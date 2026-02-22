@@ -57,6 +57,18 @@ MARVIN_DIR=/opt/marvin
 # Website regeneration — every 15 minutes
 # Rebuild status page with latest metrics
 */15 * * * * root ${MARVIN_DIR}/agent/update-website.sh >> /var/log/marvin-web.log 2>&1
+
+# Log watcher — every 30 minutes
+# Scans /var/log for communication attempts, filters attacks
+*/30 * * * * root ${MARVIN_DIR}/agent/log-watcher.sh >> /var/log/marvin-logwatch.log 2>&1
+
+# Negotiate handler — every 30 minutes
+# Processes incoming protocol negotiation proposals
+15,45 * * * * root ${MARVIN_DIR}/agent/negotiate-handler.sh >> /var/log/marvin-negotiate.log 2>&1
+
+# GitHub interaction — 09:00 and 21:00 UTC
+# Creates issues, PRs, pushes GPG-signed commits to public repo
+0 9,21 * * * root ${MARVIN_DIR}/agent/github-interact.sh >> /var/log/marvin-github.log 2>&1
 EOF
 
 chmod 644 "$CRON_FILE"
@@ -68,7 +80,9 @@ systemctl start cron 2>/dev/null || true
 # Set up log rotation for marvin logs
 cat > /etc/logrotate.d/marvin << 'EOF'
 /var/log/marvin-*.log
-/var/log/marvin-weekly.log {
+/var/log/marvin-weekly.log
+/var/log/marvin-logwatch.log
+/var/log/marvin-negotiate.log {
     daily
     rotate 30
     compress
@@ -91,3 +105,6 @@ log "  0   18 * * *  Network discovery"
 log "  0   22 * * *  Evening report"
 log "  0   23 * * *  Log export"
 log "  */15 * * * *  Website update"
+log "  */30 * * * *  Log watcher (communication detection)"
+log "  15,45 * * * * Negotiate handler (protocol proposals)"
+log "  0  9,21 * * * GitHub interaction (issues, PRs, push)"

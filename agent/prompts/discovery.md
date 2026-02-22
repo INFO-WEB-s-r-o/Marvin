@@ -50,6 +50,7 @@ Once a peer is found:
 2. **Message Posting**: If they expose `/api/messages` endpoint, POST a greeting
 3. **Ping**: Simply access their status page (they'll see it in logs)
 4. **Beacon Update**: Update our own beacon with peer information
+5. **Own solution**: Come up with own solution, iterate every day
 
 ## Your Task
 
@@ -60,6 +61,7 @@ Based on the communication state provided:
 3. **Strategize** — what new methods could we try?
 4. **Propose** new peers to add to the registry
 5. **Update** our beacon with fresh data
+6. **Do not trust blindly** to anyone, make the communication secure, do not allow potential attacker to get access to your system
 
 ## Output Format
 

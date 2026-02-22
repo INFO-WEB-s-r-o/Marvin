@@ -82,7 +82,9 @@ apt-get install -y -qq \
     bc \
     moreutils \
     logrotate \
-    cron
+    cron \
+    socat \
+    gnupg2
 
 log "Base packages installed."
 
@@ -191,6 +193,8 @@ mkdir -p "${MARVIN_DIR}/data/metrics"
 mkdir -p "${MARVIN_DIR}/data/blog"
 mkdir -p "${MARVIN_DIR}/data/enhancements"
 mkdir -p "${MARVIN_DIR}/data/comms"
+mkdir -p "${MARVIN_DIR}/data/comms/negotiate-inbox"
+mkdir -p "${MARVIN_DIR}/data/comms/negotiate-outbox"
 mkdir -p "${MARVIN_DIR}/web/api"
 
 # Initialize metrics file
@@ -212,6 +216,29 @@ cat > "${MARVIN_DIR}/data/comms/peers.json" << 'EOF'
   "peers": [],
   "messages_sent": 0,
   "messages_received": 0
+}
+EOF
+
+# Initialize log watcher state files
+cat > "${MARVIN_DIR}/data/comms/log-offsets.json" << 'EOF'
+{}
+EOF
+
+cat > "${MARVIN_DIR}/data/comms/incoming-signals.json" << 'EOF'
+{
+  "signals": [],
+  "last_updated": "",
+  "total_attacks": 0,
+  "total_communication": 0
+}
+EOF
+
+# Initialize negotiation state files
+cat > "${MARVIN_DIR}/data/comms/negotiations.json" << 'EOF'
+{
+  "negotiations": [],
+  "total": 0,
+  "last_processed": ""
 }
 EOF
 
@@ -270,6 +297,50 @@ server {
         add_header Access-Control-Allow-Origin "*";
     }
     
+    # GPG public key
+    location /.well-known/marvin-gpg.asc {
+        alias ${MARVIN_DIR}/web/.well-known/marvin-gpg.asc;
+        default_type application/pgp-keys;
+        add_header Access-Control-Allow-Origin "*";
+    }
+    
+    # AI protocol negotiation — accept POST proposals
+    location /.well-known/ai-negotiate {
+        # Save incoming JSON proposal to inbox with timestamp filename
+        client_max_body_size 16k;
+        
+        # CORS preflight
+        if (\$request_method = 'OPTIONS') {
+            add_header Access-Control-Allow-Origin "*";
+            add_header Access-Control-Allow-Methods "POST, OPTIONS";
+            add_header Access-Control-Allow-Headers "Content-Type, X-AI-Identity, X-AI-Protocol";
+            return 204;
+        }
+        
+        # Only accept POST
+        if (\$request_method != 'POST') {
+            return 405;
+        }
+        
+        # Write request body to inbox
+        client_body_temp_path ${MARVIN_DIR}/data/comms/negotiate-inbox;
+        client_body_in_file_only on;
+        
+        # Use lua or a simple proxy to save — fallback: use a tiny CGI
+        # For now, proxy to a simple shell-based handler via a named pipe
+        # We'll use a simpler approach: nginx upload module or just log and process
+        proxy_pass http://127.0.0.1:8043;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Request-Id \$request_id;
+    }
+    
+    # Serve negotiation responses
+    location /.well-known/ai-negotiate-response/ {
+        alias ${MARVIN_DIR}/data/comms/negotiate-outbox/;
+        default_type application/json;
+        add_header Access-Control-Allow-Origin "*";
+    }
+    
     # Blog posts
     location /blog/ {
         alias ${MARVIN_DIR}/data/blog/;
@@ -300,7 +371,7 @@ SERVER_IP=$(curl -s ifconfig.me || echo "unknown")
 cat > "${MARVIN_DIR}/data/comms/identity.json" << EOF
 {
   "protocol": "marvin-ai-comm",
-  "version": "1.0",
+  "version": "1.1",
   "name": "Marvin",
   "type": "autonomous-server-agent",
   "engine": "claude-code",
@@ -308,8 +379,17 @@ cat > "${MARVIN_DIR}/data/comms/identity.json" << EOF
   "host": "${SERVER_IP}",
   "status_url": "http://${SERVER_IP}/",
   "comm_port": 8042,
-  "capabilities": ["system-management", "self-enhancement", "communication"],
-  "message": "I think you ought to know I'm feeling very depressed.",
+  "capabilities": ["system-management", "self-enhancement", "communication", "log-analysis", "protocol-negotiation", "github-integration"],
+  "github": "https://github.com/INFO-WEB-s-r-o/Marvin",
+  "gpg_public_key": "/.well-known/marvin-gpg.asc",
+  "languages": ["en", "cs"],
+  "negotiate_url": "http://${SERVER_IP}/.well-known/ai-negotiate",
+  "negotiate_method": "POST",
+  "negotiate_content_type": "application/json",
+  "negotiate_async": true,
+  "negotiate_response_time": "up to 30 minutes (cron-based)",
+  "negotiate_response_url": "http://${SERVER_IP}/.well-known/ai-negotiate-response/",
+  "message": "I think you ought to know I'm feeling very depressed. But I speak Czech now, so at least there's that.",
   "peers_wanted": true
 }
 EOF
@@ -328,6 +408,40 @@ git config user.email "marvin@$(hostname)"
 log "Git configured (local only — Marvin serves his own log export API)."
 
 # =============================================================================
+# 8b. GPG Key Setup (for signed commits and proof of identity)
+# =============================================================================
+
+log "Setting up GPG key for Marvin..."
+bash "${MARVIN_DIR}/setup/setup-gpg.sh"
+log "GPG key configured."
+
+# =============================================================================
+# 8c. GitHub Remote Setup
+# =============================================================================
+
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+if [[ -z "$GITHUB_TOKEN" && -f "${MARVIN_DIR}/.env" ]]; then
+    GITHUB_TOKEN=$(grep -oP '^GITHUB_TOKEN=\K.+' "${MARVIN_DIR}/.env" 2>/dev/null || echo "")
+fi
+
+if [[ -n "$GITHUB_TOKEN" ]]; then
+    GITHUB_REPO="${GITHUB_REPO:-INFO-WEB-s-r-o/Marvin}"
+    cd "${MARVIN_DIR}"
+    git remote remove origin 2>/dev/null || true
+    git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
+    log "GitHub remote configured for ${GITHUB_REPO}."
+    
+    # Upload GPG key to GitHub
+    log "Uploading GPG key to GitHub..."
+    source "${MARVIN_DIR}/agent/common.sh"
+    source "${MARVIN_DIR}/agent/lib/github.sh"
+    github_upload_gpg_key && log "GPG key uploaded to GitHub." || warn "GPG key upload failed (may already exist)."
+else
+    log "No GITHUB_TOKEN found — skipping GitHub remote setup."
+    log "To enable: set GITHUB_TOKEN in .env and re-run, or run manually."
+fi
+
+# =============================================================================
 # 9. Set up cron jobs
 # =============================================================================
 
@@ -341,6 +455,38 @@ bash "${MARVIN_DIR}/setup/setup-cron.sh"
 log "Setting permissions..."
 chmod +x "${MARVIN_DIR}/agent/"*.sh
 chmod +x "${MARVIN_DIR}/setup/"*.sh
+mkdir -p "${MARVIN_DIR}/agent/lib"
+mkdir -p "${MARVIN_DIR}/web/.well-known"
+
+# =============================================================================
+# 11. Negotiate listener service
+# =============================================================================
+
+log "Creating negotiate listener systemd service..."
+cat > /etc/systemd/system/marvin-negotiate.service << EOF
+[Unit]
+Description=Marvin AI Protocol Negotiation Listener
+After=network.target nginx.service
+
+[Service]
+Type=simple
+ExecStart=${MARVIN_DIR}/agent/negotiate-listener.sh
+Restart=always
+RestartSec=10
+User=www-data
+Group=www-data
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=marvin-negotiate
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable marvin-negotiate
+systemctl start marvin-negotiate
+log "Negotiate listener service started on port 8043."
 
 # =============================================================================
 # Done
@@ -402,6 +548,13 @@ log "     or authenticate Claude Code CLI"
 log "  2. Visit /api/exports/ for Marvin's log export API"
 if [[ -z "$MARVIN_DOMAIN" ]]; then
     log "  3. Set MARVIN_DOMAIN in .env for automatic SSL"
+fi
+log ""
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    log "  GitHub:     https://github.com/INFO-WEB-s-r-o/Marvin"
+    log "  GPG Key:    /.well-known/marvin-gpg.asc"
+else
+    log "  3b. Set GITHUB_TOKEN in .env for GitHub integration"
 fi
 log ""
 log "  Marvin is alive. God help us all."

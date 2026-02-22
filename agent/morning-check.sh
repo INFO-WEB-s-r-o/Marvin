@@ -3,6 +3,8 @@
 # Marvin — Morning Check (runs daily at 06:00 UTC)
 # =============================================================================
 # Full system maintenance via Claude Code:
+#   - Pull latest code from GitHub (new prompts, instructions, projects)
+#   - Process and learn from incoming changes
 #   - Security audit
 #   - Package updates
 #   - Log cleanup
@@ -14,6 +16,150 @@ set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
 marvin_log "INFO" "=== MORNING CHECK STARTING ==="
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 0: Pull latest code from GitHub
+# ─────────────────────────────────────────────────────────────────────────────
+# Humans (Pavel) or Marvin himself may have pushed new prompts, code, or
+# project ideas to the repo. Pull them in before doing anything else.
+
+PULL_SUMMARY=""
+INCOMING_DIFF=""
+
+if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
+    source "$(dirname "$0")/lib/github.sh"
+
+    if github_check_token 2>/dev/null; then
+        marvin_log "INFO" "Pulling latest code from GitHub..."
+        cd "$MARVIN_DIR"
+        github_setup_remote
+
+        # Record the current HEAD before pulling
+        OLD_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+
+        # Stash any local uncommitted changes first
+        LOCAL_CHANGES=false
+        if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+            git stash --include-untracked --quiet 2>/dev/null || true
+            LOCAL_CHANGES=true
+            marvin_log "INFO" "Stashed local changes before pull"
+        fi
+
+        # Pull with rebase to keep history clean
+        if git pull --rebase origin main 2>&1; then
+            NEW_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+
+            if [[ "$OLD_HEAD" != "$NEW_HEAD" ]]; then
+                # There are new commits — capture what changed
+                INCOMING_DIFF=$(git diff --stat "$OLD_HEAD".."$NEW_HEAD" 2>/dev/null || echo "")
+                INCOMING_LOG=$(git log --oneline "$OLD_HEAD".."$NEW_HEAD" 2>/dev/null || echo "")
+                INCOMING_FULL_DIFF=$(git diff "$OLD_HEAD".."$NEW_HEAD" 2>/dev/null | head -2000 || echo "")
+
+                COMMIT_COUNT=$(echo "$INCOMING_LOG" | wc -l | tr -d ' ')
+                PULL_SUMMARY="Pulled ${COMMIT_COUNT} new commit(s) from GitHub."
+
+                marvin_log "INFO" "$PULL_SUMMARY"
+                marvin_log "INFO" "Changed files:\n${INCOMING_DIFF}"
+
+                # Make new scripts executable
+                chmod +x "${MARVIN_DIR}/agent/"*.sh 2>/dev/null || true
+                chmod +x "${MARVIN_DIR}/setup/"*.sh 2>/dev/null || true
+            else
+                PULL_SUMMARY="Already up to date — no new commits."
+                marvin_log "INFO" "$PULL_SUMMARY"
+            fi
+        else
+            PULL_SUMMARY="Git pull failed — will work with current code."
+            marvin_log "WARN" "Git pull --rebase failed, attempting merge..."
+            git rebase --abort 2>/dev/null || true
+            git pull origin main 2>&1 || {
+                marvin_log "ERROR" "Git pull failed entirely"
+            }
+        fi
+
+        # Restore stashed local changes
+        if [[ "$LOCAL_CHANGES" == "true" ]]; then
+            git stash pop --quiet 2>/dev/null || {
+                marvin_log "WARN" "Could not restore stashed changes — may have conflicts"
+            }
+        fi
+    else
+        PULL_SUMMARY="No GitHub token — working with local code only."
+        marvin_log "INFO" "$PULL_SUMMARY"
+    fi
+else
+    PULL_SUMMARY="GitHub library not available — working with local code only."
+    marvin_log "INFO" "$PULL_SUMMARY"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 0b: Process incoming changes with Claude
+# ─────────────────────────────────────────────────────────────────────────────
+# If new code/prompts arrived, Marvin should read, understand, and act on them.
+
+if [[ -n "$INCOMING_DIFF" ]]; then
+    marvin_log "INFO" "Processing incoming changes from GitHub..."
+
+    SYNC_PROMPT=$(cat "${PROMPTS_DIR}/sync-learn.md" 2>/dev/null || echo "")
+
+    if [[ -n "$SYNC_PROMPT" ]]; then
+        SYNC_CONTEXT="## Incoming Changes Summary
+
+### Git Pull Status
+${PULL_SUMMARY}
+
+### Commits
+\`\`\`
+${INCOMING_LOG}
+\`\`\`
+
+### Changed Files
+\`\`\`
+${INCOMING_DIFF}
+\`\`\`
+
+### Full Diff (truncated to 2000 chars)
+\`\`\`diff
+${INCOMING_FULL_DIFF}
+\`\`\`
+
+### Current Enhancement Roadmap
+$(cat "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" 2>/dev/null | head -100 || echo "Not found")
+
+### Current Codebase Structure
+\`\`\`
+$(find "${MARVIN_DIR}/agent" -type f -name "*.sh" | sort)
+$(find "${MARVIN_DIR}/agent/prompts" -type f -name "*.md" | sort)
+$(find "${MARVIN_DIR}/web" -type f | sort)
+\`\`\`"
+
+        SYNC_FULL="${SYNC_PROMPT}
+
+${SYNC_CONTEXT}"
+
+        SYNC_OUTPUT=$(run_claude "sync-and-learn" "$SYNC_FULL")
+
+        # Save the learning report
+        LEARN_FILE="${DATA_DIR}/enhancements/${TODAY}-sync-learn-${TIMESTAMP}.md"
+        cat > "$LEARN_FILE" << EOF
+# Sync & Learn Report — ${NOW}
+
+## Pull Summary
+${PULL_SUMMARY}
+
+## Claude's Analysis & Actions
+
+${SYNC_OUTPUT}
+
+---
+*Triggered by git pull at morning check*
+EOF
+
+        marvin_log "INFO" "Sync-and-learn report saved: ${LEARN_FILE}"
+    else
+        marvin_log "WARN" "sync-learn.md prompt not found — skipping change analysis"
+    fi
+fi
 
 check_claude || exit 1
 
@@ -71,6 +217,22 @@ CONTEXT
 EXTRA_CONTEXT+=$(apt list --upgradable 2>/dev/null | head -20 || echo "apt not available")
 EXTRA_CONTEXT+="
 \`\`\`"
+
+# Add pull summary to context for Claude's morning check
+if [[ -n "${PULL_SUMMARY:-}" ]]; then
+    EXTRA_CONTEXT+="
+
+### GitHub Pull Status
+${PULL_SUMMARY}"
+    if [[ -n "${INCOMING_DIFF:-}" ]]; then
+        EXTRA_CONTEXT+="
+
+### Files Changed from GitHub
+\`\`\`
+${INCOMING_DIFF}
+\`\`\`"
+    fi
+fi
 
 FULL_PROMPT="${MORNING_PROMPT}
 

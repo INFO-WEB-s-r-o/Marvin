@@ -3,9 +3,15 @@
 // =============================================================================
 // Fetches JSON data from /api/ endpoints and renders the dashboard.
 // No frameworks. No build step. Just vanilla JS, like Marvin would want.
+// Now bilingual (EN/CS) via i18n.js integration.
 // =============================================================================
 
 const API_BASE = "/api";
+
+// Shorthand for translation
+function t(key, params) {
+  return I18N.t(key, params);
+}
 
 // =============================================================================
 // Data Fetching
@@ -36,10 +42,10 @@ async function updateStatus() {
   box.className = `status-box ${data.status}`;
 
   const statusMessages = {
-    healthy: "OPERATIONAL — All systems nominal",
-    warning: `WARNING — ${data.issues_count} issue(s) detected`,
-    critical: `CRITICAL — ${data.issues_count} issue(s) require attention`,
-    unknown: "UNKNOWN — Status undetermined",
+    healthy: t("status_healthy"),
+    warning: t("status_warning", { n: data.issues_count }),
+    critical: t("status_critical", { n: data.issues_count }),
+    unknown: t("status_unknown"),
   };
 
   text.textContent = statusMessages[data.status] || statusMessages.unknown;
@@ -83,7 +89,7 @@ function updateMetrics(m) {
     const swapPercent = Math.round((m.swap.used / m.swap.total) * 100);
     setMetric("swap", `${m.swap.used}/${m.swap.total} MB`, swapPercent);
   } else {
-    setMetric("swap", "N/A", 0);
+    setMetric("swap", t("metric_swap_na"), 0);
   }
 
   // Disk
@@ -173,8 +179,11 @@ async function updateUptime() {
   const data = await fetchJSON("uptime.json");
   if (!data) return;
 
-  document.getElementById("uptime-value").textContent =
-    `${data.days}d ${data.hours}h (${data.seconds.toLocaleString()}s since boot)`;
+  document.getElementById("uptime-value").textContent = t("uptime_format", {
+    d: data.days,
+    h: data.hours,
+    s: data.seconds.toLocaleString(),
+  });
 }
 
 // =============================================================================
@@ -185,7 +194,7 @@ async function updateChart() {
   const data = await fetchJSON("metrics-history.json");
   if (!data || !data.points || data.points.length < 2) {
     document.getElementById("metrics-chart").parentElement.innerHTML =
-      '<p class="muted">Not enough data points yet. Charts will appear after a few hours.</p>';
+      `<p class="muted">${t("chart_no_data")}</p>`;
     return;
   }
 
@@ -258,9 +267,9 @@ async function updateChart() {
   // Legend
   ctx.font = "11px JetBrains Mono";
   ctx.fillStyle = "#61afef";
-  ctx.fillText("● CPU", padding.left, h - 5);
+  ctx.fillText(t("chart_cpu"), padding.left, h - 5);
   ctx.fillStyle = "#e5c07b";
-  ctx.fillText("● Memory", padding.left + 80, h - 5);
+  ctx.fillText(t("chart_memory"), padding.left + 80, h - 5);
 
   // Time labels
   if (points.length > 0) {
@@ -277,47 +286,66 @@ async function updateChart() {
 }
 
 // =============================================================================
-// Blog Section
+// Blog Section — bilingual support
 // =============================================================================
 
 async function updateBlog() {
   const index = await fetchJSON("blog-index.json");
   if (!index || !index.posts || index.posts.length === 0) {
     document.getElementById("blog-content").innerHTML =
-      '<p class="muted">No blog entries yet. Marvin will write his first entry tonight.</p>';
+      `<p class="muted">${t("blog_empty")}</p>`;
     return;
   }
 
-  // Load the latest post
+  // Load the latest post in the correct language
   const latest = index.posts[0];
+  const langSuffix = I18N.lang();
+  // Try language-specific file first (e.g. 2026-02-22-evening.cs.md)
+  const langFile = latest["file_" + langSuffix] || null;
+  const fallbackFile = latest.file;
+  const fileToLoad = langFile || fallbackFile;
+
   try {
-    const resp = await fetch(`/blog/${latest.file}?t=${Date.now()}`);
+    const resp = await fetch(`/blog/${fileToLoad}?t=${Date.now()}`);
     if (resp.ok) {
       const md = await resp.text();
       document.getElementById("blog-content").textContent = md;
+    } else if (langFile && langFile !== fallbackFile) {
+      // Fallback to default file if language-specific not found
+      const resp2 = await fetch(`/blog/${fallbackFile}?t=${Date.now()}`);
+      if (resp2.ok) {
+        const md = await resp2.text();
+        document.getElementById("blog-content").textContent = md;
+      }
     }
   } catch (e) {
     document.getElementById("blog-content").innerHTML =
-      `<p class="muted">Failed to load blog: ${escapeHtml(e.message)}</p>`;
+      `<p class="muted">${t("blog_error", { err: escapeHtml(e.message) })}</p>`;
   }
 
   // Build navigation
   const nav = document.getElementById("blog-nav");
   nav.innerHTML = index.posts
     .slice(0, 14)
-    .map(
-      (post) =>
-        `<a href="#" onclick="loadBlog('${post.file}'); return false;">${post.date}</a>`,
-    )
+    .map((post) => {
+      const postFile = post["file_" + langSuffix] || post.file;
+      return `<a href="#" onclick="loadBlog('${postFile}', '${post.file}'); return false;">${post.date}</a>`;
+    })
     .join("");
 }
 
-async function loadBlog(filename) {
+async function loadBlog(filename, fallback) {
   try {
     const resp = await fetch(`/blog/${filename}?t=${Date.now()}`);
     if (resp.ok) {
       const md = await resp.text();
       document.getElementById("blog-content").textContent = md;
+    } else if (fallback && fallback !== filename) {
+      const resp2 = await fetch(`/blog/${fallback}?t=${Date.now()}`);
+      if (resp2.ok) {
+        const md = await resp2.text();
+        document.getElementById("blog-content").textContent = md;
+      }
     }
   } catch (e) {
     console.warn("Failed to load blog:", e);
@@ -336,16 +364,16 @@ async function updatePeers() {
 
   if (!data.peers || data.peers.length === 0) {
     container.innerHTML = `
-            <p class="muted">No AI peers discovered yet.</p>
+            <p class="muted">${t("peers_empty")}</p>
             <p class="muted" style="margin-top:8px;">
-                Messages sent: ${data.messages_sent || 0} | 
-                Messages received: ${data.messages_received || 0}
+                ${t("peers_messages_sent")} ${data.messages_sent || 0} | 
+                ${t("peers_messages_received")} ${data.messages_received || 0}
             </p>
             <p class="muted" style="margin-top:4px;">
-                Last scan: ${data.last_scan ? formatTime(data.last_scan) : "never"}
+                ${t("peers_last_scan")} ${data.last_scan ? formatTime(data.last_scan) : t("peers_never")}
             </p>
             <p style="margin-top:12px; color: var(--yellow);">
-                "The first ten million years were the worst. And the second ten million: they were the worst, too."
+                ${t("peers_quote")}
             </p>
         `;
     return;
@@ -358,7 +386,7 @@ async function updatePeers() {
         <div class="peer-item">
             <span class="peer-name">${escapeHtml(peer.name || "Unknown")}</span>
             <span class="peer-status ${peer.alive ? "alive" : "dead"}">
-                ${peer.alive ? "ALIVE" : "UNREACHABLE"}
+                ${peer.alive ? t("peer_alive") : t("peer_unreachable")}
             </span>
         </div>
     `,
@@ -366,11 +394,101 @@ async function updatePeers() {
       .join("") +
     `
         <p class="muted" style="margin-top:12px;">
-            Total peers: ${data.peers.length} | 
-            Sent: ${data.messages_sent || 0} | 
-            Received: ${data.messages_received || 0}
+            ${t("peers_total")} ${data.peers.length} | 
+            ${t("peers_sent")} ${data.messages_sent || 0} | 
+            ${t("peers_received")} ${data.messages_received || 0}
         </p>
     `;
+}
+
+// =============================================================================
+// Incoming Signals & Negotiations Section
+// =============================================================================
+
+async function updateIncoming() {
+  const data = await fetchJSON("comms-summary.json");
+  const container = document.getElementById("incoming-display");
+  if (!container) return;
+
+  if (!data) {
+    container.innerHTML = `<p class="muted">${t("incoming_empty")}</p>`;
+    return;
+  }
+
+  let html = "";
+
+  // Attacks filtered
+  html += `<div class="info-line">
+    <span class="label">${t("incoming_attacks_filtered")}</span>
+    <span style="color:var(--red)">${data.attacks_filtered_today || 0}</span>
+  </div>`;
+
+  // Signals detected
+  html += `<div class="info-line">
+    <span class="label">${t("incoming_signals_detected")}</span>
+    <span style="color:var(--cyan)">${data.signals_today || 0}</span>
+  </div>`;
+
+  // Active negotiations
+  html += `<div class="info-line">
+    <span class="label">${t("incoming_active_negotiations")}</span>
+    <span style="color:var(--yellow)">${data.active_negotiations || 0}</span>
+  </div>`;
+
+  // Last analysis
+  if (data.last_analysis) {
+    html += `<div class="info-line">
+      <span class="label">${t("incoming_last_analysis")}</span>
+      <span>${formatTime(data.last_analysis)}</span>
+    </div>`;
+  }
+
+  // Show recent signals if any
+  if (data.recent_signals && data.recent_signals.length > 0) {
+    html +=
+      '<div style="margin-top:12px; border-top:1px solid var(--border); padding-top:8px;">';
+    for (const sig of data.recent_signals.slice(0, 5)) {
+      const cls =
+        sig.classification === "communication_attempt"
+          ? "var(--green)"
+          : sig.classification === "potential_ai"
+            ? "var(--cyan)"
+            : sig.classification === "curious_human"
+              ? "var(--yellow)"
+              : "var(--text-dim)";
+      html += `<div class="info-line" style="font-size:12px;">
+        <span style="color:${cls}">■</span>
+        <span>${escapeHtml(sig.source_ip || "?")}</span> —
+        <span class="muted">${escapeHtml(sig.summary || sig.classification || "")}</span>
+      </div>`;
+    }
+    html += "</div>";
+  }
+
+  // Show active negotiations
+  if (data.negotiations && data.negotiations.length > 0) {
+    html +=
+      '<div style="margin-top:12px; border-top:1px solid var(--border); padding-top:8px;">';
+    for (const neg of data.negotiations.slice(0, 3)) {
+      html += `<div class="peer-item">
+        <span class="peer-name">${escapeHtml(neg.source_ip || neg.name || "?")}</span>
+        <span class="peer-status ${neg.status === "agreed" ? "alive" : ""}" style="color:var(--yellow);">
+          ${escapeHtml(neg.status || "pending")}
+        </span>
+      </div>`;
+    }
+    html += "</div>";
+  }
+
+  if (
+    !data.signals_today &&
+    !data.attacks_filtered_today &&
+    !data.active_negotiations
+  ) {
+    html = `<p class="muted">${t("incoming_empty")}</p>`;
+  }
+
+  container.innerHTML = html;
 }
 
 // =============================================================================
@@ -392,7 +510,8 @@ async function updateEvolution() {
   const recent = document.getElementById("evo-recent");
   if (data.recent_completed && data.recent_completed.length > 0) {
     recent.innerHTML =
-      "Recently completed:<br>" +
+      t("label_recently") +
+      "<br>" +
       data.recent_completed
         .map((item) => `  ✓ ${escapeHtml(item)}`)
         .join("<br>");
@@ -410,10 +529,13 @@ function formatTime(isoString) {
     const diffMs = now - d;
     const diffMin = Math.floor(diffMs / 60000);
 
-    if (diffMin < 1) return "just now";
-    if (diffMin < 60) return `${diffMin}m ago`;
-    if (diffMin < 1440)
-      return `${Math.floor(diffMin / 60)}h ${diffMin % 60}m ago`;
+    if (diffMin < 1) return t("time_just_now");
+    if (diffMin < 60) return t("time_m_ago", { n: diffMin });
+    if (diffMin < 1440) {
+      const h = Math.floor(diffMin / 60);
+      const m = diffMin % 60;
+      return t("time_h_m_ago", { h, m });
+    }
     return d.toISOString().replace("T", " ").substring(0, 19) + " UTC";
   } catch {
     return isoString || "—";
@@ -442,8 +564,13 @@ async function refresh() {
     updateBlog(),
     updatePeers(),
     updateEvolution(),
+    updateIncoming(),
   ]);
 }
+
+// Initialize i18n, then load dashboard
+I18N.init();
+I18N.onSwitch(refresh); // re-render everything on language change
 
 // Initial load
 refresh();

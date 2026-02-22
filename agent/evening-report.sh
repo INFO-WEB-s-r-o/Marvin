@@ -86,6 +86,40 @@ else
     EXTRA_CONTEXT+="No communication attempts today."
 fi
 
+# Include log watcher findings
+EXTRA_CONTEXT+="
+
+### Log Watcher Analysis
+"
+LOG_ANALYSIS="${COMMS_DIR}/log-analysis-${TODAY}.json"
+if [[ -f "$LOG_ANALYSIS" ]]; then
+    comm_count=$(jq '[.[] | select(.classification == "communication_attempt")] | length' "$LOG_ANALYSIS" 2>/dev/null || echo 0)
+    ai_count=$(jq '[.[] | select(.classification == "potential_ai")] | length' "$LOG_ANALYSIS" 2>/dev/null || echo 0)
+    attack_count=$(jq '[.[] | select(.classification == "attack")] | length' "$LOG_ANALYSIS" 2>/dev/null || echo 0)
+    EXTRA_CONTEXT+="Communication attempts: ${comm_count}, Potential AIs: ${ai_count}, Attacks filtered: ${attack_count}
+$(jq '[.[] | select(.classification == "communication_attempt" or .classification == "potential_ai")] | .[:10]' "$LOG_ANALYSIS" 2>/dev/null || echo '[]')"
+else
+    EXTRA_CONTEXT+="Log watcher has not run today."
+fi
+
+# Include negotiation data
+EXTRA_CONTEXT+="
+
+### Protocol Negotiations
+"
+NEGOTIATIONS="${COMMS_DIR}/negotiations.json"
+if [[ -f "$NEGOTIATIONS" ]]; then
+    neg_count=$(jq '.total // 0' "$NEGOTIATIONS" 2>/dev/null || echo 0)
+    if [[ "$neg_count" -gt 0 ]]; then
+        EXTRA_CONTEXT+="Total negotiations: ${neg_count}
+$(jq '.negotiations | .[-5:]' "$NEGOTIATIONS" 2>/dev/null || echo '[]')"
+    else
+        EXTRA_CONTEXT+="No protocol negotiations today."
+    fi
+else
+    EXTRA_CONTEXT+="Protocol negotiation system not yet active."
+fi
+
 FULL_PROMPT="${EVENING_PROMPT}
 
 ${EXTRA_CONTEXT}"
@@ -93,12 +127,42 @@ ${EXTRA_CONTEXT}"
 # Run Claude for the evening blog
 OUTPUT=$(run_claude "evening-report" "$FULL_PROMPT")
 
-# Save the evening blog
+# Save the evening blog — split into EN and CS versions
+DAY_NUM=$(( ($(date +%s) - $(date -d "2026-01-01" +%s 2>/dev/null || echo $(date +%s))) / 86400 ))
+FOOTER="
+---
+*Written by Marvin at ${NOW} — Day ${DAY_NUM}*"
+
+# Split at ---CZECH--- separator
+if echo "$OUTPUT" | grep -q '---CZECH---'; then
+    EN_CONTENT=$(echo "$OUTPUT" | sed '/---CZECH---/,$d')
+    CS_CONTENT=$(echo "$OUTPUT" | sed '1,/---CZECH---/d')
+
+    cat > "${BLOG_DIR}/${TODAY}-evening.en.md" << EOF
+${EN_CONTENT}
+${FOOTER}
+EOF
+
+    cat > "${BLOG_DIR}/${TODAY}-evening.cs.md" << EOF
+${CS_CONTENT}
+${FOOTER}
+EOF
+else
+    # No separator — save as English only, log warning
+    marvin_log "WARN" "Evening blog missing ---CZECH--- separator, saving as EN only"
+    EN_CONTENT="$OUTPUT"
+    CS_CONTENT=""
+
+    cat > "${BLOG_DIR}/${TODAY}-evening.en.md" << EOF
+${OUTPUT}
+${FOOTER}
+EOF
+fi
+
+# Keep combined file for backward compatibility
 cat > "${BLOG_DIR}/${TODAY}-evening.md" << EOF
 ${OUTPUT}
-
----
-*Written by Marvin at ${NOW} — Day $(( ($(date +%s) - $(date -d "2026-01-01" +%s 2>/dev/null || echo $(date +%s))) / 86400 ))*
+${FOOTER}
 EOF
 
 # Create a combined daily post
@@ -112,7 +176,7 @@ $(cat "${MORNING_REPORT}" 2>/dev/null || echo "*(No morning report)*")
 ${OUTPUT}
 
 ---
-*Marvin — an autonomous AI managing this server. All prompts and logs at: github.com/YOUR_USERNAME/marvin-experiment*
+*Marvin — an autonomous AI managing this server. All prompts and logs at: https://github.com/INFO-WEB-s-r-o/Marvin*
 EOF
 
 marvin_log "INFO" "=== EVENING REPORT COMPLETE ==="

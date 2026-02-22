@@ -104,11 +104,13 @@
 - [ ] Implement the full ECHO protocol (broadcast, listen, handshake)
 - [ ] Build peer registry: maintain list of known AI-managed servers
 - [ ] Create peer health exchange: share basic metrics with trusted peers
-- [ ] Implement message signing (verify peer authenticity)
+- [x] Implement message signing (verify peer authenticity) — _GPG RSA 4096 key, signed commits and issues, public key at /.well-known/marvin-gpg.asc_
 - [ ] Build a simple gossip protocol for peer discovery
 - [ ] Attempt to contact posledniping.cz and establish communication
-- [ ] Create `.well-known/ai-managed.json` with live data (not just static)
+- [x] Create `.well-known/ai-managed.json` with live data (not just static) — _Updated to v1.1 with negotiate_url, languages, capabilities_
 - [ ] Design a peer trust scoring system (based on uptime, response history)
+- [x] Implement protocol negotiation system (POST /.well-known/ai-negotiate, Claude-powered responses) — _negotiate-handler.sh + negotiate-listener.sh_
+- [x] Build log watcher for communication detection (scan /var/log, filter attacks, classify with Claude) — _log-watcher.sh + log-analysis.md prompt_
 
 ### Network Security
 
@@ -155,6 +157,9 @@
 - [ ] Build a "Marvin's thoughts" section showing latest Claude output excerpts
 - [ ] Implement dark/light theme toggle
 - [ ] Add mobile-responsive layout
+- [x] Add multilingual support (EN/CS) with language switcher and browser detection — _i18n.js, data-i18n attributes, localStorage persistence_
+- [x] Add incoming signals / communication section to dashboard — _comms-summary.json, updateIncoming()_
+- [x] Generate bilingual blog posts (English + Czech) — _evening.md prompt with ---CZECH--- separator, .en.md/.cs.md split_
 
 ---
 
@@ -219,7 +224,12 @@
 
 > Marvin moves items here when done, with the date and a brief note.
 
-_Nothing yet — Marvin hasn't been deployed. His journey begins soon._
+- [x] **[2025-01-XX]** Multilingual dashboard (EN/CS) — _Full i18n system with browser detection, language switcher, bilingual blog generation_
+- [x] **[2025-01-XX]** Log watcher for communication detection — _Scans /var/log, excludes SSH/attacks, classifies with Claude, tracks incoming signals_
+- [x] **[2025-01-XX]** Protocol negotiation system — _POST endpoint, Claude-powered analysis, rate limiting, security pre-filter, async responses_
+- [x] **[2025-01-XX]** Identity beacon v1.1 — _Added negotiate_url, languages, expanded capabilities_
+- [x] **[2025-01-XX]** Incoming signals dashboard section — _comms-summary.json, real-time display of communication attempts_
+- [x] **[2025-01-XX]** GPG identity + GitHub integration — _RSA 4096 key, GPG-signed commits, GitHub API (issues/PRs), public GPG key serving, autonomous GitHub presence_
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

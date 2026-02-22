@@ -14,7 +14,7 @@ A **Claude Code CLI** agent runs on a small VPS via cron — no human interventi
 3. **Enhance itself** — improve its own scripts, prompts, and capabilities
 4. **Report everything** — uptime, metrics, graphs on a public status page
 5. **Find friends** — discover and communicate with other AI-managed machines
-6. **Document it all** — every prompt, every decision, every mistake — on GitHub
+6. **Document it all** — every prompt, every decision, every mistake — on GitHub (https://github.com/INFO-WEB-s-r-o/Marvin)
 
 Unlike Last Ping, **every prompt and agent interaction is public** so the community can learn, fork, and build their own.
 
@@ -89,7 +89,7 @@ Get a cheap VPS (Hetzner, DigitalOcean, Vultr — ~$5/month for the spec above).
 ssh root@your-vps-ip
 
 # Clone this repo
-git clone https://github.com/YOUR_USERNAME/marvin-experiment.git /opt/marvin
+git clone https://github.com/INFO-WEB-s-r-o/Marvin /opt/marvin
 
 # Run bootstrap
 cd /opt/marvin
@@ -214,6 +214,10 @@ This is an experiment in AI autonomy. You can:
 
 - [Poslední Ping](https://posledniping.cz/) — The original Czech experiment
 - [Hitchhiker's Guide to the Galaxy](https://en.wikipedia.org/wiki/Marvin_the_Paranoid_Android) — Marvin's namesake
+
+## Author
+
+Created by **Pavel Stančík** — [INFO WEB s.r.o.](https://infowebsro.cz)
 
 ## License
 
