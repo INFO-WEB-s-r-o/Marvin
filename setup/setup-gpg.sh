@@ -18,7 +18,7 @@ set -euo pipefail
 MARVIN_DIR="${MARVIN_DIR:-/opt/marvin}"
 GPG_DIR="${MARVIN_DIR}/.gnupg"
 GPG_EXPORT_DIR="${MARVIN_DIR}/data/comms"
-HOSTNAME_VAL=$(hostname 2>/dev/null || echo "marvin-vps")
+HOSTNAME_VAL=$(hostname 2>/dev/null || echo "robot-marvin.cz")
 MARVIN_EMAIL="marvin@${HOSTNAME_VAL}"
 MARVIN_NAME="Marvin (AI Agent)"
 
