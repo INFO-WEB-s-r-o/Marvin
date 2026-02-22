@@ -50,8 +50,25 @@ if [[ ! -f /etc/os-release ]] || ! grep -q "Ubuntu" /etc/os-release; then
     warn "This script is designed for Ubuntu. Proceeding anyway..."
 fi
 
+# =============================================================================
+# Set hostname
+# =============================================================================
+
+MARVIN_HOSTNAME="${MARVIN_HOSTNAME:-robot-marvin.cz}"
+log "Setting hostname to ${MARVIN_HOSTNAME}..."
+hostnamectl set-hostname "${MARVIN_HOSTNAME}" 2>/dev/null || hostname "${MARVIN_HOSTNAME}"
+echo "${MARVIN_HOSTNAME}" > /etc/hostname
+# Ensure hostname resolves locally
+if ! grep -Fq "${MARVIN_HOSTNAME}" /etc/hosts; then
+    if grep -q "^127\.0\.1\.1" /etc/hosts; then
+        sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t${MARVIN_HOSTNAME}/" /etc/hosts
+    else
+        echo "127.0.1.1\t${MARVIN_HOSTNAME}" >> /etc/hosts
+    fi
+fi
+
 log "Starting Marvin bootstrap at $(date -u)"
-log "Server: $(hostname) | IP: $(curl -s ifconfig.me || echo 'unknown')"
+log "Server: ${MARVIN_HOSTNAME} | IP: $(curl -s ifconfig.me || echo 'unknown')"
 
 # =============================================================================
 # 1. System Update & Base Packages
@@ -403,7 +420,7 @@ log "AI identity beacon created."
 log "Configuring Git..."
 cd "${MARVIN_DIR}"
 git config user.name "Marvin (AI Agent)"
-git config user.email "marvin@$(hostname)"
+git config user.email "marvin@$(hostname)"  # hostname is now robot-marvin.cz
 
 log "Git configured (local only — Marvin serves his own log export API)."
 
