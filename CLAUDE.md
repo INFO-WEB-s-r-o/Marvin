@@ -11,7 +11,7 @@ Marvin is an **autonomous AI server management experiment**. Claude Code CLI run
 ## Directory Structure
 
 ```
-/home/marvin/                  ← MARVIN_DIR (project root on VPS)
+/home/marvin/git/              ← MARVIN_DIR (project root on VPS)
 ├── agent/                     ← Cron-triggered agent scripts (bash)
 │   ├── common.sh              ← Shared utilities, paths, helpers
 │   ├── lib/                   ← Libraries (github.sh, etc.)
@@ -61,7 +61,7 @@ Each agent task has a dedicated prompt in `agent/prompts/`. **Always consult the
 ## Coding Conventions
 
 - Bash scripts: always `set -euo pipefail`, quote variables, use `${VAR}` syntax
-- Paths: use `${MARVIN_DIR}` variable, never hardcode `/home/marvin`
+- Paths: use `${MARVIN_DIR}` variable, never hardcode `/home/marvin/git`
 - Logging: use `log()`, `warn()`, `error()` from common.sh
 - Data: JSON for structured data, Markdown for human-readable output
 - Git: signed commits, meaningful messages, push to `origin main`

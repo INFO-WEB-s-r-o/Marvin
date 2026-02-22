@@ -15,7 +15,7 @@
 
 set -euo pipefail
 
-MARVIN_DIR="/home/marvin"
+MARVIN_DIR="/home/marvin/git"
 MARVIN_USER="marvin"
 LOG_FILE="/var/log/marvin-bootstrap.log"
 
