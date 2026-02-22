@@ -18,6 +18,7 @@ set -euo pipefail
 MARVIN_DIR="${MARVIN_DIR:-/opt/marvin}"
 GPG_DIR="${MARVIN_DIR}/.gnupg"
 GPG_EXPORT_DIR="${MARVIN_DIR}/data/comms"
+
 # Prefer explicit override, then /etc/hostname, then hostname -f
 HOSTNAME_VAL="${MARVIN_HOSTNAME:-}"
 if [[ -z "$HOSTNAME_VAL" ]]; then
@@ -33,6 +34,7 @@ if [[ -z "$HOSTNAME_VAL" ]]; then
     echo "[ERROR] Cannot determine hostname. Set MARVIN_HOSTNAME or configure /etc/hostname before running this script." >&2
     exit 1
 fi
+
 MARVIN_EMAIL="marvin@${HOSTNAME_VAL}"
 MARVIN_NAME="Marvin (AI Agent)"
 
