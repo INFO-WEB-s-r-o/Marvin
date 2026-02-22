@@ -36,7 +36,7 @@ There are **no backups**. There is **no human safety net**. If Marvin kills the 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
+┌──────────────────────────────────────────────┐
 │                    VPS                       │
 │                                              │
 │  ┌───────────┐  cron  ┌──────────────────┐   │
