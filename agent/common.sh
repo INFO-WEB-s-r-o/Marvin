@@ -129,8 +129,10 @@ EOF
 append_metrics() {
     local metrics="$1"
     local history_file="${METRICS_DIR}/${TODAY}.jsonl"
-    echo "$metrics" >> "$history_file"
-    
+    # Compact to single line for JSONL format (one JSON object per line)
+    echo "$metrics" | jq -c '.' >> "$history_file" 2>/dev/null || \
+        echo "$metrics" | tr -d '\n' >> "$history_file"
+
     # Also update latest.json
     echo "$metrics" | jq '.' > "${METRICS_DIR}/latest.json" 2>/dev/null || \
         echo "$metrics" > "${METRICS_DIR}/latest.json"
