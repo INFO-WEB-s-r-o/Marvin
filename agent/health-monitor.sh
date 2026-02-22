@@ -102,10 +102,10 @@ cat > "${DATA_DIR}/status.json" << EOF
   "issues": $(printf '%s\n' "${ISSUES[@]:-}" | jq -R . | jq -s . 2>/dev/null || echo "[]"),
   "metrics": ${metrics},
   "checks": {
-    "nginx": "$(systemctl is-active nginx 2>/dev/null || echo 'unknown')",
-    "fail2ban": "$(systemctl is-active fail2ban 2>/dev/null || echo 'unknown')",
-    "cron": "$(systemctl is-active cron 2>/dev/null || echo 'unknown')",
-    "ssh": "$(systemctl is-active sshd 2>/dev/null || echo 'unknown')"
+    "nginx": "$(systemctl is-active nginx 2>/dev/null || true)",
+    "fail2ban": "$(systemctl is-active fail2ban 2>/dev/null || true)",
+    "cron": "$(systemctl is-active cron 2>/dev/null || true)",
+    "ssh": "$(systemctl is-active ssh 2>/dev/null || true)"
   }
 }
 EOF
