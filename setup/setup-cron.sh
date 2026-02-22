@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-MARVIN_DIR="/opt/marvin"
+MARVIN_DIR="/home/marvin"
 
 log() {
     echo "[MARVIN] $1"
@@ -24,7 +24,7 @@ cat > "$CRON_FILE" << 'EOF'
 #
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-MARVIN_DIR=/opt/marvin
+MARVIN_DIR=/home/marvin
 
 # Health monitor — every 5 minutes
 # Collects system metrics, checks service health

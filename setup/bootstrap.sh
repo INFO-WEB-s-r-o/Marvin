@@ -15,7 +15,7 @@
 
 set -euo pipefail
 
-MARVIN_DIR="/opt/marvin"
+MARVIN_DIR="/home/marvin"
 MARVIN_USER="marvin"
 LOG_FILE="/var/log/marvin-bootstrap.log"
 
