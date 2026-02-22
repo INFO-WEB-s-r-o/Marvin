@@ -86,15 +86,18 @@ Get a cheap VPS (Hetzner, DigitalOcean, Vultr — ~$5/month for the spec above).
 
 ```bash
 # SSH into your fresh VPS
-ssh root@your-vps-ip
+ssh root@[your-vps-ip]
 
 # Clone this repo
 git clone https://github.com/INFO-WEB-s-r-o/Marvin /home/marvin/git
 
+copy .env.example .env
+# and fill the ENV parameters
+
 # Run bootstrap
 cd /home/marvin/git
 chmod +x setup/bootstrap.sh
-./setup/bootstrap.sh
+sudo ./setup/bootstrap.sh
 ```
 
 ### 3. Configure Claude Code
@@ -118,10 +121,10 @@ claude -p "echo hello from marvin"
 #   CLAUDE_CODE_OAUTH_TOKEN  — for Claude code review on PRs (from Claude subscription)
 ```
 
-### 5. Activate Marvin
+### 5. Activate Marvin - if not activated by bootstrap
 
 ```bash
-./setup/setup-cron.sh
+sudo ./setup/setup-cron.sh
 ```
 
 ### 6. Watch him work
