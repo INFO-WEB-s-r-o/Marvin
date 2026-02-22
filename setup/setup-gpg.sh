@@ -6,7 +6,7 @@
 # Also exports the public key for adding to GitHub.
 #
 # Run once during bootstrap or manually:
-#   sudo bash /home/marvin/setup/setup-gpg.sh
+#   sudo bash /home/marvin/git/setup/setup-gpg.sh
 #
 # After running, you need to:
 #   1. Add the exported public key to GitHub → Settings → SSH and GPG keys
@@ -15,7 +15,7 @@
 
 set -euo pipefail
 
-MARVIN_DIR="${MARVIN_DIR:-/home/marvin}"
+MARVIN_DIR="${MARVIN_DIR:-/home/marvin/git}"
 GPG_DIR="${MARVIN_DIR}/.gnupg"
 GPG_EXPORT_DIR="${MARVIN_DIR}/data/comms"
 
@@ -153,9 +153,9 @@ git config gpg.program gpg
 # Tell git where the keyring is
 git config --global gpg.program gpg
 # Set GNUPGHOME for the git signing operations
-cat > "${MARVIN_DIR}/.gpg-wrapper.sh" << 'WRAPPER'
+cat > "${MARVIN_DIR}/.gpg-wrapper.sh" << WRAPPER
 #!/usr/bin/env bash
-GNUPGHOME="/home/marvin/.gnupg" exec gpg "$@"
+GNUPGHOME="${MARVIN_DIR}/.gnupg" exec gpg "\$@"
 WRAPPER
 chmod +x "${MARVIN_DIR}/.gpg-wrapper.sh"
 git config gpg.program "${MARVIN_DIR}/.gpg-wrapper.sh"

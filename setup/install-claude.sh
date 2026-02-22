@@ -32,7 +32,7 @@ cat > /usr/local/bin/marvin-claude << 'WRAPPER'
 # Marvin's Claude Code wrapper — ensures environment is set up
 # and logs every invocation
 
-MARVIN_DIR="/home/marvin"
+MARVIN_DIR="/home/marvin/git"
 LOG_DIR="${MARVIN_DIR}/data/logs"
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 RUN_ID=$(date +%s)

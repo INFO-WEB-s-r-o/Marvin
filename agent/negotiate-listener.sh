@@ -6,8 +6,12 @@
 # Runs as a systemd service.
 # =============================================================================
 
-MARVIN_DIR="/home/marvin"
-INBOX_DIR="${MARVIN_DIR}/data/comms/negotiate-inbox"
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SOURCE_DIR}/common.sh"
+
+set -euo pipefail
+
+INBOX_DIR="${COMMS_DIR}/negotiate-inbox"
 PORT=8043
 
 mkdir -p "$INBOX_DIR"
@@ -46,21 +50,18 @@ handle_request() {
         return
     fi
 
-    # Read body
+    # Read body (validate content_length before reading)
     local body=""
-    if [[ "$content_length" -gt 0 ]]; then
+    if [[ "$content_length" =~ ^[0-9]+$ && "$content_length" -gt 0 && "$content_length" -le 16384 ]]; then
         body=$(head -c "$content_length")
+    elif [[ "$content_length" =~ ^[0-9]+$ && "$content_length" -gt 16384 ]]; then
+        echo -e "HTTP/1.1 413 Payload Too Large\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Payload too large (max 16KB)\"}"
+        return
     fi
 
     # Validate JSON
     if ! echo "$body" | jq '.' >/dev/null 2>&1; then
         echo -e "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Invalid JSON\"}"
-        return
-    fi
-
-    # Rate limit: max 16KB body
-    if [[ ${#body} -gt 16384 ]]; then
-        echo -e "HTTP/1.1 413 Payload Too Large\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Payload too large (max 16KB)\"}"
         return
     fi
 

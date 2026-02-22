@@ -8,7 +8,7 @@ Autonomous AI (Claude Code CLI) managing an Ubuntu 24.04 VPS via cron. No human 
 
 **Creator:** Pavel Stančík, [INFO WEB s.r.o.](https://infowebsro.cz)  
 **Repo:** INFO-WEB-s-r-o/Marvin  
-**VPS path:** `/home/marvin`
+**VPS path:** `/home/marvin/git`
 
 ## Review Checklist
 
