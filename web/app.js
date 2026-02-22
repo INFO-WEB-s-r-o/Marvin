@@ -286,8 +286,121 @@ async function updateChart() {
 }
 
 // =============================================================================
-// Blog Section — bilingual support
+// Blog Section — bilingual support with Markdown rendering
 // =============================================================================
+
+/**
+ * Extract the correct language section from a blog file.
+ * Handles two formats produced by Marvin's prompts:
+ *   Morning: ---MORNING_BLOG_EN--- ... ---MORNING_BLOG_CS--- ...
+ *   Evening: [EN content] ---CZECH--- [CS content]
+ */
+function extractLangSection(text, lang) {
+  if (text.includes("---MORNING_BLOG_EN---") || text.includes("---MORNING_BLOG_CS---")) {
+    if (lang === "cs") {
+      const m = text.match(/---MORNING_BLOG_CS---([\s\S]*?)$/);
+      return m ? m[1].trim() : text;
+    } else {
+      const m = text.match(/---MORNING_BLOG_EN---([\s\S]*?)(?:---MORNING_BLOG_CS---|$)/);
+      return m ? m[1].trim() : text;
+    }
+  }
+  if (text.includes("---CZECH---")) {
+    if (lang === "cs") {
+      const m = text.match(/---CZECH---([\s\S]*?)$/);
+      return m ? m[1].trim() : text;
+    } else {
+      const m = text.match(/^([\s\S]*?)---CZECH---/);
+      return m ? m[1].trim() : text;
+    }
+  }
+  return text;
+}
+
+/** Apply bold and italic inline formatting to an already-HTML-escaped string. */
+function inlineFormat(text) {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>");
+}
+
+/**
+ * Convert a Markdown string to safe HTML.
+ * Handles: h1/h2/h3, blockquotes, hr, bullet lists, bold, italic, paragraphs.
+ */
+function renderMarkdown(text) {
+  const lang = I18N.lang();
+  let content = extractLangSection(text, lang);
+
+  // Strip any leftover marker lines
+  content = content.replace(/^---[A-Z_]+---$/gm, "").trim();
+
+  const lines = content.split("\n");
+  const blocks = [];
+  let inList = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine;
+
+    if (/^### /.test(line)) {
+      if (inList) { blocks.push("</ul>"); inList = false; }
+      blocks.push(`<h3>${inlineFormat(escapeHtml(line.slice(4)))}</h3>`);
+      continue;
+    }
+    if (/^## /.test(line)) {
+      if (inList) { blocks.push("</ul>"); inList = false; }
+      blocks.push(`<h2>${inlineFormat(escapeHtml(line.slice(3)))}</h2>`);
+      continue;
+    }
+    if (/^# /.test(line)) {
+      if (inList) { blocks.push("</ul>"); inList = false; }
+      blocks.push(`<h1>${inlineFormat(escapeHtml(line.slice(2)))}</h1>`);
+      continue;
+    }
+    if (/^> /.test(line)) {
+      if (inList) { blocks.push("</ul>"); inList = false; }
+      blocks.push(`<blockquote>${inlineFormat(escapeHtml(line.slice(2)))}</blockquote>`);
+      continue;
+    }
+    if (/^---$/.test(line.trim())) {
+      if (inList) { blocks.push("</ul>"); inList = false; }
+      blocks.push("<hr>");
+      continue;
+    }
+    if (/^[-*] /.test(line)) {
+      if (!inList) { blocks.push("<ul>"); inList = true; }
+      blocks.push(`<li>${inlineFormat(escapeHtml(line.slice(2)))}</li>`);
+      continue;
+    }
+    if (!line.trim()) {
+      if (inList) { blocks.push("</ul>"); inList = false; }
+      blocks.push("");
+      continue;
+    }
+    if (inList) { blocks.push("</ul>"); inList = false; }
+    blocks.push(inlineFormat(escapeHtml(line)));
+  }
+  if (inList) blocks.push("</ul>");
+
+  // Group consecutive text lines into <p> tags
+  const result = [];
+  let para = [];
+  const isBlock = (b) => /^<(h[1-3]|ul|li|blockquote|hr)/.test(b);
+
+  for (const block of blocks) {
+    if (!block) {
+      if (para.length) { result.push(`<p>${para.join("<br>")}</p>`); para = []; }
+    } else if (isBlock(block)) {
+      if (para.length) { result.push(`<p>${para.join("<br>")}</p>`); para = []; }
+      result.push(block);
+    } else {
+      para.push(block);
+    }
+  }
+  if (para.length) result.push(`<p>${para.join("<br>")}</p>`);
+
+  return result.join("\n");
+}
 
 async function updateBlog() {
   const index = await fetchJSON("blog-index.json");
@@ -297,10 +410,8 @@ async function updateBlog() {
     return;
   }
 
-  // Load the latest post in the correct language
   const latest = index.posts[0];
   const langSuffix = I18N.lang();
-  // Try language-specific file first (e.g. 2026-02-22-evening.cs.md)
   const langFile = latest["file_" + langSuffix] || null;
   const fallbackFile = latest.file;
   const fileToLoad = langFile || fallbackFile;
@@ -309,13 +420,12 @@ async function updateBlog() {
     const resp = await fetch(`/blog/${fileToLoad}?t=${Date.now()}`);
     if (resp.ok) {
       const md = await resp.text();
-      document.getElementById("blog-content").textContent = md;
+      document.getElementById("blog-content").innerHTML = renderMarkdown(md);
     } else if (langFile && langFile !== fallbackFile) {
-      // Fallback to default file if language-specific not found
       const resp2 = await fetch(`/blog/${fallbackFile}?t=${Date.now()}`);
       if (resp2.ok) {
         const md = await resp2.text();
-        document.getElementById("blog-content").textContent = md;
+        document.getElementById("blog-content").innerHTML = renderMarkdown(md);
       }
     }
   } catch (e) {
@@ -329,7 +439,7 @@ async function updateBlog() {
     .slice(0, 14)
     .map((post) => {
       const postFile = post["file_" + langSuffix] || post.file;
-      return `<a href="#" onclick="loadBlog('${postFile}', '${post.file}'); return false;">${post.date}</a>`;
+      return `<a href="#" onclick="loadBlog('${escapeHtml(postFile)}', '${escapeHtml(post.file)}'); return false;">${escapeHtml(post.date)}</a>`;
     })
     .join("");
 }
@@ -339,12 +449,12 @@ async function loadBlog(filename, fallback) {
     const resp = await fetch(`/blog/${filename}?t=${Date.now()}`);
     if (resp.ok) {
       const md = await resp.text();
-      document.getElementById("blog-content").textContent = md;
+      document.getElementById("blog-content").innerHTML = renderMarkdown(md);
     } else if (fallback && fallback !== filename) {
       const resp2 = await fetch(`/blog/${fallback}?t=${Date.now()}`);
       if (resp2.ok) {
         const md = await resp2.text();
-        document.getElementById("blog-content").textContent = md;
+        document.getElementById("blog-content").innerHTML = renderMarkdown(md);
       }
     }
   } catch (e) {
