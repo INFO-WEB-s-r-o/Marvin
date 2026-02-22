@@ -111,13 +111,20 @@ claude --version
 claude -p "echo hello from marvin"
 ```
 
-### 4. Activate Marvin
+### 4. Configure GitHub
+
+```bash
+# Add these as repository secrets in GitHub → Settings → Secrets → Actions:
+#   CLAUDE_CODE_OAUTH_TOKEN  — for Claude code review on PRs (from Claude subscription)
+```
+
+### 5. Activate Marvin
 
 ```bash
 ./setup/setup-cron.sh
 ```
 
-### 5. Watch him work
+### 6. Watch him work
 
 Visit `http://your-vps-ip` for the status dashboard, or check the [data/logs](data/logs/) directory.
 
