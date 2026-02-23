@@ -229,6 +229,30 @@ github_list_prs() {
     github_api GET "/repos/${GITHUB_REPO}/pulls?per_page=${limit}&state=open"
 }
 
+# Merge a pull request
+# Usage: github_merge_pr pr_number [commit_message]
+github_merge_pr() {
+    local pr_number="$1"
+    local commit_message="${2:-}"
+
+    local payload
+    payload=$(jq -n \
+        --arg msg "$commit_message" \
+        '{merge_method: "merge", commit_message: $msg}')
+
+    local response
+    response=$(github_api PUT "/repos/${GITHUB_REPO}/pulls/${pr_number}/merge" "$payload")
+    local exit_code=$?
+
+    if [[ $exit_code -eq 0 ]]; then
+        marvin_log "INFO" "PR #${pr_number} merged successfully"
+    else
+        marvin_log "WARN" "Could not auto-merge PR #${pr_number} — may require manual review"
+    fi
+
+    return $exit_code
+}
+
 # ─── Git Operations (GPG-signed) ────────────────────────────────────────────
 
 # Configure git remote for GitHub

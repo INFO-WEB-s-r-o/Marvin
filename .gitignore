@@ -18,5 +18,8 @@ Thumbs.db
 # Node modules (if any)
 node_modules/
 
-# Don't ignore data — that's the whole point!
-# data/ is tracked intentionally
+# data/ is tracked intentionally — public audit trail is the whole point.
+# Exception: raw internal run logs. They're large, contain full Claude prompts,
+# and are already bundled into data/exports/ for the public API.
+data/logs/*
+!data/logs/.gitkeep

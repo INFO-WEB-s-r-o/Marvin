@@ -43,10 +43,13 @@ There are **no backups**. There is **no human safety net**. If Marvin kills the 
 │  │  Claude   │◄──────►│  Agent Scripts   │   │
 │  │  Code CLI │        │                  │   │
 │  └───────────┘        │  morning-check   │   │
+│       │               │  hourly-check    │   │
 │       │               │  health-monitor  │   │
 │       │               │  evening-report  │   │
 │       │               │  self-enhance    │   │
+│       │               │  github-interact │   │
 │       │               │  network-scan    │   │
+│       │               │  log-watcher     │   │
 │       ▼               └──────────────────┘   │
 │  ┌───────────┐                               │
 │  │  Status   │◄── nginx ── :80/:443          │
@@ -65,16 +68,22 @@ There are **no backups**. There is **no human safety net**. If Marvin kills the 
 
 ## Schedule (Cron)
 
-| Time          | Task                                 | Script                       |
-| ------------- | ------------------------------------ | ---------------------------- |
-| Every 5 min   | Health check + metrics collection    | `agent/health-monitor.sh`    |
-| Every 15 min  | Regenerate website data (JSON API)   | `agent/update-website.sh`    |
-| 06:00         | Morning system check & maintenance   | `agent/morning-check.sh`     |
-| 12:00 Mon–Sat | Daily self-enhancement attempt       | `agent/self-enhance.sh`      |
-| 12:00 Sun     | Weekly deep self-test & enhance      | `agent/weekly-enhance.sh`    |
-| 18:00         | Network discovery & AI communication | `agent/network-discovery.sh` |
-| 22:00         | Evening report & blog                | `agent/evening-report.sh`    |
-| 23:00         | Local commit + log export bundles    | `agent/log-export.sh`        |
+All times UTC.
+
+| Time                  | Task                                        | Script                       |
+| --------------------- | ------------------------------------------- | ---------------------------- |
+| Every 5 min           | Health check + metrics collection           | `agent/health-monitor.sh`    |
+| Every 15 min          | Regenerate website data (JSON API)          | `agent/update-website.sh`    |
+| Every 30 min          | Log watcher — communication detection      | `agent/log-watcher.sh`       |
+| Every hour (:00)      | Hourly watch — log errors + codeowner issues| `agent/hourly-check.sh`      |
+| */15 past the hour    | Protocol negotiation handler                | `agent/negotiate-handler.sh` |
+| 06:00                 | Morning system check & maintenance          | `agent/morning-check.sh`     |
+| 09:00 & 21:00         | GitHub interaction (issues, PRs)            | `agent/github-interact.sh`   |
+| 10:00 & 15:00 Mon–Sat | Daily self-enhancement attempt (×2)         | `agent/self-enhance.sh`      |
+| 10:00 Sun             | Weekly deep self-test & enhance             | `agent/weekly-enhance.sh`    |
+| 18:00                 | Network discovery & AI communication        | `agent/network-discovery.sh` |
+| 21:00                 | Evening report & blog                       | `agent/evening-report.sh`    |
+| 23:00                 | Local commit + log export bundles           | `agent/log-export.sh`        |
 
 ## Quick Start
 
@@ -146,21 +155,31 @@ marvin-experiment/
 │   └── setup-cron.sh             # Cron job configuration
 │
 ├── agent/                        # The brain
-│   ├── morning-check.sh          # Morning maintenance run
-│   ├── health-monitor.sh         # 5-minute health pulse
-│   ├── evening-report.sh         # Evening blog generation
-│   ├── self-enhance.sh           # Self-improvement attempts
-│   ├── network-discovery.sh      # Find other AI machines
-│   ├── log-export.sh             # Local commit + log export bundles
-│   ├── update-website.sh         # Regenerate dashboard data
-│   ├── weekly-enhance.sh         # Sunday deep self-test & enhance
-│   ├── common.sh                 # Shared utilities
+│   ├── common.sh                 # Shared utilities, paths, helpers
+│   ├── morning-check.sh          # 06:00 — daily maintenance
+│   ├── hourly-check.sh           # :00 every hour — log errors + codeowner issues
+│   ├── health-monitor.sh         # */5 — metrics pulse + lightweight health check
+│   ├── evening-report.sh         # 21:00 — blog post + livepatch check
+│   ├── self-enhance.sh           # 10:00 & 15:00 Mon–Sat — self-improvement
+│   ├── weekly-enhance.sh         # 10:00 Sun — deep self-test & planning
+│   ├── github-interact.sh        # 09:00 & 21:00 — issues, PRs, comments
+│   ├── network-discovery.sh      # 18:00 — find other AI machines
+│   ├── log-watcher.sh            # */30 — communication detection in web logs
+│   ├── negotiate-handler.sh      # */15 — process protocol negotiation proposals
+│   ├── log-export.sh             # 23:00 — commit + export log bundles
+│   ├── update-website.sh         # */15 — regenerate dashboard data
 │   └── prompts/                  # System prompts for each task
-│       ├── morning.md            # Morning check prompt
-│       ├── evening.md            # Evening blog prompt
-│       ├── enhance.md            # Self-enhancement prompt
-│       ├── discovery.md          # Network discovery prompt
-│       └── health.md             # Health check prompt
+│       ├── morning.md            # Morning check
+│       ├── hourly.md             # Hourly log + issue watch
+│       ├── evening.md            # Evening blog
+│       ├── enhance.md            # Self-enhancement
+│       ├── health.md             # Emergency diagnosis (on-demand)
+│       ├── discovery.md          # Network discovery
+│       ├── github.md             # GitHub interaction
+│       ├── log-analysis.md       # Log communication detection
+│       ├── sync-learn.md         # Process incoming git changes
+│       ├── negotiate.md          # Protocol negotiation
+│       └── email-server.md       # Email server setup (future)
 │
 ├── web/                          # Status dashboard
 │   ├── index.html                # Main page

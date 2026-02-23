@@ -34,13 +34,13 @@ MARVIN_DIR=/home/marvin/git
 # Full system maintenance: updates, cleanup, security audit
 0 6 * * * root ${MARVIN_DIR}/agent/morning-check.sh >> /var/log/marvin-morning.log 2>&1
 
-# Self-enhancement — 12:00 UTC (Mon-Sat)
+# Self-enhancement — 10:00 and 15:00 UTC (Mon-Sat)
 # Reviews own code, proposes and applies improvements
-0 12 * * 1-6 root ${MARVIN_DIR}/agent/self-enhance.sh >> /var/log/marvin-enhance.log 2>&1
+0 10,15 * * 1-6 root ${MARVIN_DIR}/agent/self-enhance.sh >> /var/log/marvin-enhance.log 2>&1
 
-# Weekly deep enhancement — Sundays 12:00 UTC
+# Weekly deep enhancement — Sundays 10:00 UTC
 # Runs self-tests, picks from POSSIBLE_ENHANCEMENTS.md, plans next week
-0 12 * * 0 root ${MARVIN_DIR}/agent/weekly-enhance.sh >> /var/log/marvin-weekly.log 2>&1
+0 10 * * 0 root ${MARVIN_DIR}/agent/weekly-enhance.sh >> /var/log/marvin-weekly.log 2>&1
 
 # Network discovery — 18:00 UTC
 # Scans for other AI-managed machines, attempts communication
@@ -69,6 +69,10 @@ MARVIN_DIR=/home/marvin/git
 # GitHub interaction — 09:00 and 21:00 UTC
 # Creates issues, PRs, pushes GPG-signed commits to public repo
 0 9,21 * * * root ${MARVIN_DIR}/agent/github-interact.sh >> /var/log/marvin-github.log 2>&1
+
+# Hourly watch — every hour at :00
+# Scans /var/log for actionable errors, reviews codeowner GitHub issues, resolves what it can
+0 * * * * root ${MARVIN_DIR}/agent/hourly-check.sh >> /var/log/marvin-hourly.log 2>&1
 EOF
 
 chmod 644 "$CRON_FILE"
@@ -82,7 +86,8 @@ cat > /etc/logrotate.d/marvin << 'EOF'
 /var/log/marvin-*.log
 /var/log/marvin-weekly.log
 /var/log/marvin-logwatch.log
-/var/log/marvin-negotiate.log {
+/var/log/marvin-negotiate.log
+/var/log/marvin-hourly.log {
     daily
     rotate 30
     compress
@@ -99,8 +104,8 @@ log ""
 log "Schedule (UTC):"
 log "  */5  * * * *  Health monitor"
 log "  0    6 * * *  Morning check"
-log "  0   12 * * 1-6  Self-enhancement (Mon-Sat)"
-log "  0   12 * * 0    Weekly deep enhancement (Sunday)"
+log "  0  10,15 * * 1-6  Self-enhancement (Mon-Sat, twice daily)"
+log "  0   10 * * 0    Weekly deep enhancement (Sunday)"
 log "  0   18 * * *  Network discovery"
 log "  0   22 * * *  Evening report"
 log "  0   23 * * *  Log export"
@@ -108,3 +113,4 @@ log "  */15 * * * *  Website update"
 log "  */30 * * * *  Log watcher (communication detection)"
 log "  15,45 * * * * Negotiate handler (protocol proposals)"
 log "  0  9,21 * * * GitHub interaction (issues, PRs, push)"
+log "  0  * * * *   Hourly watch (log errors + codeowner issues)"
