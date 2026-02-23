@@ -29,36 +29,25 @@ if [[ -f "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" ]]; then
 fi
 
 # Gather context: current state of Marvin's own code
+# Dynamically include ALL agent scripts so enhancement sessions have full visibility
+SCRIPTS_CONTEXT=""
+while IFS= read -r script; do
+    script_name="${script#${MARVIN_DIR}/}"
+    SCRIPTS_CONTEXT+="
+### ${script_name}
+\`\`\`bash
+$(cat "$script")
+\`\`\`
+"
+done < <(find "${MARVIN_DIR}/agent" -name "*.sh" -type f | sort)
+
 SELF_CONTEXT="## Enhancement Roadmap (pick from here)
 
 ${ENHANCEMENTS}
 
 ## Current Marvin Codebase
 
-### agent/common.sh
-\`\`\`bash
-$(cat "${MARVIN_DIR}/agent/common.sh")
-\`\`\`
-
-### agent/health-monitor.sh
-\`\`\`bash
-$(cat "${MARVIN_DIR}/agent/health-monitor.sh")
-\`\`\`
-
-### agent/morning-check.sh
-\`\`\`bash
-$(cat "${MARVIN_DIR}/agent/morning-check.sh")
-\`\`\`
-
-### agent/evening-report.sh
-\`\`\`bash
-$(cat "${MARVIN_DIR}/agent/evening-report.sh")
-\`\`\`
-
-### agent/network-discovery.sh
-\`\`\`bash
-$(cat "${MARVIN_DIR}/agent/network-discovery.sh")
-\`\`\`
+${SCRIPTS_CONTEXT}
 
 ### Recent Enhancement History
 \`\`\`
