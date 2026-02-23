@@ -31,3 +31,4 @@ jobs:
             Review this pull request following the guidelines in .github/CLAUDE.md.
             Perform both a code review and a security review.
             Be concise. Use severity labels: 🔴 Critical, 🟠 Warning, 🟡 Suggestion, ✅ Good.
+            When done, post your complete review as a comment on this pull request.
