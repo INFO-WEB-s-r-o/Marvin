@@ -148,12 +148,10 @@ fi
 
 # ─── 8. Git repo health ──────────────────────────────────────────────────────
 
-if git -C "${MARVIN_DIR}" status --porcelain 2>/dev/null; then
+if git -C "${MARVIN_DIR}" status --porcelain >/dev/null 2>&1; then
     test_pass "git repository accessible"
-elif git -C "${MARVIN_DIR}" rev-parse --git-dir &>/dev/null; then
-    test_pass "git repository exists (safe.directory restriction)"
 elif [[ -d "${MARVIN_DIR}/.git" ]]; then
-    test_pass "git directory exists"
+    test_pass "git directory exists (possible safe.directory restriction)"
 else
     test_fail "git repository inaccessible"
 fi
