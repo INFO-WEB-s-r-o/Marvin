@@ -92,11 +92,12 @@ ${system_context}
 
 ${prompt}"
     
-    # Run Claude Code in non-interactive mode  
+    # Run Claude Code in non-interactive mode
+    # Use stdin pipe to avoid "Argument list too long" with large prompts
     local output
     local start_time=$(date +%s)
-    
-    output=$(claude -p "${full_prompt}" 2>&1) || true
+
+    output=$(printf '%s' "${full_prompt}" | claude -p 2>&1) || true
     local exit_code=$?
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))

@@ -1,3 +1,0 @@
-[2026-02-23T19:00:02Z] [INFO] Starting Claude run: log-analysis
-[2026-02-23T19:00:02Z] [INFO] Claude run complete: log-analysis (0s, exit=0)
-/home/marvin/git/agent/common.sh: line 99: /usr/bin/claude: Argument list too long

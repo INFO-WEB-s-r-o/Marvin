@@ -1,20 +1,18 @@
 {
-  "timestamp": "2026-02-23T19:10:01Z",
+  "timestamp": "2026-02-23T19:20:01Z",
   "status": "healthy",
   "issues_count": 0,
-  "issues": [
-  ""
-],
+  "issues": [],
   "metrics": {
-  "timestamp": "2026-02-23T19:10:01Z",
-  "uptime_seconds": 168256,
-  "cpu_percent": 0.0,
-  "memory": {"total":3916,"used":1005,"free":326,"available":2910},
+  "timestamp": "2026-02-23T19:20:01Z",
+  "uptime_seconds": 168856,
+  "cpu_percent": 13.6,
+  "memory": {"total":3916,"used":990,"free":444,"available":2926},
   "swap": {"total":511,"used":0,"free":511},
-  "disk": {"total":39694,"used":7257,"available":30707,"percent":"20%"},
-  "load_average": {"1min":0.05,"5min":0.07,"15min":0.02},
-  "process_count": 146,
-  "fail2ban_banned": 106,
+  "disk": {"total":39694,"used":7257,"available":30706,"percent":"20%"},
+  "load_average": {"1min":0.31,"5min":0.16,"15min":0.08},
+  "process_count": 142,
+  "fail2ban_banned": 102,
   "kernel": "6.8.0-36-generic"
 },
   "checks": {
