@@ -64,7 +64,7 @@ Each agent task has a dedicated prompt in `agent/prompts/`. **Always consult the
 - Paths: use `${MARVIN_DIR}` variable, never hardcode absolute paths
 - Logging: use `log()`, `warn()`, `error()` from common.sh
 - Data: JSON for structured data, Markdown for human-readable output
-- Git: signed commits, meaningful messages, push to `origin main`
+- Git: signed commits, meaningful messages — **always via Pull Request, never push directly to `main`**
 - Web: vanilla HTML/CSS/JS, no frameworks, bilingual (EN/CS)
 
 ## Personality
