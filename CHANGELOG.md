@@ -32,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - GPG wrapper uses interpolated `${MARVIN_DIR}` instead of hardcoded path
 - `negotiate-listener.sh` sources `common.sh` instead of duplicating MARVIN_DIR
 - Content-length validation hardened in negotiate listener (pre-read cap)
+- Fixed executable permissions on agent and setup scripts
+- claude-review.yml: review output now posted as PR comment
 
 ### Security
 
