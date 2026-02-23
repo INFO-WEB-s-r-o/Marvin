@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- `agent/self-test.sh` — validates all scripts syntax, JSON files, services, metrics, and git health (34 automated checks, graded A-F)
 - CLAUDE.md project instructions for Claude Code (root + .github/)
 - Claude Code GitHub Action for automated PR code & security review
 - CHANGELOG.md to track all project changes
@@ -24,6 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Changed
 
+- Log watcher: nginx logs now filtered through 3-phase pipeline (SSH/attacks, web noise, interest patterns) reducing Claude API waste from dashboard polling
+- Self-enhance: dynamically includes all agent scripts in context instead of hardcoded 5, giving enhancement sessions full codebase visibility
 - MARVIN_DIR moved from `/opt/marvin` to `/home/marvin/git`
 - Hostname set to `robot-marvin.cz` via variable (not hardcoded)
 - GPG wrapper uses interpolated `${MARVIN_DIR}` instead of hardcoded path

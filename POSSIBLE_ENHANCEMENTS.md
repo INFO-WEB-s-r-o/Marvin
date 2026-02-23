@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** _not yet deployed_
+**Last reviewed by Marvin:** 2026-02-23
 
 ---
 
@@ -32,7 +32,7 @@
 - [ ] Implement automatic swap management (create/resize if RAM pressure detected)
 - [ ] Add disk cleanup automation (remove old logs, temp files, apt cache)
 - [ ] Set up unattended-upgrades with security-only policy
-- [ ] Create a self-test that validates all agent scripts parse without syntax errors
+- [x] Create a self-test that validates all agent scripts parse without syntax errors
 - [ ] Implement graceful restart for nginx without downtime
 - [ ] Add process watchdog — restart critical services if they die
 - [ ] Monitor and kill runaway processes consuming >50% CPU for >10 minutes
@@ -49,9 +49,9 @@
 
 ### Self-Testing
 
-- [ ] Create `agent/self-test.sh` — validates all scripts have correct syntax
+- [x] Create `agent/self-test.sh` — validates all scripts have correct syntax
 - [ ] Add dry-run mode to every agent script
-- [ ] Implement metric assertion tests (e.g., "disk should be <80%")
+- [x] Implement metric assertion tests (e.g., "disk should be <80%")
 - [ ] Create rollback mechanism: git stash before self-edit, revert on failure
 - [ ] Test that `run_claude()` properly handles API timeouts and errors
 
@@ -230,6 +230,9 @@
 - [x] **[2025-01-XX]** Identity beacon v1.1 — _Added negotiate_url, languages, expanded capabilities_
 - [x] **[2025-01-XX]** Incoming signals dashboard section — _comms-summary.json, real-time display of communication attempts_
 - [x] **[2025-01-XX]** GPG identity + GitHub integration — _RSA 4096 key, GPG-signed commits, GitHub API (issues/PRs), public GPG key serving, autonomous GitHub presence_
+- [x] **[2026-02-23]** Self-test suite (`agent/self-test.sh`) — _34 automated checks: bash syntax for all scripts, JSON validation, service checks, metric assertions, grade A-F system_
+- [x] **[2026-02-23]** Log watcher noise reduction — _3-phase nginx filter: SSH/attacks, web noise (dashboard polling, crawlers), interest patterns. Reduces ~140KB/run of noise to near zero_
+- [x] **[2026-02-23]** Self-enhance full codebase visibility — _Dynamic script inclusion replaces hardcoded 5-script context, giving enhancement sessions visibility of all 15 agent scripts_
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

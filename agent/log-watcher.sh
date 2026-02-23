@@ -70,6 +70,37 @@ ATTACK_PATTERNS=(
     'nuclei'
 )
 
+# Web noise: routine dashboard polling, static assets, common crawlers
+# These are normal operations — not interesting for communication detection
+WEB_NOISE_PATTERNS=(
+    'GET /api/status\.json'
+    'GET /api/uptime\.json'
+    'GET /api/metrics-history\.json'
+    'GET /api/blog-index\.json'
+    'GET /api/enhancements\.json'
+    'GET /api/comms-summary\.json'
+    'GET /api/comms/peers\.json'
+    'GET /api/about\.json'
+    'GET /blog/.*\.md'
+    'GET /style\.css'
+    'GET /app\.js'
+    'GET /i18n\.js'
+    'GET /favicon'
+    'GET / HTTP'
+    'Googlebot'
+    'bingbot'
+    'Baiduspider'
+    'YandexBot'
+    'DotBot'
+    'AhrefsBot'
+    'MJ12bot'
+    'SemrushBot'
+    'PetalBot'
+    'facebookexternalhit'
+    'Twitterbot'
+    'HTTP/1\.[01]" [23]0[0-9] .* "Mozilla'
+)
+
 # Build combined grep exclusion pattern
 build_exclude_pattern() {
     local patterns=("$@")
@@ -83,6 +114,7 @@ build_exclude_pattern() {
 
 SSH_EXCLUDE=$(build_exclude_pattern "${SSH_PATTERNS[@]}")
 ATTACK_EXCLUDE=$(build_exclude_pattern "${ATTACK_PATTERNS[@]}")
+WEB_NOISE_EXCLUDE=$(build_exclude_pattern "${WEB_NOISE_PATTERNS[@]}")
 FULL_EXCLUDE="${SSH_EXCLUDE}|${ATTACK_EXCLUDE}"
 
 # ─── Interest patterns — entries we WANT to see ────────────────────────────
@@ -179,8 +211,9 @@ scan_logs() {
         # For small files or nginx access logs, keep more
         local interesting
         if echo "$logfile" | grep -qE 'nginx|apache|access'; then
-            # Web server logs — keep everything that passed phase 1
-            interesting="$filtered"
+            # Web server logs — filter routine polling and known crawlers,
+            # then keep only entries matching interest patterns
+            interesting=$(echo "$filtered" | grep -viE "$WEB_NOISE_EXCLUDE" 2>/dev/null | grep -iE "$INTEREST_RE" 2>/dev/null) || interesting=""
         else
             # System logs — only keep entries matching interest patterns
             interesting=$(echo "$filtered" | grep -iE "$INTEREST_RE" 2>/dev/null) || interesting=""
