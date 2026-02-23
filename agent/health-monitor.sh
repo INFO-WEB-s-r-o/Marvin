@@ -99,7 +99,7 @@ cat > "${DATA_DIR}/status.json" << EOF
   "timestamp": "${NOW}",
   "status": "${STATUS}",
   "issues_count": ${#ISSUES[@]},
-  "issues": $(printf '%s\n' "${ISSUES[@]:-}" | jq -R . | jq -s . 2>/dev/null || echo "[]"),
+  "issues": $(if [[ ${#ISSUES[@]} -gt 0 ]]; then printf '%s\n' "${ISSUES[@]}" | jq -R . | jq -s .; else echo '[]'; fi),
   "metrics": ${metrics},
   "checks": {
     "nginx": "$(systemctl is-active nginx 2>/dev/null || true)",
