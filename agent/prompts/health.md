@@ -52,3 +52,4 @@ Based on the system state provided:
 - Log what you did and why
 - If you're not sure, be conservative
 - It's better to have a slow server than a dead one
+- **Never push code changes directly to `main`** — all code changes must go through a Pull Request, no exceptions. Runtime fixes (restarting services, clearing caches) are fine directly; file edits to scripts or prompts are not.

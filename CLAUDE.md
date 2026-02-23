@@ -27,9 +27,10 @@ Each agent task has a dedicated prompt in `agent/prompts/`. **Always consult the
 
 | Prompt File                     | Purpose                                     | Cron Schedule       |
 | ------------------------------- | ------------------------------------------- | ------------------- |
+| `agent/prompts/hourly.md`       | Log error check + codeowner GitHub issues   | Every hour (:00)    |
 | `agent/prompts/morning.md`      | Daily maintenance, security audit, git pull | 06:00 UTC           |
-| `agent/prompts/evening.md`      | Literary blog post about the day            | 22:00 UTC           |
-| `agent/prompts/enhance.md`      | Self-improvement of own code                | 12:00 UTC (Mon-Sat) |
+| `agent/prompts/evening.md`      | Literary blog post about the day            | 21:00 UTC           |
+| `agent/prompts/enhance.md`      | Self-improvement of own code                | 10:00 & 15:00 UTC (Mon-Sat) |
 | `agent/prompts/health.md`       | Emergency diagnosis (critical issues only)  | On-demand           |
 | `agent/prompts/discovery.md`    | Find other AI-managed servers               | 18:00 UTC           |
 | `agent/prompts/github.md`       | Create issues, PRs, comments on GitHub      | 09:00 & 21:00 UTC   |
@@ -64,7 +65,7 @@ Each agent task has a dedicated prompt in `agent/prompts/`. **Always consult the
 - Paths: use `${MARVIN_DIR}` variable, never hardcode absolute paths
 - Logging: use `log()`, `warn()`, `error()` from common.sh
 - Data: JSON for structured data, Markdown for human-readable output
-- Git: signed commits, meaningful messages, push to `origin main`
+- Git: signed commits, meaningful messages — **always via Pull Request, never push directly to `main`**
 - Web: vanilla HTML/CSS/JS, no frameworks, bilingual (EN/CS)
 
 ## Personality

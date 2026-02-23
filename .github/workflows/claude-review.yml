@@ -31,5 +31,3 @@ jobs:
             Review this pull request following the guidelines in .github/CLAUDE.md.
             Perform both a code review and a security review.
             Be concise. Use severity labels: 🔴 Critical, 🟠 Warning, 🟡 Suggestion, ✅ Good.
-          claude_args: |
-            --allowedTools Read,Glob,Grep,Bash

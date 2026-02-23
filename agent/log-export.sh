@@ -2,12 +2,13 @@
 # =============================================================================
 # Marvin — Log Export (runs daily at 23:00 UTC)
 # =============================================================================
-# Phase 1: Local git commit (version control for rollback safety)
-# Phase 2: Generate exportable log bundles for the /api/logs/ endpoint
-# Phase 3: Push GPG-signed commits to GitHub (if configured)
+# Phase 1: Generate exportable log bundle for the /api/exports/ endpoint
+# Phase 2: Commit data/ to a branch and open a Pull Request to main
+# Phase 3: Auto-merge the PR so data is visible on main
 #
-# Marvin maintains both a local log export API and a public GitHub presence.
-# All commits are GPG-signed for proof of authenticity.
+# data/ (metrics, blog, comms, enhancements, exports) goes through a PR.
+# Code files (agent/, web/, prompts/) must use a separate PR — never here.
+# data/logs/ is gitignored — raw run logs are captured in the export bundle.
 # =============================================================================
 
 set -euo pipefail
@@ -16,60 +17,31 @@ source "$(dirname "$0")/common.sh"
 marvin_log "INFO" "=== LOG EXPORT STARTING ==="
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Phase 1: Local git commit (safety net for rollback)
+# Phase 1: Generate exportable log bundle
 # ─────────────────────────────────────────────────────────────────────────────
-
-cd "${MARVIN_DIR}"
-
-git add data/ 2>/dev/null || true
-git add CHANGELOG.md 2>/dev/null || true
-git add agent/ 2>/dev/null || true
-git add web/ 2>/dev/null || true
-git add PROMPTS.md 2>/dev/null || true
-git add POSSIBLE_ENHANCEMENTS.md 2>/dev/null || true
-
-if ! git diff --cached --quiet 2>/dev/null; then
-    METRICS_COUNT=$(wc -l < "${METRICS_DIR}/${TODAY}.jsonl" 2>/dev/null || echo "0")
-    BLOG_COUNT=$(find "${BLOG_DIR}" -name "${TODAY}*" -type f 2>/dev/null | wc -l)
-    ENHANCE_COUNT=$(find "${ENHANCE_DIR}" -name "${TODAY}*" -type f 2>/dev/null | wc -l)
-
-    COMMIT_MSG="Day ${TODAY}: ${METRICS_COUNT} metrics, ${BLOG_COUNT} blog posts, ${ENHANCE_COUNT} enhancements"
-
-    if git diff --cached --name-only | grep -q "agent/"; then
-        COMMIT_MSG+=" [SELF-MODIFIED]"
-    fi
-
-    git commit -m "${COMMIT_MSG}" 2>/dev/null || true
-    marvin_log "INFO" "Local git commit: ${COMMIT_MSG}"
-else
-    marvin_log "INFO" "No changes to commit."
-fi
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Phase 2: Generate exportable log bundle
-# ─────────────────────────────────────────────────────────────────────────────
-# Creates a daily JSON bundle at /data/exports/YYYY-MM-DD.json
-# This is served via nginx at /api/exports/ — any external system can fetch it.
+# Creates data/exports/YYYY-MM-DD.json — served at /api/exports/
+# Done first so the bundle is included in the data PR.
 
 EXPORT_DIR="${DATA_DIR}/exports"
 mkdir -p "$EXPORT_DIR"
 
 EXPORT_FILE="${EXPORT_DIR}/${TODAY}.json"
 
-# Collect today's logs into a structured export
+# Collect today's /var/log/marvin-*.log entries into a structured bundle
 LOG_ENTRIES="[]"
 for logfile in /var/log/marvin-*.log; do
     [[ -f "$logfile" ]] || continue
     LOGNAME=$(basename "$logfile" .log)
-    # Grab today's entries (lines containing today's date)
-    TODAY_LINES=$(grep "${TODAY}" "$logfile" 2>/dev/null | tail -500 | sed 's/"/\\"/g' | awk '{printf "%s\\n", $0}' || echo "")
+    TODAY_LINES=$(grep "${TODAY}" "$logfile" 2>/dev/null | tail -500 \
+        | sed 's/"/\\"/g' | awk '{printf "%s\\n", $0}' || echo "")
     if [[ -n "$TODAY_LINES" ]]; then
-        LOG_ENTRIES=$(echo "$LOG_ENTRIES" | jq --arg name "$LOGNAME" --arg lines "$TODAY_LINES" \
-            '. + [{"source": $name, "content": $lines}]' 2>/dev/null || echo "$LOG_ENTRIES")
+        LOG_ENTRIES=$(echo "$LOG_ENTRIES" | jq \
+            --arg name "$LOGNAME" --arg lines "$TODAY_LINES" \
+            '. + [{"source": $name, "content": $lines}]' 2>/dev/null \
+            || echo "$LOG_ENTRIES")
     fi
 done
 
-# Build the export bundle
 cat > "$EXPORT_FILE" << EOF
 {
   "version": "1.0",
@@ -79,48 +51,151 @@ cat > "$EXPORT_FILE" << EOF
   "metrics_file": "metrics/${TODAY}.jsonl",
   "log_sources": ${LOG_ENTRIES},
   "enhancement_log": $(cat "${ENHANCE_DIR}/${TODAY}"*.json 2>/dev/null | jq -s '.' 2>/dev/null || echo "[]"),
-  "blog_posts": $(find "${BLOG_DIR}" -name "${TODAY}*" -type f -exec basename {} \; 2>/dev/null | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]")
+  "blog_posts": $(find "${BLOG_DIR}" -name "${TODAY}*" -type f -exec basename {} \; 2>/dev/null \
+      | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]")
 }
 EOF
 
-# Generate an export index (last 30 days)
-echo '{"exports":[' > "${EXPORT_DIR}/index.json"
-FIRST=true
-for bundle in $(find "$EXPORT_DIR" -name "????-??-??.json" -type f | sort -r | head -30); do
-    BUNDLE_NAME=$(basename "$bundle")
-    BUNDLE_DATE=${BUNDLE_NAME%.json}
-    BUNDLE_SIZE=$(stat -c%s "$bundle" 2>/dev/null || stat -f%z "$bundle" 2>/dev/null || echo "0")
-    if [[ "$FIRST" == "true" ]]; then FIRST=false; else echo "," >> "${EXPORT_DIR}/index.json"; fi
-    echo "  {\"date\":\"${BUNDLE_DATE}\",\"file\":\"${BUNDLE_NAME}\",\"size\":${BUNDLE_SIZE}}" >> "${EXPORT_DIR}/index.json"
-done
-echo '],"generated":"'"${NOW}"'"}' >> "${EXPORT_DIR}/index.json"
+# Regenerate export index (last 30 days)
+{
+    echo '{"exports":['
+    FIRST=true
+    for bundle in $(find "$EXPORT_DIR" -name "????-??-??.json" -type f | sort -r | head -30); do
+        BUNDLE_NAME=$(basename "$bundle")
+        BUNDLE_DATE=${BUNDLE_NAME%.json}
+        BUNDLE_SIZE=$(stat -c%s "$bundle" 2>/dev/null || stat -f%z "$bundle" 2>/dev/null || echo "0")
+        [[ "$FIRST" == "true" ]] && FIRST=false || echo ","
+        echo "  {\"date\":\"${BUNDLE_DATE}\",\"file\":\"${BUNDLE_NAME}\",\"size\":${BUNDLE_SIZE}}"
+    done
+    echo "],"
+    echo "\"generated\":\"${NOW}\"}"
+} > "${EXPORT_DIR}/index.json"
 
 chmod 644 "${EXPORT_DIR}"/*.json 2>/dev/null || true
-
-marvin_log "INFO" "Log export bundle created: ${EXPORT_FILE}"
+marvin_log "INFO" "Export bundle created: ${EXPORT_FILE}"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Phase 3: Push GPG-signed commits to GitHub
+# Phase 2: Commit data/ to a branch
+# ─────────────────────────────────────────────────────────────────────────────
+# data/ (metrics, blog, comms, enhancements, exports) goes through a PR.
+# data/logs/ is gitignored — handled by the export bundle above.
+# Code changes (agent/, web/, etc.) MUST use a separate PR.
+
+cd "${MARVIN_DIR}"
+
+# Warn if there are uncommitted code files — they do NOT belong here
+DIRTY_CODE=$(git diff --name-only HEAD 2>/dev/null \
+    | grep -E "^(agent|web|setup|CHANGELOG|PROMPTS|POSSIBLE_ENHANCEMENTS)" || true)
+if [[ -n "$DIRTY_CODE" ]]; then
+    marvin_log "WARN" "Uncommitted code changes found — these need their own PR, not log-export:"
+    marvin_log "WARN" "${DIRTY_CODE}"
+fi
+
+# Ensure we start from a clean main
+git checkout main 2>/dev/null || true
+
+# Pick a unique branch name
+DATA_BRANCH="data/${TODAY}"
+if git ls-remote --exit-code --heads origin "${DATA_BRANCH}" &>/dev/null \
+   || git show-ref --verify --quiet "refs/heads/${DATA_BRANCH}" 2>/dev/null; then
+    DATA_BRANCH="data/${TODAY}-${TIMESTAMP}"
+fi
+
+git checkout -b "${DATA_BRANCH}"
+
+# Stage data/ only
+git add data/ 2>/dev/null || true
+
+if git diff --cached --quiet 2>/dev/null; then
+    marvin_log "INFO" "No data changes to commit — nothing to PR."
+    git checkout main 2>/dev/null || true
+    git branch -d "${DATA_BRANCH}" 2>/dev/null || true
+    marvin_log "INFO" "=== LOG EXPORT COMPLETE (no changes) ==="
+    exit 0
+fi
+
+# Build commit message
+METRICS_COUNT=$(wc -l < "${METRICS_DIR}/${TODAY}.jsonl" 2>/dev/null || echo "0")
+BLOG_COUNT=$(find "${BLOG_DIR}" -name "${TODAY}*" -type f 2>/dev/null | wc -l)
+ENHANCE_COUNT=$(find "${ENHANCE_DIR}" -name "${TODAY}*" -type f 2>/dev/null | wc -l)
+COMMIT_MSG="data: ${TODAY} — ${METRICS_COUNT} metrics, ${BLOG_COUNT} blog posts, ${ENHANCE_COUNT} enhancements"
+
+# GPG-signed commit
+git commit -S -m "${COMMIT_MSG}" 2>&1 || git commit -m "${COMMIT_MSG}" 2>&1
+marvin_log "INFO" "Data branch committed: ${DATA_BRANCH}"
+
+# Return to main — branch stays locally until PR is merged
+git checkout main 2>/dev/null || true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 3: Push branch, open PR, auto-merge
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Source the GitHub library
-if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
-    source "$(dirname "$0")/lib/github.sh"
-    
-    if github_check_token 2>/dev/null; then
-        marvin_log "INFO" "Pushing GPG-signed commits to GitHub..."
-        github_setup_remote
-        
-        if git push origin main 2>&1; then
-            marvin_log "INFO" "Commits pushed to GitHub successfully."
-        else
-            marvin_log "WARN" "GitHub push failed — will retry next run."
-        fi
-    else
-        marvin_log "INFO" "No GitHub token — skipping push. Local-only mode."
-    fi
+if [[ ! -f "$(dirname "$0")/lib/github.sh" ]]; then
+    marvin_log "WARN" "GitHub library not found — data committed locally but not pushed."
+    marvin_log "INFO" "=== LOG EXPORT COMPLETE (local only) ==="
+    exit 0
+fi
+
+source "$(dirname "$0")/lib/github.sh"
+
+if ! github_check_token 2>/dev/null; then
+    marvin_log "INFO" "No GitHub token — data committed locally but not pushed."
+    marvin_log "INFO" "=== LOG EXPORT COMPLETE (local only) ==="
+    exit 0
+fi
+
+github_setup_remote
+
+# Push the data branch
+git checkout "${DATA_BRANCH}"
+if ! git push origin "${DATA_BRANCH}" 2>&1; then
+    marvin_log "ERROR" "Failed to push data branch ${DATA_BRANCH}"
+    git checkout main 2>/dev/null || true
+    exit 1
+fi
+git checkout main 2>/dev/null || true
+marvin_log "INFO" "Pushed branch ${DATA_BRANCH} to GitHub"
+
+PR_BODY="Automated daily data export.
+
+| | |
+|---|---|
+| **Date** | ${TODAY} |
+| **Metrics** | ${METRICS_COUNT} data points |
+| **Blog posts** | ${BLOG_COUNT} |
+| **Enhancements** | ${ENHANCE_COUNT} |
+| **Export bundle** | \`data/exports/${TODAY}.json\` |
+
+*Generated by Marvin at ${NOW}. No code was changed — data only.*"
+
+PR_RESPONSE=$(github_create_pr \
+    "${DATA_BRANCH}" \
+    "data: ${TODAY}" \
+    "${PR_BODY}" \
+    "main" 2>/dev/null || echo "")
+
+if [[ -z "$PR_RESPONSE" ]]; then
+    marvin_log "WARN" "Failed to create data PR — branch ${DATA_BRANCH} is pushed, create PR manually."
+    marvin_log "INFO" "=== LOG EXPORT COMPLETE (PR creation failed) ==="
+    exit 0
+fi
+
+PR_NUMBER=$(echo "$PR_RESPONSE" | jq -r '.number' 2>/dev/null || echo "")
+PR_URL=$(echo "$PR_RESPONSE" | jq -r '.html_url' 2>/dev/null || echo "")
+marvin_log "INFO" "Data PR #${PR_NUMBER} created: ${PR_URL}"
+
+# Auto-merge — data PRs require no human review
+if github_merge_pr "${PR_NUMBER}" "${COMMIT_MSG}"; then
+    marvin_log "INFO" "Data PR #${PR_NUMBER} merged into main"
+
+    # Sync local main with the merged commit
+    git pull --rebase origin main 2>/dev/null || git pull origin main 2>/dev/null || true
+
+    # Clean up the local branch
+    git branch -d "${DATA_BRANCH}" 2>/dev/null || true
 else
-    marvin_log "INFO" "GitHub library not found — skipping push."
+    marvin_log "WARN" "Data PR #${PR_NUMBER} could not be auto-merged (branch protection?). Merge manually: ${PR_URL}"
 fi
 
 marvin_log "INFO" "=== LOG EXPORT COMPLETE ==="
