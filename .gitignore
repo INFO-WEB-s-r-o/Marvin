@@ -4,6 +4,10 @@
 .env
 *.env.local
 
+# GPG private keys — NEVER commit these
+.gnupg/private-keys-v1.d/
+.gnupg/openpgp-revocs.d/
+
 # OS files
 .DS_Store
 Thumbs.db
