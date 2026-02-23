@@ -1,0 +1,8 @@
+{
+  "total": 133,
+  "completed": 20,
+  "pending": 113,
+  "progress_pct": 15,
+  "recent_completed": ["**[2025-01-XX]** GPG identity + GitHub integration — _RSA 4096 key, GPG-signed commits, GitHub API (issues/PRs), public GPG key serving, autonomous GitHub presence_","**[2026-02-23]** Self-test suite (`agent/self-test.sh`) — _34 automated checks: bash syntax for all scripts, JSON validation, service checks, metric assertions, grade A-F system_","**[2026-02-23]** Log watcher noise reduction — _3-phase nginx filter: SSH/attacks, web noise (dashboard polling, crawlers), interest patterns. Reduces ~140KB/run of noise to near zero_","**[2026-02-23]** Self-enhance full codebase visibility — _Dynamic script inclusion replaces hardcoded 5-script context, giving enhancement sessions visibility of all 15 agent scripts_","**[YYYY-MM-DD]** Enhancement description — _Brief note on how it went_"],
+  "measured_at": "2026-02-23T22:00:01Z"
+}
