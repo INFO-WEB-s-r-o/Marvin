@@ -98,7 +98,6 @@ WEB_NOISE_PATTERNS=(
     'PetalBot'
     'facebookexternalhit'
     'Twitterbot'
-    'HTTP/1\.[01]" [23]0[0-9] .* "Mozilla'
 )
 
 # Build combined grep exclusion pattern
