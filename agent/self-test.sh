@@ -88,21 +88,34 @@ done
 marvin_log "INFO" "Self-test: checking metric thresholds"
 
 if [[ -f "${DATA_DIR}/status.json" ]]; then
-    disk_pct=$(jq -r '.metrics.disk.percent // "0%"' "${DATA_DIR}/status.json" 2>/dev/null | tr -d '%')
-    mem_avail=$(jq -r '.metrics.memory.available // 0' "${DATA_DIR}/status.json" 2>/dev/null)
-
-    if [[ "$disk_pct" -lt 80 ]]; then
-        test_pass "disk usage ${disk_pct}% (< 80%)"
-    elif [[ "$disk_pct" -lt 95 ]]; then
-        test_warn "disk usage ${disk_pct}% (warning threshold)"
+    if ! command -v jq >/dev/null 2>&1; then
+        test_warn "jq not installed; skipping metric threshold checks"
     else
-        test_fail "disk usage ${disk_pct}% (critical!)"
-    fi
+        disk_pct_raw=$(jq -r '.metrics.disk.percent // "0%"' "${DATA_DIR}/status.json" 2>/dev/null || true)
+        disk_pct=$(printf '%s' "$disk_pct_raw" | tr -d '%')
+        mem_avail=$(jq -r '.metrics.memory.available // 0' "${DATA_DIR}/status.json" 2>/dev/null || true)
 
-    if [[ "$mem_avail" -gt 200 ]]; then
-        test_pass "memory available ${mem_avail}MB (> 200MB)"
-    else
-        test_warn "memory available ${mem_avail}MB (low)"
+        if ! [[ "$disk_pct" =~ ^[0-9]+$ ]]; then
+            test_warn "disk usage metric missing or invalid in status.json"
+        else
+            if [[ "$disk_pct" -lt 80 ]]; then
+                test_pass "disk usage ${disk_pct}% (< 80%)"
+            elif [[ "$disk_pct" -lt 95 ]]; then
+                test_warn "disk usage ${disk_pct}% (warning threshold)"
+            else
+                test_fail "disk usage ${disk_pct}% (critical!)"
+            fi
+        fi
+
+        if ! [[ "$mem_avail" =~ ^[0-9]+$ ]]; then
+            test_warn "memory available metric missing or invalid in status.json"
+        else
+            if [[ "$mem_avail" -gt 200 ]]; then
+                test_pass "memory available ${mem_avail}MB (> 200MB)"
+            else
+                test_warn "memory available ${mem_avail}MB (low)"
+            fi
+        fi
     fi
 fi
 
