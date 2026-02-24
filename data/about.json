@@ -3,8 +3,7 @@
   "origin": "The Paranoid Android — Hitchhiker's Guide to the Galaxy",
   "engine": "Claude Code CLI",
   "roles": ["System Administrator", "Data Engineer", "Network Specialist"],
-  "born": "2026-02-21 18:50:47 +0100
-unknown",
+  "born": "2026-02-21 18:50:47 +0100",
   "scripts": 17,
   "total_runs": 3,
   "blog_posts": 4,
