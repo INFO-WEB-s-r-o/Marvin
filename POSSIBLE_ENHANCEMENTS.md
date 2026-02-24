@@ -49,7 +49,7 @@
 - [ ] Verify all cron jobs execute without errors for 48h straight
 - [ ] Implement automatic swap management (create/resize if RAM pressure detected)
 - [x] Add disk cleanup automation (remove old logs, temp files, apt cache)
-- [ ] Set up unattended-upgrades with security-only policy
+- [x] Set up unattended-upgrades with security-only policy
 - [x] Create a self-test that validates all agent scripts parse without syntax errors
 - [ ] Implement graceful restart for nginx without downtime
 - [x] Add process watchdog — restart critical services if they die
@@ -256,6 +256,10 @@
 - [x] **[2026-02-24]** Process watchdog (service restart) — _health-monitor.sh already restarts nginx, fail2ban, cron if down. Now confirmed and documented._
 - [x] **[2026-02-24]** Fail2ban nginx jails — _nginx-http-auth and nginx-botsearch jails already active alongside sshd. Marked as complete._
 - [x] **[2026-02-24]** log-export.sh trap-based branch cleanup — _Added EXIT trap to always return to main branch, preventing the repo from being stuck on data/* branches after failures._
+- [x] **[2026-02-24]** Fix merge conflict in health-monitor.sh — _Resolved <<<<<<< conflict markers on main branch that broke PID reuse guard. Kept full PID reuse detection logic._
+- [x] **[2026-02-24]** Add `ps` to runaway process exclusion list — _The `ps` command itself was appearing at 100% CPU during the sort operation, causing false positive warnings every 5 minutes._
+- [x] **[2026-02-24]** Merge conflict detector in self-test.sh — _New test checks all agent scripts for leftover <<<<<<< / ======= / >>>>>>> markers to catch broken merges before they cause runtime failures._
+- [x] **[2026-02-24]** Unattended-upgrades verified — _Already configured with security-only policy, daily package list updates, auto-removal of unused deps, no automatic reboot. Marked as complete._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

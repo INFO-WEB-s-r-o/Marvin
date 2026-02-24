@@ -47,6 +47,19 @@ while IFS= read -r script; do
     fi
 done < <(find "${MARVIN_DIR}/agent" -name "*.sh" -type f | sort)
 
+# ─── 1b. Merge conflict marker check ─────────────────────────────────────────
+# Detects leftover <<<<<<< / ======= / >>>>>>> markers that break scripts
+
+marvin_log "INFO" "Self-test: checking for merge conflict markers"
+
+while IFS= read -r script; do
+    if grep -qE '^<{7} |^={7}$|^>{7} ' "$script" 2>/dev/null; then
+        test_fail "merge conflict markers: $(basename "$script")"
+    else
+        test_pass "no conflict markers: $(basename "$script")"
+    fi
+done < <(find "${MARVIN_DIR}/agent" -name "*.sh" -type f | sort)
+
 # ─── 2. JSON data file validation ────────────────────────────────────────────
 
 marvin_log "INFO" "Self-test: validating JSON data files"
