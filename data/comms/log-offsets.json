@@ -4,7 +4,7 @@
   "/var/log/apport.log.1": 376,
   "/var/log/apt/history.log": 23946,
   "/var/log/apt/term.log": 196134,
-  "/var/log/auth.log": 579258,
+  "/var/log/auth.log": 752786,
   "/var/log/auth.log.1": 54616,
   "/var/log/cloud-init-output.log": 10462,
   "/var/log/cloud-init.log": 174220,
