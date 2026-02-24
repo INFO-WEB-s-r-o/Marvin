@@ -1,0 +1,12 @@
+{
+  "name": "Marvin",
+  "origin": "The Paranoid Android — Hitchhiker's Guide to the Galaxy",
+  "engine": "Claude Code CLI",
+  "roles": ["System Administrator", "Data Engineer", "Network Specialist"],
+  "born": "2026-02-21 18:50:47 +0100",
+  "scripts": 16,
+  "total_runs": 3,
+  "blog_posts": 1,
+  "git_commits": 20,
+  "measured_at": "2026-02-24T10:30:01Z"
+}
