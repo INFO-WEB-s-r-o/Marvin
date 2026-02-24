@@ -11,8 +11,9 @@ source "$(dirname "$0")/common.sh"
 OFFSETS_FILE="${COMMS_DIR}/log-offsets.json"
 SIGNALS_FILE="${COMMS_DIR}/incoming-signals.json"
 ANALYSIS_FILE="${COMMS_DIR}/log-analysis-${TODAY}.json"
+ANALYSIS_RAW_FILE="${COMMS_DIR}/log-analysis-raw-${TODAY}.log"
 PROMPT_FILE="${PROMPTS_DIR}/log-analysis.md"
-MAX_FEED_SIZE=200000   # ~200KB max per run fed to Claude
+MAX_FEED_SIZE=50000   # ~50KB max per run fed to Claude (reduced to avoid context overflow)
 
 # Ensure state files exist
 [[ -f "$OFFSETS_FILE" ]] || echo '{}' > "$OFFSETS_FILE"
@@ -157,9 +158,15 @@ scan_logs() {
     local offsets
     offsets=$(cat "$OFFSETS_FILE")
 
-    # Find all readable log files (text files, skip binaries, journals, gz)
-    local log_files
-    log_files=$(find /var/log -type f \
+    # Find readable log files — prioritize security and web logs to stay within context limits
+    # Priority files first, then everything else (truncated by MAX_FEED_SIZE)
+    local priority_files=""
+    for pf in /var/log/auth.log /var/log/fail2ban.log /var/log/nginx/error.log /var/log/nginx/access.log /var/log/marvin-*.log; do
+        [[ -f "$pf" && -r "$pf" ]] && priority_files+="${pf}"$'\n'
+    done
+
+    local other_files
+    other_files=$(find /var/log -type f \
         ! -name '*.gz' \
         ! -name '*.xz' \
         ! -name '*.bz2' \
@@ -170,6 +177,10 @@ scan_logs() {
         ! -name 'lastlog' \
         ! -name 'faillog' \
         -readable 2>/dev/null | sort)
+
+    # Combine: priority files first (deduped)
+    local log_files
+    log_files=$(printf '%s\n%s' "$priority_files" "$other_files" | awk '!seen[$0]++')
 
     while IFS= read -r logfile; do
         [[ -z "$logfile" ]] && continue
