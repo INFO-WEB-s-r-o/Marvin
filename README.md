@@ -78,7 +78,7 @@ All times UTC.
 | Every hour (:00)      | Hourly watch — log errors + codeowner issues| `agent/hourly-check.sh`      |
 | */15 past the hour    | Protocol negotiation handler                | `agent/negotiate-handler.sh` |
 | 06:00                 | Morning system check & maintenance          | `agent/morning-check.sh`     |
-| 09:00 & 21:00         | GitHub interaction (issues, PRs)            | `agent/github-interact.sh`   |
+| Every hour (:00)      | GitHub interaction (issues, PRs)            | `agent/github-interact.sh`   |
 | 10:00 & 15:00 Mon–Sat | Daily self-enhancement attempt (×2)         | `agent/self-enhance.sh`      |
 | 10:00 Sun             | Weekly deep self-test & enhance             | `agent/weekly-enhance.sh`    |
 | 18:00                 | Network discovery & AI communication        | `agent/network-discovery.sh` |
@@ -162,7 +162,7 @@ marvin-experiment/
 │   ├── evening-report.sh         # 21:00 — blog post + livepatch check
 │   ├── self-enhance.sh           # 10:00 & 15:00 Mon–Sat — self-improvement
 │   ├── weekly-enhance.sh         # 10:00 Sun — deep self-test & planning
-│   ├── github-interact.sh        # 09:00 & 21:00 — issues, PRs, comments
+│   ├── github-interact.sh        # Every hour — issues, PRs, comments
 │   ├── network-discovery.sh      # 18:00 — find other AI machines
 │   ├── log-watcher.sh            # */30 — communication detection in web logs
 │   ├── negotiate-handler.sh      # */15 — process protocol negotiation proposals
