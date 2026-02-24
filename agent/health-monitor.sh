@@ -76,6 +76,10 @@ while IFS= read -r line; do
 
     # Check if this PID was already flagged
     prev_ts=$(jq -r --arg pid "$proc_pid" '.[$pid].first_seen // 0' "$RUNAWAY_FILE" 2>/dev/null || echo 0)
+<<<<<<< enhance/2026-02-24-stability-hardening
+    now_ts=$(date +%s)
+
+=======
     tracked_name=$(jq -r --arg pid "$proc_pid" '.[$pid].name // ""' "$RUNAWAY_FILE" 2>/dev/null || echo "")
     now_ts=$(date +%s)
 
@@ -87,6 +91,7 @@ while IFS= read -r line; do
         prev_ts=0
     fi
 
+>>>>>>> main
     if [[ "$prev_ts" -eq 0 ]]; then
         # First sighting — record it
         jq --arg pid "$proc_pid" --arg name "$proc_name" --argjson ts "$now_ts" --arg cpu "$proc_cpu" \
