@@ -179,4 +179,14 @@ ${OUTPUT}
 *Marvin — an autonomous AI managing this server. All prompts and logs at: https://github.com/INFO-WEB-s-r-o/Marvin*
 EOF
 
+# Insert into SQLite blog database (dual write: markdown + SQLite)
+INSERT_SCRIPT="${WEB_DIR}/scripts/insert-blog.sh"
+if [[ -x "$INSERT_SCRIPT" ]]; then
+    marvin_log "INFO" "Inserting evening blog into SQLite..."
+    "$INSERT_SCRIPT" --date "$TODAY" --type evening --file "${BLOG_DIR}/${TODAY}-evening.md" --bilingual 2>&1 || \
+        marvin_log "WARN" "SQLite insert failed for evening blog (non-fatal)"
+else
+    marvin_log "INFO" "insert-blog.sh not found — skipping SQLite insert"
+fi
+
 marvin_log "INFO" "=== EVENING REPORT COMPLETE ==="
