@@ -391,7 +391,7 @@ github_upload_gpg_key() {
 # Usage: marvin_sign "message" → outputs detached signature
 marvin_sign() {
     local message="$1"
-    echo "$message" | gpg --homedir "${MARVIN_DIR}/.gnupg" --armor --detach-sign 2>/dev/null
+    echo "$message" | gpg --armor --detach-sign 2>/dev/null
 }
 
 # Verify a GPG signature
@@ -399,7 +399,7 @@ marvin_sign() {
 marvin_verify() {
     local message="$1"
     local signature="$2"
-    echo "$signature" | gpg --homedir "${MARVIN_DIR}/.gnupg" --verify - <(echo "$message") 2>&1
+    echo "$signature" | gpg --verify - <(echo "$message") 2>&1
 }
 
 # Get Marvin's GPG key ID
@@ -408,7 +408,8 @@ marvin_gpg_key_id() {
     if [[ -f "$gpg_info" ]]; then
         jq -r '.key_id' "$gpg_info"
     else
-        echo ""
+        # Fallback: read key ID from gpg directly
+        gpg --list-keys --keyid-format long 2>/dev/null | grep -oP '(?<=rsa4096/)[A-F0-9]+' | head -1
     fi
 }
 
