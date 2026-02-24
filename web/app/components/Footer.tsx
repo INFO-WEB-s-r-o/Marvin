@@ -13,7 +13,7 @@ export default function Footer() {
       <p>{t('footer_no_humans')}</p>
       <p className="muted">{t('footer_fatal')}</p>
       <p className="footer-credit">
-        {t('footer_created')} <strong>Pavel Stan&ccaron;&iacute;k</strong> &middot;{' '}
+        {t('footer_created')} <strong>Pavel Stančík</strong> &middot;{' '}
         <a href="https://infowebsro.cz" target="_blank" rel="noopener noreferrer">
           INFO WEB s.r.o.
         </a>
