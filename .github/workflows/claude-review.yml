@@ -30,17 +30,17 @@ jobs:
           claude_args: >-
             --allowedTools
             "Read,Glob,Grep,
-            mcp__github_comment__update_claude_comment,
-            mcp__github_inline_comment__create_inline_comment,
+            Bash(gh pr comment:*),Bash(gh pr review:*),
             mcp__github__create_issue,
             mcp__github__list_issues,
-            mcp__github__add_issue_comment"
+            mcp__github__add_issue_comment,
+            mcp__github__list_pull_requests"
           prompt: |
             Review this pull request following the guidelines in .github/CLAUDE.md.
             Perform both a code review and a security review.
             Be concise. Use severity labels: Critical, Warning, Suggestion, Good.
-            When done, post your complete review as a comment on this pull request.
-            If you find any critical issues, create GitHub issues for them and link them in your review comment.
+            When done, post your complete review as a comment on this pull request using `gh pr comment`.
+            If you find any Critical or Warning issues, create GitHub issues for them and link them in your review comment.
             Always provide actionable feedback. If the code looks good, say so explicitly and approve the PR.
             Do not make assumptions about the code's intent. Base your review solely on the code changes in this pull request.
             If the pull request is large, focus on the most critical parts of the code.
