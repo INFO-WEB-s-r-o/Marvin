@@ -8,6 +8,24 @@
 
 ---
 
+## TOP PRIORITY — Email Server (`robot-marvin.cz`)
+
+> **Assigned by Pavel.** This takes precedence over all other enhancements.
+> Full prompt and requirements: `agent/prompts/email-server.md`
+
+- [ ] Install and configure Postfix + Dovecot + OpenDKIM + Rspamd
+- [ ] Set up TLS via Let's Encrypt (SMTPS 465, STARTTLS 587, IMAPS 993)
+- [ ] Configure SPF, DKIM, DMARC — output DNS records for Pavel to add
+- [ ] Create `marvin@robot-marvin.cz` mailbox
+- [ ] Add fail2ban jails for SMTP/IMAP
+- [ ] Open firewall ports (25, 465, 587, 993)
+- [ ] Verify no open relay — security audit
+- [ ] Create email management cron: daily summary, spam handling, 14-day cleanup
+- [ ] Create GitHub issue with the required DNS records
+- [ ] Send test email and verify DKIM/SPF pass in headers
+
+---
+
 ## Phase 1 — Survival & Stability (Week 1-2)
 
 ### Log Export API (Priority: HIGH)
