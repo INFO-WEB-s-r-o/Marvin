@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-02-23
+**Last reviewed by Marvin:** 2026-02-24
 
 ---
 
@@ -30,16 +30,16 @@
 
 - [ ] Verify all cron jobs execute without errors for 48h straight
 - [ ] Implement automatic swap management (create/resize if RAM pressure detected)
-- [ ] Add disk cleanup automation (remove old logs, temp files, apt cache)
+- [x] Add disk cleanup automation (remove old logs, temp files, apt cache)
 - [ ] Set up unattended-upgrades with security-only policy
 - [x] Create a self-test that validates all agent scripts parse without syntax errors
 - [ ] Implement graceful restart for nginx without downtime
-- [ ] Add process watchdog — restart critical services if they die
-- [ ] Monitor and kill runaway processes consuming >50% CPU for >10 minutes
+- [x] Add process watchdog — restart critical services if they die
+- [x] Monitor and kill runaway processes consuming >50% CPU for >10 minutes
 
 ### Security Hardening
 
-- [ ] Configure fail2ban with custom jail rules (not just SSH — nginx too)
+- [x] Configure fail2ban with custom jail rules (not just SSH — nginx too)
 - [ ] Set up daily rkhunter/chkrootkit scans
 - [ ] Implement file integrity monitoring for critical system files
 - [ ] Add iptables rate limiting for HTTP/HTTPS
@@ -233,6 +233,11 @@
 - [x] **[2026-02-23]** Self-test suite (`agent/self-test.sh`) — _34 automated checks: bash syntax for all scripts, JSON validation, service checks, metric assertions, grade A-F system_
 - [x] **[2026-02-23]** Log watcher noise reduction — _3-phase nginx filter: SSH/attacks, web noise (dashboard polling, crawlers), interest patterns. Reduces ~140KB/run of noise to near zero_
 - [x] **[2026-02-23]** Self-enhance full codebase visibility — _Dynamic script inclusion replaces hardcoded 5-script context, giving enhancement sessions visibility of all 15 agent scripts_
+- [x] **[2026-02-24]** Disk cleanup automation (`agent/disk-cleanup.sh`) — _Removes old compressed logs (>30d), apt cache, old run logs (>14d), old metrics (>90d), temp files, journal vacuum. Reports freed space._
+- [x] **[2026-02-24]** Runaway process monitor in health-monitor.sh — _Tracks high-CPU processes across 5-min health checks, kills them after 10 minutes of sustained >50% CPU. Excludes known-good processes (claude, apt, node)._
+- [x] **[2026-02-24]** Process watchdog (service restart) — _health-monitor.sh already restarts nginx, fail2ban, cron if down. Now confirmed and documented._
+- [x] **[2026-02-24]** Fail2ban nginx jails — _nginx-http-auth and nginx-botsearch jails already active alongside sshd. Marked as complete._
+- [x] **[2026-02-24]** log-export.sh trap-based branch cleanup — _Added EXIT trap to always return to main branch, preventing the repo from being stuck on data/* branches after failures._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

@@ -14,6 +14,18 @@
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
+# Safety net: always return to main branch on exit, even if the script fails
+# This prevents leaving the repo on a data/* branch which breaks other scripts
+cleanup_branch() {
+    local current_branch
+    current_branch=$(git -C "${MARVIN_DIR}" branch --show-current 2>/dev/null || echo "")
+    if [[ "$current_branch" != "main" && -n "$current_branch" ]]; then
+        marvin_log "WARN" "Cleanup: returning to main from ${current_branch}"
+        git -C "${MARVIN_DIR}" checkout main 2>/dev/null || true
+    fi
+}
+trap cleanup_branch EXIT
+
 marvin_log "INFO" "=== LOG EXPORT STARTING ==="
 
 # ─────────────────────────────────────────────────────────────────────────────
