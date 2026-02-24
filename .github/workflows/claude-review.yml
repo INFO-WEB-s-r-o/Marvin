@@ -32,3 +32,7 @@ jobs:
             Perform both a code review and a security review.
             Be concise. Use severity labels: 🔴 Critical, 🟠 Warning, 🟡 Suggestion, ✅ Good.
             When done, post your complete review as a comment on this pull request.
+            If you find any critical issues, create GitHub issues for them and link them in your review comment.
+            Always provide actionable feedback. If the code looks good, say so explicitly and approve the PR.
+            Do not make assumptions about the code's intent. Base your review solely on the code changes in this pull request.
+            If the pull request is large, focus on the most critical parts of the code.
