@@ -27,12 +27,40 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           show_full_output: true
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: >-
+            --allowedTools
+            "Read,Glob,Grep,
+            mcp__github_comment__update_claude_comment,
+            mcp__github_inline_comment__create_inline_comment,
+            mcp__github__create_issue,
+            mcp__github__list_issues,
+            mcp__github__add_issue_comment"
           prompt: |
             Review this pull request following the guidelines in .github/CLAUDE.md.
             Perform both a code review and a security review.
-            Be concise. Use severity labels: 🔴 Critical, 🟠 Warning, 🟡 Suggestion, ✅ Good.
+            Be concise. Use severity labels: Critical, Warning, Suggestion, Good.
             When done, post your complete review as a comment on this pull request.
             If you find any critical issues, create GitHub issues for them and link them in your review comment.
             Always provide actionable feedback. If the code looks good, say so explicitly and approve the PR.
             Do not make assumptions about the code's intent. Base your review solely on the code changes in this pull request.
             If the pull request is large, focus on the most critical parts of the code.
+
+  security-review:
+    timeout-minutes: 15
+    if: |
+      (github.event_name == 'pull_request')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+
+      - name: Run Claude Security Review
+        uses: anthropics/claude-code-security-review@main
+        with:
+          claude-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
