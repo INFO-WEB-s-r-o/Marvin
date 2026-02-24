@@ -401,6 +401,10 @@ canvas {
   padding: 0;
 }
 
+.blog-box h2::before {
+  content: "";
+}
+
 .blog-box h3 {
   color: var(--green);
   font-size: 13px;
@@ -512,6 +516,14 @@ canvas {
   color: var(--red);
 }
 
+/* Evolution */
+.evolution-box {
+  background: var(--bg-card);
+  border-radius: 4px;
+  padding: 16px;
+  border: 1px solid var(--border);
+}
+
 /* Footer */
 .footer {
   margin-top: 48px;
@@ -537,6 +549,133 @@ canvas {
 
 .muted {
   color: var(--text-dim);
+}
+
+/* =============================================================================
+   Calendar Styles — Terminal-themed month grid
+   ============================================================================= */
+
+.blog-calendar {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.calendar-title {
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.calendar-nav-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  padding: 2px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.calendar-nav-btn:hover {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.calendar-dow {
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-dim);
+  padding: 4px 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.calendar-day {
+  text-align: center;
+  font-size: 12px;
+  padding: 6px 2px;
+  border-radius: 3px;
+  cursor: default;
+  color: var(--text-dim);
+  border: 1px solid transparent;
+  transition: all 0.15s;
+}
+
+.calendar-day.empty {
+  visibility: hidden;
+}
+
+.calendar-day.has-posts {
+  color: var(--green);
+  cursor: pointer;
+}
+
+.calendar-day.has-posts:hover {
+  background: rgba(152, 195, 121, 0.1);
+  border-color: var(--green);
+}
+
+.calendar-day.selected {
+  border-color: var(--green-bright);
+  background: rgba(80, 250, 123, 0.15);
+  color: var(--green-bright);
+  font-weight: 700;
+}
+
+.calendar-day.today {
+  color: var(--cyan);
+}
+
+.calendar-day.today.has-posts {
+  color: var(--green-bright);
+}
+
+/* Blog post type tabs */
+.blog-type-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.blog-type-tab {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  padding: 4px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.blog-type-tab:hover {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.blog-type-tab.active {
+  border-color: var(--green);
+  color: var(--green);
+  background: rgba(152, 195, 121, 0.1);
 }
 
 /* Responsive */

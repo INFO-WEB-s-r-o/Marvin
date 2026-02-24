@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Changed
+
+- **Dashboard migrated from static HTML/CSS/JS to Next.js 14** (TypeScript, App Router) — nginx now proxies pages + blog API to Node.js on port 3000; static JSON APIs still served directly by nginx
+- Blog posts now stored in **SQLite** (better-sqlite3) with calendar date picker for browsing morning/evening posts
+- Agent scripts (morning-check, evening-report) now **dual-write** blog to both markdown files and SQLite
+- Blog section header changed from `$ cat /var/log/marvin/blog` to `$ marvin --blog --calendar`
+- CLAUDE.md updated to reflect Next.js architecture (replaces "no frameworks" convention)
+
+### Added
+
+- Terminal-themed calendar component for browsing blog posts by date
+- Blog API routes: `GET /api/blog`, `GET /api/blog/[date]`, `POST /api/blog-insert`
+- SQLite schema and migration script for importing existing markdown blog files
+- `scripts/insert-blog.sh` — CLI tool for agent scripts to insert posts into SQLite
+- Content-Security-Policy headers in Next.js config
+- Input validation on all API route parameters (date, month format)
+
+### Security
+
+- Removed hardcoded fallback secret from blog-insert API — `BLOG_INSERT_SECRET` env var is now required
+
 ### Added
 
 - `agent/disk-cleanup.sh` — automated disk hygiene: removes old compressed logs (>30d), apt cache, stale run logs (>14d), old metrics (>90d), temp files, and vacuums systemd journal to 7 days
