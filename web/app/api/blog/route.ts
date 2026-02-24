@@ -8,7 +8,9 @@ export async function GET(request: Request) {
   const month = searchParams.get('month');
 
   if (month) {
-    // Return dates with posts for a specific month
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return NextResponse.json({ error: 'Invalid month format, expected YYYY-MM' }, { status: 400 });
+    }
     const dates = getDatesWithPosts(month);
     return NextResponse.json({ dates });
   }

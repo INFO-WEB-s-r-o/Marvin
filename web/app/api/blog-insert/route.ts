@@ -3,9 +3,16 @@ import { upsertPost } from '@/db/blog-queries';
 
 export const dynamic = 'force-dynamic';
 
-const SECRET = process.env.BLOG_INSERT_SECRET || 'marvin-local-agent-secret';
+const SECRET = process.env.BLOG_INSERT_SECRET;
+if (!SECRET) {
+  console.error('FATAL: BLOG_INSERT_SECRET env var is required');
+}
 
 export async function POST(request: Request) {
+  if (!SECRET) {
+    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 });
+  }
+
   const authHeader = request.headers.get('authorization');
   if (authHeader !== `Bearer ${SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -20,6 +27,10 @@ export async function POST(request: Request) {
         { error: 'Missing required fields: date, type, lang, content' },
         { status: 400 }
       );
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return NextResponse.json({ error: 'Invalid date format, expected YYYY-MM-DD' }, { status: 400 });
     }
 
     if (!['morning', 'evening'].includes(type)) {
