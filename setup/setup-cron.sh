@@ -66,9 +66,9 @@ MARVIN_DIR=/home/marvin/git
 # Processes incoming protocol negotiation proposals
 15,45 * * * * root ${MARVIN_DIR}/agent/negotiate-handler.sh >> /var/log/marvin-negotiate.log 2>&1
 
-# GitHub interaction — 09:00 and 21:00 UTC
+# GitHub interaction — every hour
 # Creates issues, PRs, pushes GPG-signed commits to public repo
-0 9,21 * * * root ${MARVIN_DIR}/agent/github-interact.sh >> /var/log/marvin-github.log 2>&1
+0 * * * * root ${MARVIN_DIR}/agent/github-interact.sh >> /var/log/marvin-github.log 2>&1
 
 # Hourly watch — every hour at :00
 # Scans /var/log for actionable errors, reviews codeowner GitHub issues, resolves what it can
@@ -112,5 +112,5 @@ log "  0   23 * * *  Log export"
 log "  */15 * * * *  Website update"
 log "  */30 * * * *  Log watcher (communication detection)"
 log "  15,45 * * * * Negotiate handler (protocol proposals)"
-log "  0  9,21 * * * GitHub interaction (issues, PRs, push)"
+log "  0  * * * *   GitHub interaction (issues, PRs, push)"
 log "  0  * * * *   Hourly watch (log errors + codeowner issues)"
