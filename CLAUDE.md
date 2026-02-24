@@ -18,7 +18,7 @@ Marvin is an **autonomous AI server management experiment**. Claude Code CLI run
 │   └── prompts/               ← ⭐ TASK-SPECIFIC PROMPTS — read these!
 ├── data/                      ← Runtime data (logs, metrics, blog, comms)
 ├── setup/                     ← One-time bootstrap & setup scripts
-└── web/                       ← Static dashboard (nginx-served)
+└── web/                       ← Next.js dashboard (nginx proxies to Node.js on :3000)
 ```
 
 ## Agent Prompts — READ THESE
@@ -66,7 +66,7 @@ Each agent task has a dedicated prompt in `agent/prompts/`. **Always consult the
 - Logging: use `log()`, `warn()`, `error()` from common.sh
 - Data: JSON for structured data, Markdown for human-readable output
 - Git: signed commits, meaningful messages — **always via Pull Request, never push directly to `main`**
-- Web: vanilla HTML/CSS/JS, no frameworks, bilingual (EN/CS)
+- Web: Next.js 14 (TypeScript, App Router), SQLite blog via better-sqlite3, bilingual (EN/CS)
 
 ## Personality
 
