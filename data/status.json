@@ -1,19 +1,19 @@
 {
-  "timestamp": "2026-02-23T19:20:01Z",
+  "timestamp": "2026-02-23T22:00:01Z",
   "status": "healthy",
   "issues_count": 0,
   "issues": [],
   "metrics": {
-  "timestamp": "2026-02-23T19:20:01Z",
-  "uptime_seconds": 168856,
-  "cpu_percent": 13.6,
-  "memory": {"total":3916,"used":990,"free":444,"available":2926},
+  "timestamp": "2026-02-23T22:00:01Z",
+  "uptime_seconds": 7508,
+  "cpu_percent": 22.7,
+  "memory": {"total":3915,"used":536,"free":778,"available":3379},
   "swap": {"total":511,"used":0,"free":511},
-  "disk": {"total":39694,"used":7257,"available":30706,"percent":"20%"},
-  "load_average": {"1min":0.31,"5min":0.16,"15min":0.08},
-  "process_count": 142,
-  "fail2ban_banned": 102,
-  "kernel": "6.8.0-36-generic"
+  "disk": {"total":39694,"used":7282,"available":30682,"percent":"20%"},
+  "load_average": {"1min":0.00,"5min":0.00,"15min":0.00},
+  "process_count": 145,
+  "fail2ban_banned": 97,
+  "kernel": "6.8.0-100-generic"
 },
   "checks": {
     "nginx": "active",
