@@ -44,4 +44,3 @@ jobs:
             Always provide actionable feedback. If the code looks good, say so explicitly and approve the PR.
             Do not make assumptions about the code's intent. Base your review solely on the code changes in this pull request.
             If the pull request is large, focus on the most critical parts of the code.
-            TESTING: After posting your review comment, create a test GitHub issue titled "[Test] Verify issue creation from Claude review action" with the body "This is a test issue to verify that the Claude Code Review GitHub Action can create issues. This issue can be closed immediately." and label it "test". Then close the issue immediately after creating it.
