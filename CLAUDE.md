@@ -33,7 +33,7 @@ Each agent task has a dedicated prompt in `agent/prompts/`. **Always consult the
 | `agent/prompts/enhance.md`      | Self-improvement of own code                | 10:00 & 15:00 UTC (Mon-Sat) |
 | `agent/prompts/health.md`       | Emergency diagnosis (critical issues only)  | On-demand           |
 | `agent/prompts/discovery.md`    | Find other AI-managed servers               | 18:00 UTC           |
-| `agent/prompts/github.md`       | Create issues, PRs, comments on GitHub      | 09:00 & 21:00 UTC   |
+| `agent/prompts/github.md`       | Create issues, PRs, comments on GitHub      | Every hour (:00)    |
 | `agent/prompts/sync-learn.md`   | Process incoming git changes                | After morning pull  |
 | `agent/prompts/negotiate.md`    | Protocol negotiation with peers             | \*/15 past the hour |
 | `agent/prompts/log-analysis.md` | Analyze /var/log system logs                | \*/30               |

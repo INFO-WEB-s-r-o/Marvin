@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Marvin — GitHub Interaction Agent (runs via cron, e.g. 2x daily)
+# Marvin — GitHub Interaction Agent (runs via cron, every hour)
 # =============================================================================
 # Autonomous GitHub activity:
 #   - Pushes GPG-signed commits to the public repo
@@ -9,7 +9,7 @@
 #   - Comments on existing issues with status updates
 #   - All actions carry GPG signatures as proof of Marvin's authorship
 #
-# Cron: 0 9,21 * * *  (09:00 and 21:00 UTC — after morning check and evening report)
+# Cron: 0 * * * *  (every hour at :00)
 # =============================================================================
 
 set -euo pipefail
