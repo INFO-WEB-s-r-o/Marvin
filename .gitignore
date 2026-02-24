@@ -27,3 +27,9 @@ node_modules/
 # and are already bundled into data/exports/ for the public API.
 data/logs/*
 !data/logs/.gitkeep
+
+# Next.js build output
+web/.next/
+
+# SQLite databases
+*.db

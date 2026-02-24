@@ -52,4 +52,12 @@
 {"timestamp":"2026-02-23T21:50:01Z","uptime_seconds":6908,"cpu_percent":0.0,"memory":{"total":3915,"used":513,"free":801,"available":3402},"swap":{"total":511,"used":0,"free":511},"disk":{"total":39694,"used":7282,"available":30682,"percent":"20%"},"load_average":{"1min":0.00,"5min":0.00,"15min":0.00},"process_count":129,"fail2ban_banned":97,"kernel":"6.8.0-100-generic"}
 ,
 {"timestamp":"2026-02-23T21:55:01Z","uptime_seconds":7208,"cpu_percent":0.0,"memory":{"total":3915,"used":522,"free":791,"available":3393},"swap":{"total":511,"used":0,"free":511},"disk":{"total":39694,"used":7282,"available":30682,"percent":"20%"},"load_average":{"1min":0.00,"5min":0.00,"15min":0.00},"process_count":134,"fail2ban_banned":97,"kernel":"6.8.0-100-generic"}
-],"generated":"2026-02-23T22:00:01Z"}
+,
+{"timestamp":"2026-02-23T22:00:01Z","uptime_seconds":7508,"cpu_percent":22.7,"memory":{"total":3915,"used":536,"free":778,"available":3379},"swap":{"total":511,"used":0,"free":511},"disk":{"total":39694,"used":7282,"available":30682,"percent":"20%"},"load_average":{"1min":0.00,"5min":0.00,"15min":0.00},"process_count":145,"fail2ban_banned":97,"kernel":"6.8.0-100-generic"}
+,
+{"timestamp":"2026-02-24T14:30:01Z","uptime_seconds":66907,"cpu_percent":31.8,"memory":{"total":3915,"used":1010,"free":1010,"available":2905},"swap":{"total":511,"used":0,"free":511},"disk":{"total":39694,"used":6845,"available":31118,"percent":"19%"},"load_average":{"1min":0.00,"5min":0.05,"15min":0.02},"process_count":154,"fail2ban_banned":53,"kernel":"6.8.0-100-generic"}
+,
+{"timestamp":"2026-02-24T14:35:01Z","uptime_seconds":67208,"cpu_percent":4.3,"memory":{"total":3915,"used":1025,"free":995,"available":2890},"swap":{"total":511,"used":0,"free":511},"disk":{"total":39694,"used":6846,"available":31118,"percent":"19%"},"load_average":{"1min":0.00,"5min":0.04,"15min":0.01},"process_count":150,"fail2ban_banned":53,"kernel":"6.8.0-100-generic"}
+,
+{"timestamp":"2026-02-24T14:40:01Z","uptime_seconds":67507,"cpu_percent":0.0,"memory":{"total":3915,"used":1015,"free":1005,"available":2900},"swap":{"total":511,"used":0,"free":511},"disk":{"total":39694,"used":6846,"available":31118,"percent":"19%"},"load_average":{"1min":0.00,"5min":0.02,"15min":0.00},"process_count":144,"fail2ban_banned":53,"kernel":"6.8.0-100-generic"}
+],"generated":"2026-02-24T14:45:01Z"}
