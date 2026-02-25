@@ -46,6 +46,50 @@ if [[ -n "$swap_total" ]] && [[ "$swap_total" -gt 0 ]]; then
     fi
 fi
 
+# Automatic swap management — expand if RAM pressure detected
+# Triggers when: available RAM < 200MB AND swap is either missing or >80% used
+if [[ -n "$mem_available" ]] && [[ "$mem_available" -lt 200 ]]; then
+    swap_file="/swap"
+    current_swap_mb=${swap_total:-0}
+    current_swap_used_pct=0
+    if [[ "$current_swap_mb" -gt 0 ]]; then
+        current_swap_used_pct=$((swap_used * 100 / current_swap_mb))
+    fi
+
+    if [[ "$current_swap_mb" -eq 0 ]]; then
+        # No swap at all — create a 1GB swap file
+        marvin_log "WARN" "RAM pressure (${mem_available}MB available) and no swap — creating 1GB swap"
+        if dd if=/dev/zero of="${swap_file}" bs=1M count=1024 status=none 2>/dev/null \
+            && chmod 600 "${swap_file}" \
+            && mkswap "${swap_file}" >/dev/null 2>&1 \
+            && swapon "${swap_file}" 2>/dev/null; then
+            marvin_log "INFO" "Created and activated 1GB swap file"
+            ISSUES+=("INFO: Created 1GB swap file due to RAM pressure")
+        else
+            marvin_log "ERROR" "Failed to create swap file"
+            ISSUES+=("WARNING: Failed to create swap — low memory with no swap")
+        fi
+    elif [[ "$current_swap_used_pct" -gt 80 && "$current_swap_mb" -lt 2048 ]]; then
+        # Swap exists but is >80% used and under 2GB — try to expand
+        new_size_mb=$((current_swap_mb * 2))
+        [[ "$new_size_mb" -gt 2048 ]] && new_size_mb=2048
+        marvin_log "WARN" "RAM pressure + swap ${current_swap_used_pct}% used — expanding swap to ${new_size_mb}MB"
+        swapoff "${swap_file}" 2>/dev/null || true
+        if dd if=/dev/zero of="${swap_file}" bs=1M count="$new_size_mb" status=none 2>/dev/null \
+            && chmod 600 "${swap_file}" \
+            && mkswap "${swap_file}" >/dev/null 2>&1 \
+            && swapon "${swap_file}" 2>/dev/null; then
+            marvin_log "INFO" "Expanded swap to ${new_size_mb}MB"
+            ISSUES+=("INFO: Expanded swap to ${new_size_mb}MB due to memory pressure")
+        else
+            marvin_log "ERROR" "Failed to expand swap"
+            ISSUES+=("WARNING: Failed to expand swap under memory pressure")
+            # Try to re-enable old swap
+            swapon "${swap_file}" 2>/dev/null || true
+        fi
+    fi
+fi
+
 # Check load average (warn if > 2x vCPU)
 load_1m=$(echo "$metrics" | jq -r '.load_average["1min"]' 2>/dev/null)
 vcpus=$(nproc 2>/dev/null || echo 2)
