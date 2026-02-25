@@ -133,37 +133,65 @@ FOOTER="
 ---
 *Written by Marvin at ${NOW} — Day ${DAY_NUM}*"
 
-# Split at ---CZECH--- separator
-if echo "$OUTPUT" | grep -q '---CZECH---'; then
+# Check if Claude already wrote the blog files directly using its own tools.
+# When Claude uses Write/Edit tools, $OUTPUT is just a summary — not the blog.
+# Detect this by checking if .en.md and .cs.md already have markdown headings.
+CLAUDE_WROTE_FILES=false
+EN_FILE="${BLOG_DIR}/${TODAY}-evening.en.md"
+CS_FILE="${BLOG_DIR}/${TODAY}-evening.cs.md"
+
+if [[ -f "$EN_FILE" && -f "$CS_FILE" ]]; then
+    if head -1 "$EN_FILE" | grep -q '^# ' && head -1 "$CS_FILE" | grep -q '^# '; then
+        CLAUDE_WROTE_FILES=true
+        marvin_log "INFO" "Claude created blog files directly — preserving those"
+    fi
+fi
+
+if [[ "$CLAUDE_WROTE_FILES" == "true" ]]; then
+    # Claude already wrote the individual language files — use them as-is
+    EN_CONTENT=$(cat "$EN_FILE")
+    CS_CONTENT=$(cat "$CS_FILE")
+elif echo "$OUTPUT" | grep -q '---CZECH---'; then
+    # Claude returned blog content in stdout with bilingual separator
     EN_CONTENT=$(echo "$OUTPUT" | sed '/---CZECH---/,$d')
     CS_CONTENT=$(echo "$OUTPUT" | sed '1,/---CZECH---/d')
 
-    cat > "${BLOG_DIR}/${TODAY}-evening.en.md" << EOF
+    cat > "$EN_FILE" << EOF
 ${EN_CONTENT}
 ${FOOTER}
 EOF
 
-    cat > "${BLOG_DIR}/${TODAY}-evening.cs.md" << EOF
+    cat > "$CS_FILE" << EOF
 ${CS_CONTENT}
 ${FOOTER}
 EOF
 else
-    # No separator — save as English only, log warning
+    # No separator, no pre-written files — save as English only
     marvin_log "WARN" "Evening blog missing ---CZECH--- separator, saving as EN only"
     EN_CONTENT="$OUTPUT"
     CS_CONTENT=""
 
-    cat > "${BLOG_DIR}/${TODAY}-evening.en.md" << EOF
+    cat > "$EN_FILE" << EOF
 ${OUTPUT}
 ${FOOTER}
 EOF
 fi
 
-# Keep combined file for backward compatibility
-cat > "${BLOG_DIR}/${TODAY}-evening.md" << EOF
-${OUTPUT}
+# Keep combined file for backward compatibility (always rebuild from sources)
+if [[ -n "$CS_CONTENT" ]]; then
+    cat > "${BLOG_DIR}/${TODAY}-evening.md" << EOF
+${EN_CONTENT}
+
+---CZECH---
+
+${CS_CONTENT}
+EOF
+else
+    cat > "${BLOG_DIR}/${TODAY}-evening.md" << EOF
+${EN_CONTENT}
 ${FOOTER}
 EOF
+fi
 
 # Create a combined daily post
 cat > "${BLOG_DIR}/${TODAY}.md" << EOF
@@ -173,7 +201,7 @@ $(cat "${MORNING_REPORT}" 2>/dev/null || echo "*(No morning report)*")
 
 ---
 
-${OUTPUT}
+${EN_CONTENT}
 
 ---
 *Marvin — an autonomous AI managing this server. All prompts and logs at: https://github.com/INFO-WEB-s-r-o/Marvin*

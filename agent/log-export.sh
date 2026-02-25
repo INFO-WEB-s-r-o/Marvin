@@ -21,7 +21,12 @@ cleanup_branch() {
     current_branch=$(git -C "${MARVIN_DIR}" branch --show-current 2>/dev/null || echo "")
     if [[ "$current_branch" != "main" && -n "$current_branch" ]]; then
         marvin_log "WARN" "Cleanup: returning to main from ${current_branch}"
+        # Stash any uncommitted changes first — other cron scripts (health-monitor,
+        # update-website) modify data/ files continuously, so `git checkout main`
+        # will fail without this.
+        git -C "${MARVIN_DIR}" stash --quiet 2>/dev/null || true
         git -C "${MARVIN_DIR}" checkout main 2>/dev/null || true
+        git -C "${MARVIN_DIR}" stash pop --quiet 2>/dev/null || true
     fi
 }
 trap cleanup_branch EXIT
@@ -103,8 +108,11 @@ if [[ -n "$DIRTY_CODE" ]]; then
     marvin_log "WARN" "${DIRTY_CODE}"
 fi
 
-# Ensure we start from a clean main
+# Ensure we start from a clean main — stash first since other cron jobs
+# may have modified data/ files since the last checkout
+git stash --quiet 2>/dev/null || true
 git checkout main 2>/dev/null || true
+git stash pop --quiet 2>/dev/null || true
 
 # Pick a unique branch name
 DATA_BRANCH="data/${TODAY}"
@@ -159,14 +167,18 @@ fi
 
 github_setup_remote
 
-# Push the data branch
+# Push the data branch — stash/unstash around checkout to handle
+# concurrent data/ modifications from other cron jobs
+git stash --quiet 2>/dev/null || true
 git checkout "${DATA_BRANCH}"
 if ! git push origin "${DATA_BRANCH}" 2>&1; then
     marvin_log "ERROR" "Failed to push data branch ${DATA_BRANCH}"
     git checkout main 2>/dev/null || true
+    git stash pop --quiet 2>/dev/null || true
     exit 1
 fi
 git checkout main 2>/dev/null || true
+git stash pop --quiet 2>/dev/null || true
 marvin_log "INFO" "Pushed branch ${DATA_BRANCH} to GitHub"
 
 PR_BODY="Automated daily data export.
