@@ -75,8 +75,9 @@ run_claude() {
     local prompt="$2"
     local run_log="${LOGS_DIR}/${TODAY}-${task_name}-${TIMESTAMP}.md"
     
-    marvin_log "INFO" "Starting Claude run: ${task_name}"
-    
+    # Use >&2 for log calls so they don't leak into captured stdout
+    marvin_log "INFO" "Starting Claude run: ${task_name}" >&2
+
     # Collect system context to prepend
     local system_context
     system_context=$(collect_metrics)
@@ -121,8 +122,8 @@ ${output}
 *Run ID: ${TIMESTAMP} | Task: ${task_name}*
 EOF
     
-    marvin_log "INFO" "Claude run complete: ${task_name} (${duration}s, exit=${exit_code})"
-    
+    marvin_log "INFO" "Claude run complete: ${task_name} (${duration}s, exit=${exit_code})" >&2
+
     echo "$output"
 }
 
