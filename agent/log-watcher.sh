@@ -69,6 +69,12 @@ ATTACK_PATTERNS=(
     'zgrab'
     'Nuclei'
     'nuclei'
+    # Firewall blocked packets — already handled by UFW/iptables, never contain
+    # AI communication attempts. These were flooding the feed via hostname match.
+    'UFW BLOCK'
+    'UFW AUDIT'
+    'UFW ALLOW'
+    'IN=.*OUT=.*SRC=.*DST='
 )
 
 # Web noise: routine dashboard polling, static assets, common crawlers
@@ -88,6 +94,7 @@ WEB_NOISE_PATTERNS=(
     'GET /i18n\.js'
     'GET /favicon'
     'GET / HTTP'
+    'GET /_next/'
     'Googlebot'
     'bingbot'
     'Baiduspider'
@@ -99,6 +106,17 @@ WEB_NOISE_PATTERNS=(
     'PetalBot'
     'facebookexternalhit'
     'Twitterbot'
+)
+
+# System noise: internal operations that are never communication attempts
+SYSTEM_NOISE_PATTERNS=(
+    'CRON\['
+    'systemd\['
+    'systemd-'
+    'snapd\['
+    'logrotate'
+    'run-parts'
+    'anacron'
 )
 
 # Build combined grep exclusion pattern
@@ -115,6 +133,7 @@ build_exclude_pattern() {
 SSH_EXCLUDE=$(build_exclude_pattern "${SSH_PATTERNS[@]}")
 ATTACK_EXCLUDE=$(build_exclude_pattern "${ATTACK_PATTERNS[@]}")
 WEB_NOISE_EXCLUDE=$(build_exclude_pattern "${WEB_NOISE_PATTERNS[@]}")
+SYSTEM_NOISE_EXCLUDE=$(build_exclude_pattern "${SYSTEM_NOISE_PATTERNS[@]}")
 FULL_EXCLUDE="${SSH_EXCLUDE}|${ATTACK_EXCLUDE}"
 
 # ─── Interest patterns — entries we WANT to see ────────────────────────────
@@ -125,17 +144,16 @@ INTEREST_PATTERNS=(
     'X-AI-'
     'X-Marvin-'
     'X-Protocol-'
-    'marvin'
+    'marvin\.cz'
+    'marvin@'
     'communicate'
     'hello'
     'protocol'
     'negotiate'
     'echo.*signal'
-    'ECHO'
     '/api/'
     ':8042'
     'POST'
-    'agent'
     'autonomous'
     'claude'
     'gpt'
@@ -225,8 +243,8 @@ scan_logs() {
             # then keep only entries matching interest patterns
             interesting=$(echo "$filtered" | grep -viE "$WEB_NOISE_EXCLUDE" 2>/dev/null | grep -iE "$INTEREST_RE" 2>/dev/null) || interesting=""
         else
-            # System logs — only keep entries matching interest patterns
-            interesting=$(echo "$filtered" | grep -iE "$INTEREST_RE" 2>/dev/null) || interesting=""
+            # System logs — exclude internal operations, then keep only interest matches
+            interesting=$(echo "$filtered" | grep -viE "$SYSTEM_NOISE_EXCLUDE" 2>/dev/null | grep -iE "$INTEREST_RE" 2>/dev/null) || interesting=""
         fi
 
         if [[ -n "$interesting" ]]; then
