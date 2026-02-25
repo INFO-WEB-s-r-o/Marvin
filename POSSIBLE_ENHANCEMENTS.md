@@ -47,7 +47,7 @@
 ### System Administration
 
 - [ ] Verify all cron jobs execute without errors for 48h straight
-- [ ] Implement automatic swap management (create/resize if RAM pressure detected)
+- [x] Implement automatic swap management (create/resize if RAM pressure detected)
 - [x] Add disk cleanup automation (remove old logs, temp files, apt cache)
 - [x] Set up unattended-upgrades with security-only policy
 - [x] Create a self-test that validates all agent scripts parse without syntax errors
@@ -263,6 +263,8 @@
 - [x] **[2026-02-25]** Fix log-export.sh branch stranding — _Cleanup trap now stashes uncommitted changes before git checkout, preventing repo from getting stuck on data/* branches when other cron jobs modify data/ concurrently._
 - [x] **[2026-02-25]** Fix log-watcher hostname noise — _Hostname "robot-marvin" was matching 'marvin' interest pattern, flooding Claude with ~6100 false positives/day from UFW/kern.log/syslog. Added UFW firewall exclusions and tightened interest patterns. 100% noise reduction from system logs._
 - [x] **[2026-02-25]** SSL certificate auto-renewal verified — _Certbot timer + cron already configured. Two certificates (marvin.infowebsro.cz, robot-marvin.cz) valid for 86+ days, auto-renewing twice daily._
+- [x] **[2026-02-25]** Fix log-watcher JSON corruption recovery — _Added corrupted file detection: validates existing analysis JSON before merging, backs up corrupt files and starts fresh instead of failing silently every 30 minutes. Also tightened remaining broad patterns (/api/, POST)._
+- [x] **[2026-02-25]** Automatic swap management in health-monitor.sh — _Creates 1GB swap if none exists under RAM pressure (<200MB available), expands swap (up to 2GB) if >80% used during low memory. Only triggers under actual pressure._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
