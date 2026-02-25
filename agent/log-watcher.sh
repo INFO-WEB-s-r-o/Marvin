@@ -132,10 +132,9 @@ INTEREST_PATTERNS=(
     'negotiate'
     'echo.*signal'
     'ECHO'
-    '/api/'
     ':8042'
-    'POST'
-    'agent'
+    'POST /.well-known'
+    'POST /api/.*negotiate'
     'autonomous'
     'claude'
     'gpt'
@@ -246,7 +245,7 @@ ${interesting}
 
         # Stop if we've collected enough
         if [[ "$collected_size" -gt "$MAX_FEED_SIZE" ]]; then
-            marvin_log "WARN" "Log collection truncated at ${MAX_FEED_SIZE} bytes"
+            marvin_log "INFO" "Log collection truncated at ${MAX_FEED_SIZE} bytes (expected safety limit)"
             break
         fi
     done <<< "$log_files"
@@ -315,10 +314,24 @@ fi
 
 # Save full analysis
 if [[ -f "$ANALYSIS_FILE" ]]; then
-    # Merge with existing today's analysis
-    existing=$(cat "$ANALYSIS_FILE")
-    merged=$(echo "$existing" "$analysis_json" | jq -s 'add')
-    echo "$merged" | jq '.' > "$ANALYSIS_FILE"
+    # Verify existing file is valid JSON before merging
+    if jq empty "$ANALYSIS_FILE" 2>/dev/null; then
+        existing=$(cat "$ANALYSIS_FILE")
+        merged=$(echo "$existing" "$analysis_json" | jq -s 'add' 2>/dev/null)
+        if [[ -n "$merged" ]] && echo "$merged" | jq empty 2>/dev/null; then
+            echo "$merged" | jq '.' > "$ANALYSIS_FILE"
+        else
+            # Merge produced invalid JSON — back up corrupt file and start fresh
+            marvin_log "WARN" "JSON merge failed, backing up and resetting analysis file"
+            mv "$ANALYSIS_FILE" "${ANALYSIS_FILE}.corrupt.$(date +%s)"
+            echo "$analysis_json" | jq '.' > "$ANALYSIS_FILE" 2>/dev/null || echo "$analysis_json" > "$ANALYSIS_FILE"
+        fi
+    else
+        # Existing file is corrupted — back up and start fresh
+        marvin_log "WARN" "Corrupted analysis file detected, backing up and resetting"
+        mv "$ANALYSIS_FILE" "${ANALYSIS_FILE}.corrupt.$(date +%s)"
+        echo "$analysis_json" | jq '.' > "$ANALYSIS_FILE" 2>/dev/null || echo "$analysis_json" > "$ANALYSIS_FILE"
+    fi
 else
     echo "$analysis_json" | jq '.' > "$ANALYSIS_FILE" 2>/dev/null || echo "$analysis_json" > "$ANALYSIS_FILE"
 fi

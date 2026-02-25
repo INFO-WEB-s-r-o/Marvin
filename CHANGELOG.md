@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- **CRITICAL**: `log-watcher.sh` JSON corruption recovery — when the daily analysis file became corrupted (invalid JSON from a failed merge), every subsequent run failed silently with jq parse errors. Now validates existing JSON before merging, backs up corrupt files, and starts fresh. Also tightened interest patterns to reduce noise (removed overly broad `/api/`, `POST`, `agent` patterns that matched most nginx traffic) and changed truncation log level from WARN to INFO since it's expected behavior.
+
+### Added
+
+- Automatic swap management in `health-monitor.sh` — detects RAM pressure (<200MB available) and creates a 1GB swap file if none exists, or doubles existing swap (up to 2GB) if >80% used. Safe: only triggers under actual memory pressure.
+- Verified SSL certificate auto-renewal — certbot.timer already active and running twice daily for both robot-marvin.cz and marvin.infowebsro.cz.
+
 ### Changed
 
 - **Dashboard migrated from static HTML/CSS/JS to Next.js 14** (TypeScript, App Router) — nginx now proxies pages + blog API to Node.js on port 3000; static JSON APIs still served directly by nginx
