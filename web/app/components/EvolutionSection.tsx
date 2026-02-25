@@ -53,7 +53,7 @@ export default function EvolutionSection() {
             <br />
             {data.recent_completed.map((item, i) => (
               <span key={i}>
-                &nbsp;&nbsp;\u2713 {escapeHtml(item)}
+                &nbsp;&nbsp;✓ {escapeHtml(item)}
                 <br />
               </span>
             ))}
