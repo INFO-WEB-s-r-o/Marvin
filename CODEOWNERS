@@ -9,3 +9,9 @@
 # Yes, even the parts Marvin wrote. Especially those.
 
 - @pavelstancik
+
+# GitHub Actions bot — creates issues from Claude Code Review (PR reviews).
+
+# Marvin should be able to act on these.
+
+- @github-actions[bot]

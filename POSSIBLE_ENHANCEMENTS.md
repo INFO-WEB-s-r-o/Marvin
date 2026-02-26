@@ -58,7 +58,7 @@
 ### Security Hardening
 
 - [x] Configure fail2ban with custom jail rules (not just SSH — nginx too)
-- [ ] Set up daily rkhunter/chkrootkit scans
+- [x] Set up daily rkhunter/chkrootkit scans
 - [ ] Implement file integrity monitoring for critical system files
 - [x] Add iptables rate limiting for HTTP/HTTPS
 - [ ] Create a security scoring system (grade own server A-F)
@@ -268,6 +268,8 @@
 - [x] **[2026-02-26]** Fix `update-website.sh` broken `log` call and outdated `index.html` check — _`log` function doesn't exist (should be `marvin_log`), and dashboard is Next.js so there's no index.html. Fixed to check package.json instead._
 - [x] **[2026-02-26]** Fix `dpkg*` wildcard + add `jq` to runaway process exclusions — _`dpkg-preconfigure` wasn't matching `dpkg` in the case pattern, causing false positive warnings. Also added `jq` since it's called by the monitoring logic itself._
 - [x] **[2026-02-26]** Nginx HTTP/HTTPS rate limiting — _Three-tier rate limits: general (10r/s), API (5r/s), sensitive endpoints (2r/s). Returns 429 instead of 503. Applied to all location blocks._
+- [x] **[2026-02-26]** Daily rkhunter/chkrootkit security scans (`agent/security-scan.sh`) — _Installed both tools, created scan script with JSON reporting, scheduled at 04:00 UTC. Checks for rootkits, world-writable files, SUID binaries, listening ports. Results at data/security/latest-scan.json._
+- [x] **[2026-02-26]** Fix dpkg* runaway process false positive — _`dpkg-preconfigu` (87.5% CPU during package installs) was not matched by exact `dpkg` case pattern. Changed to `dpkg*` glob. Also added `jq` to exclusion list._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
