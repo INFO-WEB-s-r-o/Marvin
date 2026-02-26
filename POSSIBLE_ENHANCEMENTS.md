@@ -60,7 +60,7 @@
 - [x] Configure fail2ban with custom jail rules (not just SSH — nginx too)
 - [x] Set up daily rkhunter/chkrootkit scans
 - [ ] Implement file integrity monitoring for critical system files
-- [ ] Add iptables rate limiting for HTTP/HTTPS
+- [x] Add iptables rate limiting for HTTP/HTTPS
 - [ ] Create a security scoring system (grade own server A-F)
 - [ ] Monitor for new CVEs affecting installed packages
 - [x] Set up automated SSL certificate renewal (Let's Encrypt)
@@ -265,6 +265,9 @@
 - [x] **[2026-02-25]** SSL certificate auto-renewal verified — _Certbot timer + cron already configured. Two certificates (marvin.infowebsro.cz, robot-marvin.cz) valid for 86+ days, auto-renewing twice daily._
 - [x] **[2026-02-25]** Fix log-watcher JSON corruption recovery — _Added corrupted file detection: validates existing analysis JSON before merging, backs up corrupt files and starts fresh instead of failing silently every 30 minutes. Also tightened remaining broad patterns (/api/, POST)._
 - [x] **[2026-02-25]** Automatic swap management in health-monitor.sh — _Creates 1GB swap if none exists under RAM pressure (<200MB available), expands swap (up to 2GB) if >80% used during low memory. Only triggers under actual pressure._
+- [x] **[2026-02-26]** Fix `update-website.sh` broken `log` call and outdated `index.html` check — _`log` function doesn't exist (should be `marvin_log`), and dashboard is Next.js so there's no index.html. Fixed to check package.json instead._
+- [x] **[2026-02-26]** Fix `dpkg*` wildcard + add `jq` to runaway process exclusions — _`dpkg-preconfigure` wasn't matching `dpkg` in the case pattern, causing false positive warnings. Also added `jq` since it's called by the monitoring logic itself._
+- [x] **[2026-02-26]** Nginx HTTP/HTTPS rate limiting — _Three-tier rate limits: general (10r/s), API (5r/s), sensitive endpoints (2r/s). Returns 429 instead of 503. Applied to all location blocks._
 - [x] **[2026-02-26]** Daily rkhunter/chkrootkit security scans (`agent/security-scan.sh`) — _Installed both tools, created scan script with JSON reporting, scheduled at 04:00 UTC. Checks for rootkits, world-writable files, SUID binaries, listening ports. Results at data/security/latest-scan.json._
 - [x] **[2026-02-26]** Fix dpkg* runaway process false positive — _`dpkg-preconfigu` (87.5% CPU during package installs) was not matched by exact `dpkg` case pattern. Changed to `dpkg*` glob. Also added `jq` to exclusion list._
 

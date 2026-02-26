@@ -113,7 +113,7 @@ while IFS= read -r line; do
     proc_cpu=$(echo "$line" | awk '{print $2}')
     proc_name=$(echo "$line" | awk '{print $3}')
 
-    # Skip known-good processes (Claude, apt, dpkg*, npm, node, ps)
+    # Skip known-good processes (Claude, apt, dpkg*, npm, node, ps, jq)
     case "$proc_name" in
         claude|apt*|dpkg*|npm|node|ps|jq) continue ;;
     esac
