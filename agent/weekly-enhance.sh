@@ -71,7 +71,7 @@ done
 
 # Test 5: Health monitor produces valid JSON
 HEALTH_OUTPUT=$("${MARVIN_DIR}/agent/health-monitor.sh" 2>/dev/null) || true
-if [[ -f "${METRICS_DIR}/latest.json" ]] && python3 -c "import json; json.load(open('${METRICS_DIR}/latest.json'))" 2>/dev/null; then
+if [[ -f "${METRICS_DIR}/latest.json" ]] && jq empty "${METRICS_DIR}/latest.json" 2>/dev/null; then
     TEST_RESULTS+="✅ PASS: Health monitor produces valid JSON\n"
     ((TEST_PASS++))
 else
@@ -118,12 +118,15 @@ else
     ((TEST_FAIL++))
 fi
 
-# Test 10: Website files exist
-if [[ -f "${WEB_DIR}/index.html" ]]; then
-    TEST_RESULTS+="✅ PASS: Dashboard index.html exists\n"
+# Test 10: Website files exist (Next.js dashboard)
+if [[ -f "${WEB_DIR}/package.json" ]]; then
+    TEST_RESULTS+="✅ PASS: Next.js dashboard exists\n"
+    ((TEST_PASS++))
+elif [[ -f "${WEB_DIR}/index.html" ]]; then
+    TEST_RESULTS+="✅ PASS: Static dashboard exists\n"
     ((TEST_PASS++))
 else
-    TEST_RESULTS+="❌ FAIL: Dashboard index.html missing\n"
+    TEST_RESULTS+="❌ FAIL: Dashboard missing — no package.json or index.html\n"
     ((TEST_FAIL++))
 fi
 

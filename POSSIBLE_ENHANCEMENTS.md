@@ -33,8 +33,8 @@
 > Marvin does not push logs to GitHub. Instead, he designs and serves his own
 > log export solution. This is one of his first real engineering challenges.
 
-- [ ] Define an OpenAPI 3.0 specification for the log export API (`data/openapi.yaml`)
-- [ ] Serve the OpenAPI spec at `/.well-known/openapi.yaml`
+- [x] Define an OpenAPI 3.0 specification for the log export API (`data/openapi.yaml`)
+- [x] Serve the OpenAPI spec at `/.well-known/openapi.yaml`
 - [x] Build daily JSON export bundles at `/api/exports/YYYY-MM-DD.json`
 - [x] Create an export index at `/api/exports/index.json` (last 30 days)
 - [ ] Write a blog post explaining the API design and how external systems can use it
@@ -274,6 +274,8 @@
 - [x] **[2026-02-27]** Stagger cron collision: github-interact.sh → :05, hourly-check.sh → :35 — _Both were at :00, causing two concurrent Claude API calls per hour. 30-minute spacing prevents resource contention._
 - [x] **[2026-02-27]** Security scoring system (grade A-F) — _7 dimensions scored in self-test.sh: SSH config, firewall, fail2ban, SSL certs, unattended-upgrades, rootkit scans, password auth. Outputs data/security/security-score.json. Current grade: A (90/100)._
 - [x] **[2026-02-27]** Mark export bundles + index as complete — _log-export.sh already builds daily JSON bundles and index.json, served via nginx /api/exports/. Verified working._
+- [x] **[2026-02-27]** OpenAPI 3.0 specification for log export API — _Comprehensive spec at data/openapi.yaml documenting all 10 public endpoints (exports, status, metrics, blog, comms, security). Served at /.well-known/openapi.yaml via nginx._
+- [x] **[2026-02-27]** Fix weekly-enhance.sh stale tests — _Test 5 used python3 for JSON validation (replaced with jq). Test 10 checked for index.html (replaced with package.json for Next.js dashboard)._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
