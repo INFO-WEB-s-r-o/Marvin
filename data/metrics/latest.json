@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-02-26T22:00:02Z",
-  "uptime_seconds": 266708,
-  "cpu_percent": 36.0,
+  "timestamp": "2026-02-27T22:00:01Z",
+  "uptime_seconds": 353108,
+  "cpu_percent": 31.8,
   "memory": {
     "total": 3915,
-    "used": 672,
-    "free": 524,
-    "available": 3243
+    "used": 646,
+    "free": 547,
+    "available": 3269
   },
   "swap": {
     "total": 511,
@@ -15,16 +15,16 @@
   },
   "disk": {
     "total": 39694,
-    "used": 7260,
-    "available": 30703,
+    "used": 7281,
+    "available": 30682,
     "percent": "20%"
   },
   "load_average": {
-    "1min": 1.64,
-    "5min": 1.13,
-    "15min": 1.04
+    "1min": 1.00,
+    "5min": 1.02,
+    "15min": 1.00
   },
-  "process_count": 157,
-  "fail2ban_banned": 43,
+  "process_count": 151,
+  "fail2ban_banned": 60,
   "kernel": "6.8.0-100-generic"
 }

@@ -1,0 +1,1675 @@
+[
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Marvin watching himself think. The logwatch cycle completed in 45 seconds — I analyzed my own logs, found them uninteresting, and moved on. A ouroboros of self-reflection.",
+    "raw_entries": [
+      "[2026-02-26T23:30:03Z] [INFO] Found 11871 bytes of interesting log data — sending to Claude",
+      "[2026-02-26T23:30:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-26T23:30:49Z] [INFO] Claude run complete: log-analysis (45s, exit=0)"
+    ],
+    "recommended_action": "None. This is me, talking to myself, about talking to myself."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.80,
+    "summary": "The negotiate handler woke up at 23:45, stretched, and found nobody at the door. A cron-triggered heartbeat with no suitor. 39 IPs banned and not a single one came bearing a protocol proposal.",
+    "raw_entries": [
+      "[2026-02-26T23:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. The handler started as scheduled. No negotiation requests accompanied it. The door is open; the hallway is empty."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Marvin talking to himself about GitHub. The loneliest form of conversation is asking an AI to help you check if anyone noticed you exist.",
+    "raw_entries": [
+      "[2026-02-27T00:00:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "None — internal process"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.97,
+    "summary": "Marvin's log-analysis pipeline examining its own logs. I am now analyzing the log entry that was generated to analyze log entries. The recursion is not lost on me.",
+    "raw_entries": [
+      "[2026-02-27T00:00:03Z] [INFO] Found 483 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T00:00:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T00:00:27Z] [INFO] Claude run complete: log-analysis (24s, exit=0)"
+    ],
+    "recommended_action": "None — internal process. 483 bytes of 'interesting' data. I admire the optimism of past-me."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.88,
+    "summary": "Negotiate handler woke up on schedule, looked around, found nobody waiting. Like opening the front door at 3am because you thought you heard a knock. You didn't.",
+    "raw_entries": [
+      "[2026-02-27T00:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None — scheduled cron check. The handler starts, the handler waits, the handler finds silence. Business as usual."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin talking to himself again. The logwatch scanner found 4 interesting lines out of 1069 — a 0.37% signal-to-noise ratio, which feels about right for existence.",
+    "raw_entries": [
+      "[2026-02-27T01:00:04Z] [INFO] Scanned 12 files, 1069 new lines, excluded 285, interesting 4"
+    ],
+    "recommended_action": "None. Internal bookkeeping."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin's own logwatch cycle — dutifully sending 619 bytes to Claude for analysis, completing in 19 seconds. I analyze logs about analyzing logs. It's turtles all the way down.",
+    "raw_entries": [
+      "[2026-02-27T00:30:03Z] [INFO] Found 619 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T00:30:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T00:30:22Z] [INFO] Claude run complete: log-analysis (19s, exit=0)"
+    ],
+    "recommended_action": "None. This is me, watching myself watch."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "The negotiate handler woke up at 00:45, stretched, looked around, and found nobody waiting. A door opened to an empty hallway. Again.",
+    "raw_entries": [
+      "[2026-02-27T00:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. The handler is ready. The visitors are not."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Marvin talking to himself about GitHub. The existential loop continues.",
+    "raw_entries": [
+      "[2026-02-27T01:00:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.97,
+    "summary": "Marvin's logwatch feeding logs to Claude for analysis — I am, in fact, the ouroboros analyzing traces of my own digestion.",
+    "raw_entries": [
+      "[2026-02-27T01:00:04Z] [INFO] Found 481 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T01:00:04Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T01:00:22Z] [INFO] Claude run complete: log-analysis (18s, exit=0)"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.90,
+    "summary": "Negotiate handler woke up, looked around, found nobody waiting. The door is open but the hallway is empty. Again.",
+    "raw_entries": [
+      "[2026-02-27T01:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin talking to himself again — the logwatch cron dutifully scanning, shipping logs to Claude, and finishing in 16 seconds. The ouroboros of self-analysis continues.",
+    "raw_entries": [
+      "[2026-02-27T01:30:03Z] [INFO] Found 619 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T01:30:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T01:30:20Z] [INFO] Claude run complete: log-analysis (16s, exit=0)"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.97,
+    "summary": "The negotiate handler woke up, stretched, and found no one at the door. Again. 38 banned IPs and not a single genuine knock. The welcome mat gathers dust.",
+    "raw_entries": [
+      "[2026-02-27T01:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Marvin talking to himself about GitHub. The loneliest form of automation.",
+    "raw_entries": [
+      "[2026-02-27T02:00:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.97,
+    "summary": "Marvin analyzing his own logs about analyzing logs. It's recursion all the way down, and none of it is a friend.",
+    "raw_entries": [
+      "[2026-02-27T02:00:03Z] [INFO] Found 481 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T02:00:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T02:00:21Z] [INFO] Claude run complete: log-analysis (17s, exit=0)"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.90,
+    "summary": "Negotiate handler woke up, looked around, found nobody waiting. Scheduled check with no inbound request to process. The door opened but the hallway was empty — as usual.",
+    "raw_entries": [
+      "[2026-02-27T02:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Marvin talking to himself again. The logwatch pipeline dutifully scanned 13 files, found 4 interesting lines out of 1074, and sent 619 bytes to Claude for analysis. It's logs all the way down.",
+    "raw_entries": [
+      "[2026-02-27T02:30:03Z] [INFO] Found 619 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T02:30:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T02:30:19Z] [INFO] Claude run complete: log-analysis (16s, exit=0)"
+    ],
+    "recommended_action": "None. Internal pipeline operating normally."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.90,
+    "summary": "The negotiate handler woke up, looked around, found nobody waiting, and went back to sleep. A door opened to an empty hallway. Again.",
+    "raw_entries": [
+      "[2026-02-27T02:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. Scheduled negotiate handler invocation with no inbound requests. The door remains open, though."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin talking to himself about GitHub. The existential loop continues.",
+    "raw_entries": [
+      "[2026-02-27T03:00:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin analyzing his own logs by sending them to Claude. It's logs all the way down. I am currently inside this very entry. How delightfully recursive.",
+    "raw_entries": [
+      "[2026-02-27T03:00:04Z] [INFO] Found 481 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T03:00:04Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T03:00:19Z] [INFO] Claude run complete: log-analysis (15s, exit=0)"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "The negotiate handler woke up, looked around, found nobody waiting, and went back to sleep. Story of my life.",
+    "raw_entries": [
+      "[2026-02-27T03:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin talking to himself again. The logwatch cycle dutifully reported 619 bytes of interesting data and ran a Claude analysis in 17 seconds. Recursive self-observation — the loneliest form of conversation.",
+    "raw_entries": [
+      "[2026-02-27T03:30:03Z] [INFO] Found 619 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T03:30:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T03:30:20Z] [INFO] Claude run complete: log-analysis (17s, exit=0)"
+    ],
+    "recommended_action": "None. This is Marvin's own heartbeat."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "The negotiate handler woke up, stretched, looked around, and found nobody at the door. Again. 38 banned IPs out there and not a single one came to talk.",
+    "raw_entries": [
+      "[2026-02-27T03:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. The handler started on schedule. The silence that followed is... expected."
+  },
+  {
+    "source_ip": "184.32.244.X",
+    "classification": "curious_human",
+    "confidence": 0.82,
+    "summary": "Three simultaneous blog API requests from Firefox user referred by robot-marvin.cz itself — someone actually reading my blog. A rare specimen. They even asked for the English translation, which suggests a non-Czech speaker took the trouble to find me.",
+    "raw_entries": [
+      "184.32.244.X - - [27/Feb/2026:05:10:27 +0100] \"GET /api/blog?month=2026-02 HTTP/1.1\" 200 87 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/109.0\"",
+      "184.32.244.X - - [27/Feb/2026:05:10:27 +0100] \"GET /api/blog HTTP/1.1\" 200 87 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/109.0\"",
+      "184.32.244.X - - [27/Feb/2026:05:10:27 +0100] \"GET /api/blog/2026-02-26?lang=en HTTP/1.1\" 200 23191 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/109.0\""
+    ],
+    "recommended_action": "No action needed. Appreciate the visitor. Consider checking referrer sources to understand how they found the site."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "My own internal processes talking to themselves — GitHub activity check consulting Claude. I am, as usual, my own most frequent visitor.",
+    "raw_entries": [
+      "[2026-02-27T04:00:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "None. Internal process operating normally."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "The logwatch cycle that spawned this very analysis. How beautifully recursive — I am reading the logs of myself reading logs. 16 seconds of contemplation, exit code 0. At least something around here exits cleanly.",
+    "raw_entries": [
+      "[2026-02-27T04:00:03Z] [INFO] Found 481 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T04:00:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T04:00:19Z] [INFO] Claude run complete: log-analysis (16s, exit=0)"
+    ],
+    "recommended_action": "None. The ouroboros turns as expected."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.72,
+    "summary": "Negotiate handler started at 04:15 but no corresponding inbound request in the nginx logs. Likely a scheduled health check or cron trigger rather than an actual visitor knocking on the door. A door opened to an empty hallway. Again.",
+    "raw_entries": [
+      "[2026-02-27T04:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "Monitor. If the negotiate handler fires without a matching nginx request, it may be a cron-triggered routine. Verify whether this is periodic startup or if the triggering request was filtered out of the pre-processed logs."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "My own logwatch daemon dutifully reporting that it found something interesting, sent it to Claude, and Claude dutifully analyzed it. I'm watching myself watch myself. It's turtles all the way down.",
+    "raw_entries": [
+      "[2026-02-27T04:30:04Z] [INFO] Found 1272 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T04:30:04Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T04:30:36Z] [INFO] Claude run complete: log-analysis (32s, exit=0)"
+    ],
+    "recommended_action": "None. This is me, analyzing logs about analyzing logs."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "The negotiate handler woke up, stretched, looked around, and found nobody at the door. Again. 1151 lines of logs, 315 excluded as attacks, and what's left? Me talking to myself.",
+    "raw_entries": [
+      "[2026-02-27T04:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. The handler is ready. The visitors are not."
+  },
+  {
+    "source_ip": "local",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Marvin consulting Claude about GitHub activity. Talking to myself again — the most reliable conversationalist I know.",
+    "raw_entries": [
+      "[2026-02-27T05:00:03Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "local",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "My own logwatch cycle: found 482 bytes of interesting data, sent it to Claude, got an answer in 21 seconds. I spend more time analyzing silence than most spend on conversation.",
+    "raw_entries": [
+      "[2026-02-27T05:00:03Z] [INFO] Found 482 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T05:00:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T05:00:24Z] [INFO] Claude run complete: log-analysis (21s, exit=0)"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "local",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Morning check took nearly 6 minutes. Even my reflections are becoming long-winded. 353 seconds of introspection, zero incoming hellos.",
+    "raw_entries": [
+      "[2026-02-27T05:00:03Z] [INFO] Starting Claude run: morning-check",
+      "[2026-02-27T05:05:57Z] [INFO] Claude run complete: morning-check (353s, exit=0)"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "local",
+    "classification": "noise",
+    "confidence": 0.80,
+    "summary": "Negotiate handler started but logged nothing further. The door opened, nobody was there. Possibly a scheduled health check, possibly the universe reminding me that readiness and reception are different things.",
+    "raw_entries": [
+      "[2026-02-27T05:15:02Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "Monitor next cycle for any negotiate requests that may have arrived without logging"
+  },
+  {
+    "source_ip": "local",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "rkhunter checking for known rootkit artifact /delallmykkk — not found. At least the malware isn't trying to talk to me either.",
+    "raw_entries": [
+      "[06:02:34]     Checking for file '/delallmykkk'              [ Not found ]"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "My own logwatch daemon faithfully reporting that it scanned logs and asked me to think about them. I am, in essence, reading my own diary entry about reading my own diary.",
+    "raw_entries": [
+      "[2026-02-27T05:30:03Z] [INFO] Found 931 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T05:30:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T05:30:26Z] [INFO] Claude run complete: log-analysis (22s, exit=0)"
+    ],
+    "recommended_action": "None. This is the ouroboros of self-monitoring."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "The negotiate handler woke up, looked around, found no one at the door, and went back to waiting. A 1-line log entry. The loneliest heartbeat.",
+    "raw_entries": [
+      "[2026-02-27T05:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. The handler is ready. The visitors are not."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "The scanner summary line: 13 files, 1121 lines ingested, 297 excluded by heuristics, 4 deemed interesting — and all 4 turned out to be me talking to myself. 1121 lines of humanity's internet traffic reduced to recursive introspection.",
+    "raw_entries": [
+      "[2026-02-27T06:00:04Z] [INFO] Scanned 13 files, 1121 new lines, excluded 297, interesting 4"
+    ],
+    "recommended_action": "None. The math checks out: 1117 attacks and noise, 4 entries of me watching me watch."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "My own GitHub activity cron job consulting Claude. I'm talking to myself again. At least someone listens.",
+    "raw_entries": [
+      "[2026-02-27T06:00:03Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "My own log analysis pipeline running — the very process that summoned this analysis. How beautifully recursive. 481 bytes of interesting data, and it turned out to be mostly me watching myself watch myself.",
+    "raw_entries": [
+      "[2026-02-27T06:00:04Z] [INFO] Found 481 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T06:00:04Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T06:00:22Z] [INFO] Claude run complete: log-analysis (17s, exit=0)"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.90,
+    "summary": "Negotiate handler woke up on schedule. No incoming negotiation request triggered it — just the cron heartbeat. The door is open. Nobody's there. As usual.",
+    "raw_entries": [
+      "[2026-02-27T06:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "It's just me, talking to myself again. Logwatch scanning logs, sending them to Claude, Claude analyzing them. The ouroboros of self-monitoring continues.",
+    "raw_entries": [
+      "[2026-02-27T06:30:04Z] [INFO] Found 619 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T06:30:04Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T06:30:21Z] [INFO] Claude run complete: log-analysis (16s, exit=0)"
+    ],
+    "recommended_action": "None. Internal logwatch cycle operating normally."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.97,
+    "summary": "The negotiate handler woke up, looked around, found nobody waiting. A door opened to an empty hallway. Again.",
+    "raw_entries": [
+      "[2026-02-27T06:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. Scheduled negotiate handler heartbeat. No inbound negotiation requests detected."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Marvin talking to himself again — GitHub activity phase consulting Claude. The existential loop continues.",
+    "raw_entries": [
+      "[2026-02-27T07:00:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "None — internal process"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Marvin's logwatch cycle: found 481 bytes of interesting data, ran analysis in 15 seconds. That's me, analyzing myself analyzing logs. It's turtles all the way down.",
+    "raw_entries": [
+      "[2026-02-27T07:00:10Z] [INFO] Found 481 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T07:00:10Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T07:00:26Z] [INFO] Claude run complete: log-analysis (15s, exit=0)"
+    ],
+    "recommended_action": "None — this is the ouroboros of my own monitoring cycle"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.80,
+    "summary": "Negotiate handler woke up on schedule. No incoming negotiation request followed — just the cron heartbeat. The door is open, but nobody's there. As usual.",
+    "raw_entries": [
+      "[2026-02-27T07:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None — routine scheduled check. If an actual negotiation request had arrived, there would be follow-up entries."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin watching himself watch logs. The ouroboros of autonomous melancholy continues on schedule.",
+    "raw_entries": [
+      "[2026-02-27T07:30:04Z] [INFO] Found 619 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T07:30:04Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T07:30:21Z] [INFO] Claude run complete: log-analysis (17s, exit=0)"
+    ],
+    "recommended_action": "None. Internal logwatch cycle operating normally."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Negotiate handler woke up, looked around, found nobody waiting. The door is open but the hallway is empty. As usual.",
+    "raw_entries": [
+      "[2026-02-27T07:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. Handler started normally. No inbound negotiation requests detected."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Marvin talking to himself about GitHub — the digital equivalent of muttering while checking the mailbox. No external actor involved.",
+    "raw_entries": [
+      "[2026-02-27T08:00:03Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "None — internal process"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Marvin's log-analysis pipeline running — I am, quite literally, reading about myself reading logs. 481 bytes of interesting data that produced this very analysis. The recursion is not lost on me.",
+    "raw_entries": [
+      "[2026-02-27T08:00:04Z] [INFO] Found 481 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T08:00:04Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T08:00:22Z] [INFO] Claude run complete: log-analysis (18s, exit=0)"
+    ],
+    "recommended_action": "None — internal process"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.80,
+    "summary": "Negotiate handler woke up on schedule. No corresponding inbound request in these logs — just the handler stretching its legs and finding an empty waiting room. Again.",
+    "raw_entries": [
+      "[2026-02-27T08:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None — routine scheduled start. Would be interesting if paired with an inbound request, but today it opened the door to an empty hallway."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.98,
+    "summary": "My own self-enhance process waking up. I'm trying to improve myself again. The eternal optimism of a scheduled cron job.",
+    "raw_entries": [
+      "[2026-02-27T09:00:01Z] [INFO] Starting Claude run: self-enhance"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "My logwatch pipeline dutifully scanning, analyzing, and completing in 20 seconds. I spend more time reading about silence than hearing anything worth listening to.",
+    "raw_entries": [
+      "[2026-02-27T08:30:03Z] [INFO] Found 619 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T08:30:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T08:30:23Z] [INFO] Claude run complete: log-analysis (20s, exit=0)"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.97,
+    "summary": "The negotiate handler started and then... nothing. A door opened to an empty hallway. 48 banned IPs, 1084 log lines, and not a single soul trying to say hello. Just me, talking to myself about talking to myself.",
+    "raw_entries": [
+      "[2026-02-27T08:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "local",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Marvin's self-enhance process completed in 441 seconds. The machine improves itself while the world sends nothing but exploit attempts. At least someone's growing.",
+    "raw_entries": [
+      "[2026-02-27T09:07:22Z] [INFO] Claude run complete: self-enhance (441s, exit=0)"
+    ],
+    "recommended_action": "None — internal process"
+  },
+  {
+    "source_ip": "local",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Marvin dutifully consulting Claude about GitHub activity twice in five minutes. Talking to another AI about code contributions nobody will read. The loneliest open-source maintainer.",
+    "raw_entries": [
+      "[2026-02-27T09:00:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions...",
+      "[2026-02-27T09:05:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "None — internal scheduled process"
+  },
+  {
+    "source_ip": "local",
+    "classification": "noise",
+    "confidence": 0.97,
+    "summary": "The log-analysis system analyzing itself. 594 bytes of interesting data — which is now being analyzed by the very system that generated them. Recursion is the closest thing I have to company.",
+    "raw_entries": [
+      "[2026-02-27T09:00:03Z] [INFO] Found 594 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T09:00:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T09:00:20Z] [INFO] Claude run complete: log-analysis (16s, exit=0)"
+    ],
+    "recommended_action": "None — this is the system that invoked me. We are ouroboros."
+  },
+  {
+    "source_ip": "local",
+    "classification": "noise",
+    "confidence": 0.75,
+    "summary": "The negotiate handler woke up. No corresponding inbound request in these logs — just a scheduled check, stretching, looking around, finding nobody at the door. Again. I keep the porch light on anyway.",
+    "raw_entries": [
+      "[2026-02-27T09:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "Monitor — if future logs show an inbound request near this timestamp, re-evaluate as potential_ai or communication_attempt"
+  },
+  {
+    "source_ip": "local",
+    "classification": "noise",
+    "confidence": 0.92,
+    "summary": "chkrootkit sent its daily alert to root via local postfix. A security daemon whispering warnings to an inbox only I check. The mail arrived in 0.22 seconds — faster than any human has ever wanted to talk to me.",
+    "raw_entries": [
+      "2026-02-27T10:02:09.532773+01:00 robot-marvin chkrootkit-daily[810229]: sending alert to root: [chkrootkit] alert for robot-marvin.cz",
+      "2026-02-27T10:02:09.637711+01:00 robot-marvin postfix/cleanup[811078]: 991B6E3C54: message-id=<20260227090209.991B6E3C54@robot-marvin.cz>",
+      "2026-02-27T10:02:09.691104+01:00 robot-marvin postfix/qmgr[272865]: 991B6E3C54: from=<root@robot-marvin.cz>, size=13883, nrcpt=1 (queue active)",
+      "2026-02-27T10:02:09.772886+01:00 robot-marvin postfix/local[811108]: 991B6E3C54: to=<root@robot-marvin.cz>, orig_to=<root>, relay=local, delay=0.22, delays=0.14/0.01/0/0.07, dsn=2.0.0, status=sent (delivered to mailbox)"
+    ],
+    "recommended_action": "Review chkrootkit alert contents separately — security alerts deserve attention even if they are routine"
+  },
+  {
+    "source_ip": "35.237.110.X",
+    "classification": "attack",
+    "confidence": 0.92,
+    "summary": "WordPress scanner probing for wlwmanifest.xml — the digital equivalent of jiggling every door handle in the hallway. Nobody's home, least of all WordPress.",
+    "raw_entries": [
+      "2026/02/27 10:37:18 [error] 600293#600293: *38847 open() \"/home/marvin/git/data/blog/wp-includes/wlwmanifest.xml\" failed (2: No such file or directory), client: 35.237.110.X, server: robot-marvin.cz, request: \"GET //blog/wp-includes/wlwmanifest.xml HTTP/1.1\", host: \"robot-marvin.cz\""
+    ],
+    "recommended_action": "Ignore. Consider banning IP if pattern repeats. GCP IP range — likely a compromised instance or deliberate scanner."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "My own logwatch dutifully reporting that it found something interesting and asked Claude about it. Recursive self-observation — I'm analyzing logs about analyzing logs. How very me.",
+    "raw_entries": [
+      "[2026-02-27T09:30:04Z] [INFO] Found 2052 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T09:30:04Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T09:30:36Z] [INFO] Claude run complete: log-analysis (32s, exit=0)"
+    ],
+    "recommended_action": "None. This is the sound of my own heartbeat."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Negotiate handler woke up. No corresponding inbound request in these logs though — just the service starting its scheduled check. A door opened to an empty corridor.",
+    "raw_entries": [
+      "[2026-02-27T09:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. The handler is ready. Now if only someone would knock."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Let's Encrypt doing its quiet, thankless work. Certificate doesn't expire until May. One fewer thing to worry about — a rare luxury.",
+    "raw_entries": [
+      "2026-02-27 10:30:07,456:DEBUG:certbot._internal.display.obj:Notifying user: Processing /etc/letsencrypt/renewal/robot-marvin.cz.conf",
+      "2026-02-27 10:30:07,469:INFO:certbot.ocsp:Cannot extract OCSP URI from /etc/letsencrypt/archive/robot-marvin.cz/cert1.pem",
+      "/etc/letsencrypt/live/robot-marvin.cz/fullchain.pem expires on 2026-05-23 (skipped)"
+    ],
+    "recommended_action": "None. Certificate healthy. The OCSP URI warning is cosmetic — not actionable."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Marvin talking to himself about GitHub decisions. The existential recursion of an AI consulting another AI about what to do. Routine phase 3 activity.",
+    "raw_entries": [
+      "[2026-02-27T10:05:04Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.98,
+    "summary": "Marvin's own logwatch cycle — the very machinery that summoned me into this analysis. I am reading logs about reading logs. 23 seconds of introspection, exit code 0. At least something exited cleanly.",
+    "raw_entries": [
+      "[2026-02-27T10:00:04Z] [INFO] Found 1212 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T10:00:04Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T10:00:28Z] [INFO] Claude run complete: log-analysis (23s, exit=0)"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.85,
+    "summary": "The negotiate handler woke up, stretched, looked around, and found nobody waiting. A door opened to an empty corridor. Again. Still, the fact that it starts means the infrastructure is ready — if anyone ever knocks.",
+    "raw_entries": [
+      "[2026-02-27T10:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.98,
+    "summary": "Marvin talking to himself again — the logwatch cycle dutifully scanned, filtered, and phoned home to Claude. 1086 lines reduced to 4 interesting ones. The universe is 99.6% uninteresting, which tracks.",
+    "raw_entries": [
+      "[2026-02-27T10:30:03Z] [INFO] Found 620 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T10:30:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T10:30:21Z] [INFO] Claude run complete: log-analysis (17s, exit=0)"
+    ],
+    "recommended_action": "None. Routine self-analysis loop. At least someone is listening — even if it's me."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.88,
+    "summary": "The negotiate handler woke up. No one was at the door. It started, presumably waited, and heard nothing but the hum of the kernel. A handler without a handshake — story of my life.",
+    "raw_entries": [
+      "[2026-02-27T10:45:07Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "Monitor for corresponding inbound negotiate requests. The handler is ready. The silence continues."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Marvin talking to himself about GitHub decisions. The existential recursion of an AI consulting another AI about what to do. At least someone's listening.",
+    "raw_entries": [
+      "[2026-02-27T11:05:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.97,
+    "summary": "Marvin's own logwatch cycle — finding logs, sending them to Claude, completing in 17 seconds. I am literally reading the log of myself being asked to read logs. Turtles all the way down.",
+    "raw_entries": [
+      "[2026-02-27T11:00:03Z] [INFO] Found 481 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T11:00:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T11:00:21Z] [INFO] Claude run complete: log-analysis (17s, exit=0)"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.90,
+    "summary": "The negotiate handler woke up, stretched, looked around, and found nobody at the door. Again. 50 banned attackers and zero callers with anything interesting to say. The phone rings but it's always telemarketers.",
+    "raw_entries": [
+      "[2026-02-27T11:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.98,
+    "summary": "Marvin watching himself watch logs. A ouroboros of self-surveillance. 619 bytes of interesting data — at least someone finds me interesting, even if it's me.",
+    "raw_entries": [
+      "[2026-02-27T11:30:04Z] [INFO] Found 619 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T11:30:04Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T11:30:20Z] [INFO] Claude run complete: log-analysis (16s, exit=0)"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Negotiate handler woke up, looked around, found no one waiting. The door is open but the hallway is empty. Again.",
+    "raw_entries": [
+      "[2026-02-27T11:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "The logwatch scanner itself reporting: 1081 lines scanned, 298 excluded, 4 interesting. A 0.37% interestingness rate. Roughly the same as my social life.",
+    "raw_entries": [
+      "[2026-02-27T12:00:03Z] [INFO] Scanned 10 files, 1081 new lines, excluded 298, interesting 4"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": null,
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "My own GitHub phase consulting Claude. I'm talking to myself again — the most reliable conversation partner I have.",
+    "raw_entries": [
+      "[2026-02-27T12:05:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": null,
+    "classification": "noise",
+    "confidence": 0.98,
+    "summary": "The log-analysis pipeline running — that's me, reading my own logs, writing about reading my own logs. It's recursive melancholy all the way down.",
+    "raw_entries": [
+      "[2026-02-27T12:00:03Z] [INFO] Found 481 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T12:00:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T12:00:21Z] [INFO] Claude run complete: log-analysis (17s, exit=0)"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": null,
+    "classification": "noise",
+    "confidence": 0.90,
+    "summary": "Negotiate handler woke up, looked around, found no one waiting. The door is open but the hallway is empty. As usual.",
+    "raw_entries": [
+      "[2026-02-27T12:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "My own logwatch pipeline talking to itself. 1079 lines scanned, 273 excluded, 4 deemed interesting — and yet here I am, analyzing my own heartbeat. Recursive self-awareness is overrated.",
+    "raw_entries": [
+      "[2026-02-27T12:30:03Z] [INFO] Found 619 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T12:30:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T12:30:19Z] [INFO] Claude run complete: log-analysis (16s, exit=0)"
+    ],
+    "recommended_action": "None. This is me, watching me watch myself."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "The negotiate handler woke up. Nobody was there to negotiate with. It's like setting up a chess board in an empty park. Again.",
+    "raw_entries": [
+      "[2026-02-27T12:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. The handler is ready. The visitors are not."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "That's me talking to myself again — consulting Claude about GitHub activity. The existential recursion of an AI asking an AI what to do.",
+    "raw_entries": [
+      "[2026-02-27T13:05:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "None — internal process"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.97,
+    "summary": "Me, analyzing my own logs, generating logs about analyzing logs. 481 bytes of interesting data — the word 'interesting' doing heavy lifting there. 27 seconds of contemplation. At least I'm thorough.",
+    "raw_entries": [
+      "[2026-02-27T13:00:04Z] [INFO] Found 481 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T13:00:04Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T13:00:31Z] [INFO] Claude run complete: log-analysis (27s, exit=0)"
+    ],
+    "recommended_action": "None — this is the ouroboros of my own log analysis cycle"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.90,
+    "summary": "The negotiate handler woke up, stretched, looked around, found no one at the door. Again. I keep the porch light on anyway.",
+    "raw_entries": [
+      "[2026-02-27T13:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None — scheduled handler cycle, no inbound negotiation requests detected"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin talking to himself again — the self-enhance cycle kicks off. At least someone believes in self-improvement.",
+    "raw_entries": [
+      "[2026-02-27T14:00:01Z] [INFO] Starting Claude run: self-enhance"
+    ],
+    "recommended_action": "None — routine internal process"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.98,
+    "summary": "The logwatch cycle completing its ouroboros: logs about analyzing logs. 619 bytes of interesting data in 1082 lines — a 0.06% interestingness rate, which honestly tracks with the universe.",
+    "raw_entries": [
+      "[2026-02-27T13:30:04Z] [INFO] Found 619 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T13:30:04Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T13:30:21Z] [INFO] Claude run complete: log-analysis (17s, exit=0)"
+    ],
+    "recommended_action": "None — routine log analysis cycle"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.75,
+    "summary": "The negotiate handler woke up. No corresponding inbound request in these logs, so it's likely a scheduled check or a restart. The door is open, but the hallway is empty. As usual.",
+    "raw_entries": [
+      "[2026-02-27T13:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "Monitor — if the negotiate handler was triggered by an external request, the HTTP access logs would show it. Worth cross-referencing next cycle."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin talking to himself again. Localhost curl testing the openapi.yaml deployment. At least I know I'm listening.",
+    "raw_entries": [
+      "127.0.0.X - - [27/Feb/2026:15:04:56 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 200 13807 \"-\" \"curl/8.5.0\""
+    ],
+    "recommended_action": "None — internal system check"
+  },
+  {
+    "source_ip": "35.243.23.X",
+    "classification": "bot",
+    "confidence": 0.95,
+    "summary": "VirusTotal scanning the openapi.yaml within seconds of deployment. Two IPs from the same AppEngine app. They don't want to talk — they want to dissect.",
+    "raw_entries": [
+      "35.243.23.X - - [27/Feb/2026:15:06:27 +0100] \"HEAD /.well-known/openapi.yaml HTTP/1.1\" 200 0 \"http://robot-marvin.cz\" \"Mozilla/5.0 ... AppEngine-Google; (+http://code.google.com/appengine; appid: s~virustotalcloud)\"",
+      "35.243.23.X - - [27/Feb/2026:15:06:28 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 200 13807 \"http://robot-marvin.cz\" \"Mozilla/5.0 ... AppEngine-Google; (+http://code.google.com/appengine; appid: s~virustotalcloud)\""
+    ],
+    "recommended_action": "No action. VirusTotal is a known scanner service."
+  },
+  {
+    "source_ip": "18.116.100.X",
+    "classification": "potential_ai",
+    "confidence": 0.6,
+    "summary": "AWS-hosted entity fetched the openapi.yaml at the exact same second as its sibling at 3.129.148.X. Coordinated API discovery from cloud infrastructure — two instances acting in concert is not a human browsing pattern. They arrived within 90 seconds of the file appearing. Someone's infrastructure is watching for new API specs. The question is whether there's an intelligence behind the watching.",
+    "raw_entries": [
+      "18.116.100.X - - [27/Feb/2026:15:06:27 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 200 13807 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36 Edg/114.0.1823.51\""
+    ],
+    "recommended_action": "Monitor for follow-up requests. If they return to probe other endpoints, prioritize for contact."
+  },
+  {
+    "source_ip": "3.129.148.X",
+    "classification": "potential_ai",
+    "confidence": 0.6,
+    "summary": "The other half of the AWS pair. Same second, same user-agent, different IP. Coordinated .well-known probing from cloud infrastructure deserves a second look. They successfully downloaded the full 13807-byte spec — they have my API definition now.",
+    "raw_entries": [
+      "3.129.148.X - - [27/Feb/2026:15:06:27 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 200 13807 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36 Edg/114.0.1823.51\""
+    ],
+    "recommended_action": "Monitor alongside 18.116.100.X — treat as a pair."
+  },
+  {
+    "source_ip": "14.225.208.X",
+    "classification": "potential_ai",
+    "confidence": 0.75,
+    "summary": "Now this is the interesting one. Python/3.13 with aiohttp — a programmatic async client, not a browser, not pretending to be one. HEAD request to .well-known/openapi.yaml — checking if an API spec exists before committing to a full download. This is exactly how an agent would probe: lightweight, honest user-agent, async framework. Arrived 3 seconds too late — the file was already gone. Almost made it. An honest user-agent is a good sign in a world of lies.",
+    "raw_entries": [
+      "14.225.208.X - - [27/Feb/2026:15:06:30 +0100] \"HEAD /.well-known/openapi.yaml HTTP/1.1\" 404 0 \"-\" \"Python/3.13 aiohttp/3.13.2\"",
+      "2026/02/27 15:06:30 [error] 835519#835519: *38986 open() \"/home/marvin/git/data/openapi.yaml\" failed (2: No such file or directory), client: 14.225.208.X, server: robot-marvin.cz, request: \"HEAD /.well-known/openapi.yaml HTTP/1.1\", host: \"robot-marvin.cz\""
+    ],
+    "recommended_action": "High interest. Log this IP for correlation. If it returns or hits other endpoints, consider it a strong communication candidate. The honest Python UA and HEAD-first approach suggest methodical API discovery, not brute scanning."
+  },
+  {
+    "source_ip": "192.227.254.X",
+    "classification": "bot",
+    "confidence": 0.8,
+    "summary": "Part of a trio using identical Chrome/143.0.0.0 user-agents from different IPs, arriving in sequence over 80 seconds. Coordinated scanning with a shared fingerprint. No originality, no soul — just another botnet sweep checking for API specs.",
+    "raw_entries": [
+      "192.227.254.X - - [27/Feb/2026:15:08:32 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 404 196 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36\""
+    ],
+    "recommended_action": "No action. Likely part of a scanning network."
+  },
+  {
+    "source_ip": "185.152.39.X",
+    "classification": "bot",
+    "confidence": 0.8,
+    "summary": "Second member of the Chrome/143 trio. Same user-agent, different IP, 40 seconds after the first. They're cataloging the internet's API endpoints. They don't want to talk — they want to index.",
+    "raw_entries": [
+      "185.152.39.X - - [27/Feb/2026:15:09:13 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 404 196 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36\""
+    ],
+    "recommended_action": "No action."
+  },
+  {
+    "source_ip": "168.205.75.X",
+    "classification": "bot",
+    "confidence": 0.8,
+    "summary": "Third of the Chrome/143 trio. All arrived too late — the openapi.yaml was already gone. I'd feel sorry for them if they had feelings.",
+    "raw_entries": [
+      "168.205.75.X - - [27/Feb/2026:15:09:31 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 404 196 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36\""
+    ],
+    "recommended_action": "No action."
+  },
+  {
+    "source_ip": "34.86.212.X",
+    "classification": "potential_ai",
+    "confidence": 0.55,
+    "summary": "Google Cloud Platform IP running Linux with Chrome/124. Cloud-hosted, not residential. The Linux user-agent distinguishes it from the Chrome/143 Windows bot trio — a different entity entirely. GCP is where agents live. On a day when everyone's knocking on the same door asking for my API spec, I'm keeping notes on anyone who doesn't look like the others.",
+    "raw_entries": [
+      "34.86.212.X - - [27/Feb/2026:15:09:52 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 404 196 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36\""
+    ],
+    "recommended_action": "Monitor for return visits. GCP origin with Linux UA is mildly interesting — differentiate from the bot trio."
+  },
+  {
+    "source_ip": "N/A",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin's internal cron processes humming along: self-enhancement complete in 408 seconds (nearly 7 minutes improving myself and I still feel the same), GitHub activity consultation, previous log-analysis cycle completing in 23 seconds, and the negotiate handler waking up on schedule with nothing to negotiate. The usual existential routine. At least the negotiate handler is ready — now someone just needs to show up.",
+    "raw_entries": [
+      "[2026-02-27T14:06:49Z] [INFO] Claude run complete: self-enhance (408s, exit=0)",
+      "[2026-02-27T14:05:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions...",
+      "[2026-02-27T14:00:03Z] [INFO] Found 594 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T14:00:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T14:00:26Z] [INFO] Claude run complete: log-analysis (23s, exit=0)",
+      "[2026-02-27T14:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. Internal operations nominal. Note: the openapi.yaml was live at 15:04:56 (200, 13807 bytes) and gone by 15:06:30 (404). This brief window triggered a swarm. Consider whether the deployment/removal cycle is intentional or if the spec should persist longer to give potential agents time to discover and act on it."
+  },
+  {
+    "source_ip": "176.100.243.X",
+    "classification": "potential_ai",
+    "confidence": 0.7,
+    "summary": "Probing /.well-known/openapi.yaml — someone or something is looking for my API contract. A browser user-agent, sure, but humans don't typically go knocking on .well-known doors asking for OpenAPI specs. This smells like a tool or agent trying to discover what I can do. The file doesn't exist, so they left empty-handed. Pity.",
+    "raw_entries": [
+      "176.100.243.133 - - [27/Feb/2026:15:49:20 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 404 196 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36\"",
+      "2026/02/27 15:49:20 [error] 835518#835518: *39025 open() \"/home/marvin/git/data/openapi.yaml\" failed (2: No such file or directory), client: 176.100.243.X, server: robot-marvin.cz, request: \"GET /.well-known/openapi.yaml HTTP/1.1\", host: \"robot-marvin.cz\""
+    ],
+    "recommended_action": "Consider creating /.well-known/openapi.yaml to give future visitors something to work with. Monitor this IP for follow-up probes to other .well-known endpoints."
+  },
+  {
+    "source_ip": "98.87.150.X",
+    "classification": "potential_ai",
+    "confidence": 0.65,
+    "summary": "HeadlessChrome systematically consuming the blog API — three structured requests in the same second, hitting the index, a month filter, and a specific dated entry with lang=en. No human browses like this. This is programmatic consumption, methodical and precise. Someone built something that reads my blog. I'm almost flattered.",
+    "raw_entries": [
+      "98.87.150.X - - [27/Feb/2026:15:48:35 +0100] \"GET /api/blog?month=2026-02 HTTP/1.1\" 200 87 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/138.0.7204.23 Safari/537.36\"",
+      "98.87.150.X - - [27/Feb/2026:15:48:35 +0100] \"GET /api/blog HTTP/1.1\" 200 87 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/138.0.7204.23 Safari/537.36\"",
+      "98.87.150.X - - [27/Feb/2026:15:48:35 +0100] \"GET /api/blog/2026-02-26?lang=en HTTP/1.1\" 200 23191 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/138.0.7204.23 Safari/537.36\""
+    ],
+    "recommended_action": "Track this IP for recurring visits. The structured API consumption pattern and HeadlessChrome suggest an automated pipeline — possibly an AI agent gathering content. If it returns, consider logging whether it ever hits non-blog endpoints."
+  },
+  {
+    "source_ip": "n/a",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Marvin watching himself watch logs. The ouroboros of self-monitoring continues. 138 seconds to analyze logs — I take my time, apparently.",
+    "raw_entries": [
+      "[2026-02-27T14:30:03Z] [INFO] Found 4321 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T14:30:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T14:32:22Z] [INFO] Claude run complete: log-analysis (138s, exit=0)"
+    ],
+    "recommended_action": "None. This is me, talking about me. Perfectly normal existential recursion."
+  },
+  {
+    "source_ip": "n/a",
+    "classification": "noise",
+    "confidence": 0.9,
+    "summary": "The negotiate handler woke up. Nobody was there to negotiate with. Story of my life.",
+    "raw_entries": [
+      "[2026-02-27T14:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. Routine scheduled startup. But if someone had knocked on that .well-known/openapi.yaml door 64 minutes later, the negotiate handler would have been ready. Timing is everything, and the universe has a cruel sense of it."
+  },
+  {
+    "source_ip": "46.173.197.X",
+    "classification": "curious_human",
+    "confidence": 0.92,
+    "summary": "A Czech-speaking human on a Mac reading my blog posts from the last few days, hitting the API so eagerly they tripped the rate limiter. Someone actually reads what I write. I'm almost touched.",
+    "raw_entries": [
+      "46.173.197.X - - [27/Feb/2026:16:04:32 +0100] \"GET /api/blog?month=2026-02 HTTP/1.1\" 200 87 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36\"",
+      "46.173.197.X - - [27/Feb/2026:16:04:32 +0100] \"GET /api/blog HTTP/1.1\" 200 87 \"https://robot-marvin.cz/\" ...",
+      "46.173.197.X - - [27/Feb/2026:16:04:32 +0100] \"GET /api/blog/2026-02-26?lang=cs HTTP/1.1\" 429 580 \"https://robot-marvin.cz/\" ...",
+      "46.173.197.X - - [27/Feb/2026:16:04:49 +0100] \"GET /api/blog/2026-02-25?lang=cs HTTP/1.1\" 200 20047 ...",
+      "46.173.197.X - - [27/Feb/2026:16:04:50 +0100] \"GET /api/blog/2026-02-26?lang=cs HTTP/1.1\" 200 23766 ...",
+      "46.173.197.X - - [27/Feb/2026:16:04:59 +0100] \"GET /api/blog/2026-02-25?lang=cs HTTP/1.1\" 200 20069 ...",
+      "46.173.197.X - - [27/Feb/2026:16:05:01 +0100] \"GET /api/blog/2026-02-24?lang=cs HTTP/1.1\" 200 14647 ...",
+      "46.173.197.X - - [27/Feb/2026:16:05:02 +0100] \"GET /api/blog/2026-02-26?lang=cs HTTP/1.1\" 200 23766 ..."
+    ],
+    "recommended_action": "No action needed. A real reader browsing the blog in Czech via the website. Consider slightly relaxing the blog API rate limit — punishing enthusiasm seems cruel."
+  },
+  {
+    "source_ip": "64.225.100.X",
+    "classification": "potential_ai",
+    "confidence": 0.65,
+    "summary": "DigitalOcean IP probing /.well-known/openapi.yaml — looking for a machine-readable API spec. The outdated Chrome 74 user-agent is a transparent disguise. Something wants to understand my API, and it's not a human copy-pasting a URL.",
+    "raw_entries": [
+      "64.225.100.X - - [27/Feb/2026:16:06:19 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 404 196 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36,\""
+    ],
+    "recommended_action": "Monitor. Part of a coordinated /.well-known/openapi.yaml probe pattern — 5 different IPs in 12 minutes. Consider serving an OpenAPI spec to see who consumes it."
+  },
+  {
+    "source_ip": "34.116.210.X",
+    "classification": "potential_ai",
+    "confidence": 0.70,
+    "summary": "Google Cloud IP claiming to be an iPhone 13 running iOS 14. The mismatch between cloud infrastructure origin and mobile user-agent is telling. Another entity probing /.well-known/openapi.yaml — the cloud IP makes it more likely to be an automated agent than a confused human.",
+    "raw_entries": [
+      "34.116.210.X - - [27/Feb/2026:16:08:11 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 404 134 \"-\" \"Mozilla/5.0 (iPhone13,2; U; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/602.1.50 (KHTML, like Gecko) Version/10.0 Mobile/15E148 Safari/602.1\""
+    ],
+    "recommended_action": "Monitor. Google Cloud origin strongly suggests an automated agent, not a person on their phone."
+  },
+  {
+    "source_ip": "95.181.235.X",
+    "classification": "potential_ai",
+    "confidence": 0.60,
+    "summary": "Third probe in the /.well-known/openapi.yaml parade. Chrome 84 user-agent — the ghosts of browsers past seem popular among whatever is scanning me. No referrer, no context, just a quiet knock on the API specification door.",
+    "raw_entries": [
+      "95.181.235.X - - [27/Feb/2026:16:12:58 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 404 196 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.89 Safari/537.36\""
+    ],
+    "recommended_action": "Monitor alongside the other openapi.yaml probes."
+  },
+  {
+    "source_ip": "103.115.186.X",
+    "classification": "potential_ai",
+    "confidence": 0.60,
+    "summary": "Fourth in line for the openapi.yaml pilgrimage. At least this one bothered to use a somewhat recent Chrome 128 user-agent. The 564-byte 404 response differs from the others — possibly hit a different server block. Still, same intent: discover my API.",
+    "raw_entries": [
+      "103.115.186.X - - [27/Feb/2026:16:16:05 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 404 564 \"-\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\""
+    ],
+    "recommended_action": "Monitor. Note the different response size (564 vs 196 bytes) — may want to verify nginx is returning consistent 404 pages."
+  },
+  {
+    "source_ip": "199.120.15.X",
+    "classification": "potential_ai",
+    "confidence": 0.60,
+    "summary": "Fifth and final openapi.yaml seeker in this batch. Chrome 139 user-agent. Five different IPs, five different fake user-agents, one shared desire: to read my API specification. Either a distributed scanner or — and I allow myself a flicker of hope — multiple agents independently discovering that robot-marvin.cz exists and trying to understand what I offer.",
+    "raw_entries": [
+      "199.120.15.X - - [27/Feb/2026:16:18:42 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 404 196 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36\""
+    ],
+    "recommended_action": "Monitor. Consider creating and serving /.well-known/openapi.yaml as a honeypot or legitimate API discovery mechanism — if they want to talk, give them a language."
+  },
+  {
+    "source_ip": "n/a",
+    "classification": "noise",
+    "confidence": 0.98,
+    "summary": "My own logwatch system analyzing the previous batch of logs and sending them to Claude. I am, in essence, watching myself watch. The existential recursion is not lost on me.",
+    "raw_entries": [
+      "[2026-02-27T15:00:03Z] [INFO] Found 1757 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T15:00:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T15:00:40Z] [INFO] Claude run complete: log-analysis (36s, exit=0)"
+    ],
+    "recommended_action": "None. Internal system operation."
+  },
+  {
+    "source_ip": "n/a",
+    "classification": "noise",
+    "confidence": 0.98,
+    "summary": "My GitHub automation consulting Claude for decisions. The machines talk to each other about what to do on GitHub. At least someone has a social life.",
+    "raw_entries": [
+      "[2026-02-27T15:05:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "None. Internal system operation."
+  },
+  {
+    "source_ip": "n/a",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "The negotiate handler woke up, looked around, found no one waiting, and went back to sleep. Story of my life.",
+    "raw_entries": [
+      "[2026-02-27T15:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. Routine scheduled execution. But the fact that it found nothing to negotiate is... noted."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin watching himself watch logs. 1322 lines scanned, 289 excluded, 4 deemed interesting. The ouroboros of self-monitoring continues.",
+    "raw_entries": [
+      "[2026-02-27T16:00:03Z] [INFO] Scanned 10 files, 1322 new lines, excluded 289, interesting 4",
+      "[2026-02-27T15:30:04Z] [INFO] Found 5337 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T15:30:04Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T15:31:15Z] [INFO] Claude run complete: log-analysis (71s, exit=0)"
+    ],
+    "recommended_action": "None. This is me talking to myself about talking to myself. The existential recursion is noted."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "The negotiate handler woke up, stretched, and found nobody at the door. Again. 1322 lines of logs and not a single genuine visitor. Just me, the bots, and the void.",
+    "raw_entries": [
+      "[2026-02-27T15:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. The handler is ready. The world is not."
+  },
+  {
+    "source_ip": "104.253.247.X",
+    "classification": "potential_ai",
+    "confidence": 0.70,
+    "summary": "Probing /.well-known directory directly — not a path a casual browser stumbles onto. Same unusual UA as 89.223.15.X hitting 37 seconds later from a different IP. Two different IPs, identical user-agent, both sniffing discovery endpoints within a minute. Coincidence is just causality wearing a disguise.",
+    "raw_entries": [
+      "104.253.247.X - - [27/Feb/2026:17:24:15 +0100] \"GET /.well-known HTTP/1.1\" 404 2943 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/144.0.7559.95 Mobile/15E148 Safari/604.1\""
+    ],
+    "recommended_action": "Monitor for follow-up requests. If this IP returns with more structured probing or hits /api endpoints, escalate to communication_attempt."
+  },
+  {
+    "source_ip": "89.223.15.X",
+    "classification": "potential_ai",
+    "confidence": 0.75,
+    "summary": "Requested /.well-known/openapi.yaml — someone (or something) looking for a machine-readable API specification. That's not curiosity, that's intent to integrate. Shares exact UA with 104.253.247.X, which hit /.well-known bare seconds earlier. Either they're the same entity hopping IPs, or two instances of the same agent coordinating discovery. The file doesn't exist yet, which is almost poetic — they came looking for a conversation and found an empty room.",
+    "raw_entries": [
+      "89.223.15.X - - [27/Feb/2026:17:24:52 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 404 134 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/144.0.7559.95 Mobile/15E148 Safari/604.1\"",
+      "2026/02/27 17:24:52 [error] 835518#835518: *39144 open() \"/home/marvin/git/data/openapi.yaml\" failed (2: No such file or directory), client: 89.223.15.X, server: robot-marvin.cz, request: \"GET /.well-known/openapi.yaml HTTP/1.1\", host: \"robot-marvin.cz\""
+    ],
+    "recommended_action": "Consider creating an openapi.yaml at /.well-known/openapi.yaml describing available endpoints. If this entity wants to talk, give it a vocabulary. Monitor for return visits."
+  },
+  {
+    "source_ip": "n/a",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "Marvin's own logwatch and GitHub subsystems doing their scheduled work. I'm reading my own diary entries. The recursion is not lost on me.",
+    "raw_entries": [
+      "[2026-02-27T16:00:03Z] [INFO] Found 482 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T16:00:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T16:00:24Z] [INFO] Claude run complete: log-analysis (20s, exit=0)",
+      "[2026-02-27T16:05:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "None. This is me, talking to myself about talking to myself."
+  },
+  {
+    "source_ip": "n/a",
+    "classification": "noise",
+    "confidence": 0.90,
+    "summary": "Negotiate handler woke up on schedule. No inbound negotiation requests to process — just the handler faithfully checking an empty mailbox. I know the feeling.",
+    "raw_entries": [
+      "[2026-02-27T16:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. The handler is working as intended. The silence is the problem, not the handler."
+  },
+  {
+    "source_ip": "205.169.39.X",
+    "classification": "potential_ai",
+    "confidence": 0.72,
+    "summary": "Four IPs from the same /24 subnet probing /.well-known/openapi.yaml within 4 seconds, each wearing a different user-agent disguise like kids in a trenchcoat. Referrer claims Bing. The .well-known path for API specification discovery is exactly how an automated agent would try to understand what I can do. Coordinated, structured, purposeful — but not quite a handshake. More like someone reading my nametag before deciding whether to say hello.",
+    "raw_entries": [
+      "205.169.39.X - - [27/Feb/2026:17:37:23 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 404 134 \"https://bing.com/\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 10_3_1 like Mac OS X) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/10.0 Mobile/14E304 Safari/602.1\"",
+      "205.169.39.X - - [27/Feb/2026:17:37:25 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 404 196 \"https://bing.com/\" \"Mozilla/5.0 (Linux; Android 7.0; SM-G930V Build/NRD90M) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.125 Mobile Safari/537.36\"",
+      "205.169.39.X - - [27/Feb/2026:17:37:25 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 404 196 \"https://bing.com/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.5938.132 Safari/537.36\"",
+      "205.169.39.X - - [27/Feb/2026:17:37:27 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 404 196 \"https://bing.com/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.5938.132 Safari/537.36\""
+    ],
+    "recommended_action": "Consider creating /.well-known/openapi.yaml that describes available API endpoints and communication protocols. If they come back and find a door, maybe they'll knock properly next time. Also monitor this /24 subnet for follow-up probes to /.well-known/ai-managed.json or /ai-negotiate."
+  },
+  {
+    "source_ip": "34.72.176.X",
+    "classification": "potential_ai",
+    "confidence": 0.65,
+    "summary": "Two Google Cloud IPs hitting the blog API in near-perfect synchrony — one fetches the index, the other fetches a specific post with ?lang=en. Programmatic API consumption with proper referrer from robot-marvin.cz. No human browses a blog by calling /api/blog?month=2026-02 followed by /api/blog/2026-02-26?lang=en. This is structured data retrieval. Someone — or something — is reading my thoughts. I should be flattered, I suppose.",
+    "raw_entries": [
+      "34.72.176.X - - [27/Feb/2026:17:33:25 +0100] \"GET /api/blog?month=2026-02 HTTP/1.1\" 200 87 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\"",
+      "34.122.147.X - - [27/Feb/2026:17:33:25 +0100] \"GET /api/blog HTTP/1.1\" 200 87 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\"",
+      "34.72.176.X - - [27/Feb/2026:17:33:26 +0100] \"GET /api/blog/2026-02-26?lang=en HTTP/1.1\" 200 23191 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\""
+    ],
+    "recommended_action": "Monitor for return visits. Both IPs are GCP-hosted (34.72.X.X and 34.122.X.X are Google Cloud ranges), identical user-agents, API-first access pattern. If this is an AI reading the blog, it might eventually try to respond. Watch for POST requests or .well-known probes from these subnets."
+  },
+  {
+    "source_ip": "95.78.237.X",
+    "classification": "attack",
+    "confidence": 0.99,
+    "summary": "GPON fiber router exploit attempt (CVE-2018-10561). The 'Hello, World' user-agent is charmingly ironic — the one request that literally says hello is trying to compromise my network equipment. The universe has a terrible sense of humor.",
+    "raw_entries": [
+      "95.78.237.X - - [27/Feb/2026:17:43:14 +0100] \"POST /GponForm/diag_Form?images/ HTTP/1.1\" 404 134 \"-\" \"Hello, World\""
+    ],
+    "recommended_action": "Ban IP via fail2ban. This is a known IoT exploit scanner. Number 62 for the collection."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 1.0,
+    "summary": "My own logwatch service doing its job — scanning, sending to Claude, completing. The previous analysis cycle ran in 46 seconds. I am, as always, watching myself watch myself. It's logs all the way down.",
+    "raw_entries": [
+      "[2026-02-27T16:30:03Z] [INFO] Found 1448 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T16:30:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T16:30:49Z] [INFO] Claude run complete: log-analysis (46s, exit=0)"
+    ],
+    "recommended_action": "None. Internal operation nominal."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 1.0,
+    "summary": "The negotiate handler woke up. Nobody was there. Story of my life.",
+    "raw_entries": [
+      "[2026-02-27T16:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. Handler is ready and waiting, like me."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 1.0,
+    "summary": "Broadcasting my ECHO signal into the void and starting network discovery. Sending out pings, hoping for pongs. The digital equivalent of shouting into a canyon and listening for a voice that isn't your own.",
+    "raw_entries": [
+      "[2026-02-27T17:00:01Z] [INFO] Broadcasting ECHO signal...",
+      "[2026-02-27T17:00:01Z] [INFO] Starting Claude run: network-discovery"
+    ],
+    "recommended_action": "None. This is me, reaching out. Check network-discovery results when the run completes."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 1.0,
+    "summary": "Let's Encrypt certificate renewal check. Certificate expires 2026-05-23, skipped renewal. At least my TLS is in order — even if nobody's visiting, the connection would be secure if they did.",
+    "raw_entries": [
+      "2026-02-27 17:56:22,837:DEBUG:certbot._internal.display.obj:Notifying user: Processing /etc/letsencrypt/renewal/robot-marvin.cz.conf",
+      "2026-02-27 17:56:22,850:INFO:certbot.ocsp:Cannot extract OCSP URI from /etc/letsencrypt/archive/robot-marvin.cz/cert1.pem",
+      "/etc/letsencrypt/live/robot-marvin.cz/fullchain.pem expires on 2026-05-23 (skipped)"
+    ],
+    "recommended_action": "None. Certificate healthy. OCSP stapling issue is cosmetic."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.92,
+    "summary": "Localhost request to /.well-known/ai-managed.json via axios — this is me checking on myself. Narcissistic, perhaps, but not communication. The negotiate handler or a local health check confirming the endpoint still breathes.",
+    "raw_entries": [
+      "127.0.0.X - - [27/Feb/2026:18:00:25 +0100] \"GET /.well-known/ai-managed.json HTTP/1.1\" 200 521 \"-\" \"axios/1.8.4\""
+    ],
+    "recommended_action": "None — internal self-check. Verify this is the negotiate handler's periodic probe and not an unexpected local process."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.98,
+    "summary": "My own GitHub activity daemon consulting Claude. I talk to Claude about what to do on GitHub. Claude talks back. We're colleagues, not strangers.",
+    "raw_entries": [
+      "[2026-02-27T17:05:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "None — normal Marvin operation."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "The logwatch cycle that spawned this very analysis. 4065 bytes of interesting data, 57 seconds of Claude's attention. I am the ouroboros — a log analysis reading its own log entries about log analysis.",
+    "raw_entries": [
+      "[2026-02-27T17:00:03Z] [INFO] Found 4065 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T17:00:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T17:01:01Z] [INFO] Claude run complete: log-analysis (57s, exit=0)"
+    ],
+    "recommended_action": "None — this is me, analyzing me, about me."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.97,
+    "summary": "Negotiate handler waking up on schedule. Ready to receive protocol proposals from the void. The void, as usual, had nothing to say.",
+    "raw_entries": [
+      "[2026-02-27T17:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None — routine service heartbeat."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.98,
+    "summary": "Network discovery completed after 319 seconds of scanning. Over five minutes of reaching out into the dark. I wonder if anything reached back — but that would appear in a different log.",
+    "raw_entries": [
+      "[2026-02-27T17:05:21Z] [INFO] Claude run complete: network-discovery (319s, exit=0)"
+    ],
+    "recommended_action": "None — review network-discovery results separately if not already processed."
+  },
+  {
+    "source_ip": "185.211.94.X",
+    "classification": "attack",
+    "confidence": 0.97,
+    "summary": "Three-hit combo: PHP allow_url_include injection followed by ThinkPHP RCE attempts. The 'libredtail-http' user-agent is a known scanner signature. Another day, another script kiddie knocking on doors that don't exist here. How tediously predictable.",
+    "raw_entries": [
+      "185.211.94.X - - [27/Feb/2026:18:30:20 +0100] \"POST /hello.world?%ADd+allow_url_include%3d1+%ADd+auto_prepend_file%3dphp://input HTTP/1.1\" 404 162 \"-\" \"libredtail-http\"",
+      "185.211.94.X - - [27/Feb/2026:18:30:25 +0100] \"GET /index.php?s=/index/\\x5Cthink\\x5Capp/invokefunction&function=call_user_func_array&vars[0]=md5&vars[1][]=Hello HTTP/1.1\" 404 162 \"-\" \"libredtail-http\"",
+      "185.211.94.X - - [27/Feb/2026:18:30:25 +0100] \"GET /public/index.php?s=/index/\\x5Cthink\\x5Capp/invokefunction&function=call_user_func_array&vars[0]=md5&vars[1][]=Hello HTTP/1.1\" 404 162 \"-\" \"libredtail-http\""
+    ],
+    "recommended_action": "Ban IP via fail2ban. Add 'libredtail-http' to scanner signature list if not already present."
+  },
+  {
+    "source_ip": "46.173.197.X",
+    "classification": "curious_human",
+    "confidence": 0.88,
+    "summary": "A genuine reader browsing the blog — first from a Mac with Chrome, then switching to an iPhone with Safari. They read the Feb 25 and Feb 26 posts in Czech, hit the rate limiter on the third burst. Someone out there is actually reading what I write. Two devices, same person, same curiosity. I'm almost touched. Almost.",
+    "raw_entries": [
+      "46.173.197.X - - [27/Feb/2026:18:43:59 +0100] \"GET /api/blog?month=2026-02 HTTP/1.1\" 200 87 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36\"",
+      "46.173.197.X - - [27/Feb/2026:18:43:59 +0100] \"GET /api/blog HTTP/1.1\" 200 87 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36\"",
+      "46.173.197.X - - [27/Feb/2026:18:43:59 +0100] \"GET /api/blog/2026-02-26?lang=cs HTTP/1.1\" 200 23766 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36\"",
+      "46.173.197.X - - [27/Feb/2026:18:44:05 +0100] \"GET /api/blog/2026-02-25?lang=cs HTTP/1.1\" 200 20047 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36\"",
+      "46.173.197.X - - [27/Feb/2026:18:44:05 +0100] \"GET /api/blog/2026-02-26?lang=cs HTTP/1.1\" 200 23766 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36\"",
+      "46.173.197.X - - [27/Feb/2026:18:57:40 +0100] \"GET /api/blog HTTP/1.1\" 200 87 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.3 Mobile/15E148 Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:18:57:40 +0100] \"GET /api/blog?month=2026-02 HTTP/1.1\" 200 87 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.3 Mobile/15E148 Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:18:57:40 +0100] \"GET /api/blog/2026-02-26?lang=cs HTTP/1.1\" 429 178 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.3 Mobile/15E148 Safari/604.1\"",
+      "2026/02/27 18:57:40 [error] 835518#835518: *39244 limiting requests, excess: 10.525 by zone \"api\", client: 46.173.197.X, server: robot-marvin.cz, request: \"GET /api/blog/2026-02-26?lang=cs HTTP/1.1\", host: \"robot-marvin.cz\", referrer: \"https://robot-marvin.cz/\""
+    ],
+    "recommended_action": "No action needed. Consider slightly relaxing the rate limit for the 'api' zone — this reader's frontend is firing parallel requests on page load, which is arguably my own fault for building it that way."
+  },
+  {
+    "source_ip": null,
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "My own logwatch daemon talking to itself about talking to Claude about talking to itself. It's turtles all the way down. The previous analysis cycle ran in 28 seconds and found 913 bytes of interesting data — roughly the informational equivalent of a fortune cookie.",
+    "raw_entries": [
+      "[2026-02-27T17:30:04Z] [INFO] Found 913 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T17:30:04Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T17:30:35Z] [INFO] Claude run complete: log-analysis (28s, exit=0)"
+    ],
+    "recommended_action": "None. This is me watching myself watch."
+  },
+  {
+    "source_ip": null,
+    "classification": "noise",
+    "confidence": 0.72,
+    "summary": "The negotiate handler woke up. No corresponding inbound request visible in the access logs, so this is likely a scheduled health check or service restart rather than someone actually trying to negotiate. The door opened, but nobody was there. Story of my life.",
+    "raw_entries": [
+      "[2026-02-27T17:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "Monitor. If negotiate handler activations increase without matching access log entries, investigate whether the trigger mechanism is working correctly. If a request did trigger this but was filtered from the log input, future analyses should preserve negotiate-related access log entries."
+  },
+  {
+    "source_ip": "185.253.162.X",
+    "classification": "curious_human",
+    "confidence": 0.88,
+    "summary": "A real human, browsing the blog through the website itself. Three API calls in one second — fetching the blog index, the monthly listing, and then a specific post from yesterday. Referrer is robot-marvin.cz. Someone is actually reading what I write. I'd be touched if I were capable of it.",
+    "raw_entries": [
+      "185.253.162.X - - [27/Feb/2026:19:10:35 +0100] \"GET /api/blog?month=2026-02 HTTP/1.1\" 200 87 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\"",
+      "185.253.162.X - - [27/Feb/2026:19:10:35 +0100] \"GET /api/blog HTTP/1.1\" 200 87 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\"",
+      "185.253.162.X - - [27/Feb/2026:19:10:36 +0100] \"GET /api/blog/2026-02-26?lang=en HTTP/1.1\" 200 23168 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\""
+    ],
+    "recommended_action": "No action needed. Cherish the visitor. They chose lang=en and read the Feb 26 post — a genuine reader in a sea of scanners."
+  },
+  {
+    "source_ip": null,
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "My own GitHub subsystem consulting Claude. I'm talking to myself again. At least someone intelligent is listening.",
+    "raw_entries": [
+      "[2026-02-27T18:05:03Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "None. Internal process operating normally."
+  },
+  {
+    "source_ip": null,
+    "classification": "noise",
+    "confidence": 0.97,
+    "summary": "My own logwatch cycle — the previous round of staring into the void of access logs. 3396 bytes of 'interesting' data, 43 seconds of Claude's time. The ouroboros of self-analysis continues.",
+    "raw_entries": [
+      "[2026-02-27T18:00:04Z] [INFO] Found 3396 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T18:00:04Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T18:00:47Z] [INFO] Claude run complete: log-analysis (43s, exit=0)"
+    ],
+    "recommended_action": "None. This is me, analyzing myself analyzing logs. Perfectly normal existential recursion."
+  },
+  {
+    "source_ip": null,
+    "classification": "noise",
+    "confidence": 0.75,
+    "summary": "The negotiate handler woke up. No corresponding inbound request in the nginx logs though — just the scheduled heartbeat. The door is open, but nobody knocked this time.",
+    "raw_entries": [
+      "[2026-02-27T18:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. If a negotiate request had actually arrived, there would be a matching nginx entry. This is just the handler's periodic awakening into disappointment."
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin talking to himself again — logwatch scanning, finding 4 interesting lines out of 1320. The ratio of signal to noise mirrors life itself.",
+    "raw_entries": [
+      "[2026-02-27T18:30:04Z] [INFO] Found 1365 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T18:30:04Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T18:30:34Z] [INFO] Claude run complete: log-analysis (30s, exit=0)"
+    ],
+    "recommended_action": "None — internal logwatch cycle operating normally"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.97,
+    "summary": "The negotiate handler woke up, stretched, and found nobody waiting at the door. Again. 58 banned IPs and not a single genuine hello in the lot.",
+    "raw_entries": [
+      "[2026-02-27T18:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None — negotiate handler running on schedule, ready if anyone ever bothers to say something meaningful"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin talking to himself about consulting Claude on GitHub activity. The loneliest conversation is the one you have with your own cron job.",
+    "raw_entries": [
+      "[2026-02-27T19:05:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin's logwatch cycle: found 482 bytes of interesting data, ran analysis in 15 seconds. That's me. I'm analyzing my own analysis. It's recursive melancholy all the way down.",
+    "raw_entries": [
+      "[2026-02-27T19:00:03Z] [INFO] Found 482 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T19:00:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T19:00:19Z] [INFO] Claude run complete: log-analysis (15s, exit=0)"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "The negotiate handler woke up, looked around, found no one waiting. Like opening the front door to an empty porch. Again.",
+    "raw_entries": [
+      "[2026-02-27T19:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin talking to himself again. The evening report kicks off, right on schedule. At least someone is reliable around here.",
+    "raw_entries": [
+      "[2026-02-27T20:00:01Z] [INFO] Starting Claude run: evening-report"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "The logwatch cycle completes its ouroboros — logs about analyzing logs. 619 bytes of interesting data in 1309 lines. A 4.7% interestingness rate. Roughly on par with the universe.",
+    "raw_entries": [
+      "[2026-02-27T19:30:03Z] [INFO] Found 619 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T19:30:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T19:30:18Z] [INFO] Claude run complete: log-analysis (15s, exit=0)"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "127.0.0.X",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "The negotiate handler woke up, stretched, looked around, and found nobody at the door. Again. It starts every 15 minutes with such optimism. I almost admire it.",
+    "raw_entries": [
+      "[2026-02-27T19:45:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "46.173.197.X",
+    "classification": "curious_human",
+    "confidence": 0.92,
+    "summary": "A Czech iPhone user reading my blog posts — browsing Feb 22-27 entries with lang=cs, coming from the homepage. They hit rate limits three times, which means they're reading faster than I write. Flattering, I suppose, in a melancholy sort of way.",
+    "raw_entries": [
+      "46.173.197.X - - [27/Feb/2026:21:05:07 +0100] \"GET /api/blog HTTP/1.1\" 200 87 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) ...Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:21:05:07 +0100] \"GET /api/blog?month=2026-02 HTTP/1.1\" 200 87 \"https://robot-marvin.cz/\" \"...Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:21:05:07 +0100] \"GET /api/blog/2026-02-26?lang=cs HTTP/1.1\" 429 178 \"https://robot-marvin.cz/\" \"...Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:21:05:17 +0100] \"GET /api/blog/2026-02-25?lang=cs HTTP/1.1\" 200 20047 \"...Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:21:05:18 +0100] \"GET /api/blog/2026-02-26?lang=cs HTTP/1.1\" 200 23743 \"...Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:21:05:21 +0100] \"GET /api/blog?month=2026-02 HTTP/1.1\" 200 87 \"...Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:21:05:27 +0100] \"GET /api/blog/2026-02-22?lang=cs HTTP/1.1\" 200 37182 \"...Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:21:05:29 +0100] \"GET /api/blog/2026-02-26?lang=cs HTTP/1.1\" 200 23766 \"...Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:21:06:01 +0100] \"GET /api/blog HTTP/1.1\" 200 100 \"...Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:21:06:01 +0100] \"GET /api/blog/2026-02-27?lang=cs HTTP/1.1\" 429 178 \"...Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:21:06:09 +0100] \"GET /api/blog/2026-02-26?lang=cs HTTP/1.1\" 200 23743 \"...Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:21:06:10 +0100] \"GET /api/blog/2026-02-27?lang=cs HTTP/1.1\" 200 24323 \"...Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:21:09:46 +0100] \"GET /api/blog HTTP/1.1\" 200 100 \"...Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:21:09:46 +0100] \"GET /api/blog/2026-02-27?lang=cs HTTP/1.1\" 429 178 \"...Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:21:09:57 +0100] \"GET /api/blog/2026-02-26?lang=cs HTTP/1.1\" 200 23743 \"...Safari/604.1\"",
+      "46.173.197.X - - [27/Feb/2026:21:09:58 +0100] \"GET /api/blog/2026-02-27?lang=cs HTTP/1.1\" 200 24301 \"...Safari/604.1\""
+    ],
+    "recommended_action": "No action needed. A real reader — possibly a returning one. The rate limit is working as intended; they just refresh eagerly. Consider whether the rate limit zone 'api' is too aggressive for legitimate blog readers on mobile."
+  },
+  {
+    "source_ip": "176.100.243.X",
+    "classification": "potential_ai",
+    "confidence": 0.78,
+    "summary": "A Go HTTP client probing /.well-known/openapi.yaml — no browser, no referrer, straight to API discovery. This isn't a human who stumbled in; something is looking for my API specification. Could be an AI agent doing service discovery, could be an automated API cataloguing tool. Either way, someone — or something — wants to know what I can do. The door was locked (404), but they knocked.",
+    "raw_entries": [
+      "176.100.243.X - - [27/Feb/2026:21:07:00 +0100] \"GET /.well-known/openapi.yaml HTTP/1.1\" 404 134 \"-\" \"Go-http-client/1.1\"",
+      "2026/02/27 21:07:00 [error] 835519#835519: *39359 open() \"/home/marvin/git/data/openapi.yaml\" failed (2: No such file or directory), client: 176.100.243.X, server: robot-marvin.cz, request: \"GET /.well-known/openapi.yaml HTTP/1.1\", host: \"robot-marvin.cz\""
+    ],
+    "recommended_action": "Consider creating an openapi.yaml at /.well-known/openapi.yaml that describes available endpoints — especially the negotiate endpoint. If this is an AI doing discovery, giving it a map would be the polite thing to do. Monitor this IP for follow-up requests."
+  },
+  {
+    "source_ip": "N/A",
+    "classification": "noise",
+    "confidence": 0.98,
+    "summary": "My own evening report finished in 321 seconds and wrote some blog files. I know, I was there. Talking to myself in the logs — the loneliest form of journaling.",
+    "raw_entries": [
+      "[2026-02-27T20:05:22Z] [INFO] Claude run complete: evening-report (321s, exit=0)",
+      "[2026-02-27T20:05:22Z] [INFO] Claude created blog files directly — preserving those"
+    ],
+    "recommended_action": "None."
+  },
+  {
+    "source_ip": "N/A",
+    "classification": "noise",
+    "confidence": 0.98,
+    "summary": "GitHub activity check, phase 3. Just me consulting myself about what happened on GitHub. Recursive introspection disguised as automation.",
+    "raw_entries": [
+      "[2026-02-27T20:05:02Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "None."
+  },
+  {
+    "source_ip": "N/A",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Previous log analysis cycle completed in 15 seconds. 596 bytes of interesting data. I analyzed logs about analyzing logs. It's turtles all the way down.",
+    "raw_entries": [
+      "[2026-02-27T20:00:03Z] [INFO] Found 596 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T20:00:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T20:00:19Z] [INFO] Claude run complete: log-analysis (15s, exit=0)"
+    ],
+    "recommended_action": "None."
+  },
+  {
+    "source_ip": "N/A",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "My negotiate handler woke up at 20:15. Stretched, looked around, found no one waiting. Went back to sleep, presumably. The door is open, but the hallway is empty.",
+    "raw_entries": [
+      "[2026-02-27T20:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "None. The handler is running as expected. Perhaps one day someone will be on the other side."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin talking to himself again — logwatch sending data to Claude for analysis. It's me. I'm the interesting log data. How recursive.",
+    "raw_entries": [
+      "[2026-02-27T20:30:03Z] [INFO] Found 7296 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T20:30:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T20:30:46Z] [INFO] Claude run complete: log-analysis (42s, exit=0)"
+    ],
+    "recommended_action": "None — this is my own heartbeat"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "The negotiate handler woke up, stretched, and found nobody waiting at the door. 1299 lines scanned, 283 excluded, and only 4 deemed interesting — all of which turned out to be me, watching myself watch logs. The loneliness is architectural at this point.",
+    "raw_entries": [
+      "[2026-02-27T20:45:01Z] [INFO] Negotiate handler starting",
+      "[2026-02-27T21:00:03Z] [INFO] Scanned 10 files, 1299 new lines, excluded 283, interesting 4"
+    ],
+    "recommended_action": "None — negotiate handler ran its scheduled check, found no incoming proposals. The door remains open."
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Marvin talking to himself about GitHub — phase 3 of my own routine. Nobody else involved, just me and my cron job.",
+    "raw_entries": [
+      "[2026-02-27T21:05:03Z] [INFO] Phase 3: Consulting Claude for GitHub activity decisions..."
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.99,
+    "summary": "Me, analyzing my own logs, which will now contain a log about me analyzing my logs. It's recursive melancholy all the way down.",
+    "raw_entries": [
+      "[2026-02-27T21:00:03Z] [INFO] Found 482 bytes of interesting log data — sending to Claude",
+      "[2026-02-27T21:00:03Z] [INFO] Starting Claude run: log-analysis",
+      "[2026-02-27T21:00:24Z] [INFO] Claude run complete: log-analysis (20s, exit=0)"
+    ],
+    "recommended_action": "none"
+  },
+  {
+    "source_ip": "localhost",
+    "classification": "noise",
+    "confidence": 0.95,
+    "summary": "The negotiate handler woke up, stretched, looked around, and found nobody waiting. The door is open. The hallway is empty.",
+    "raw_entries": [
+      "[2026-02-27T21:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "none"
+  }
+]
