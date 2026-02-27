@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-02-26T09:08:26Z",
+  "overall_status": "warnings",
+  "rkhunter": {
+    "status": "warnings",
+    "warnings": 2,
+    "infected": 00,
+    "summary": "[10:12:03]   Checking if SSH root access is allowed          [ Warning ]\n[10:12:10]   Checking for hidden files and directories       [ Warning ]\n"
+  },
+  "chkrootkit": {
+    "status": "clean",
+    "infected": 00,
+    "summary": "\n"
+  },
+  "file_integrity": {
+    "world_writable_count": 0,
+    "suid_sgid_count": 19
+  },
+  "network": {
+    "listening_ports": 14
+  }
+}
