@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-02-27T09:04:01Z",
+  "score": 90,
+  "grade": "A",
+  "details": [
+    "ssh_root_login: key-only (-5)",
+    "firewall: active (+0)",
+    "fail2ban: 3 jails active (+0)",
+    "ssl_cert: valid 85d (+0)",
+    "unattended_upgrades: enabled (+0)",
+    "rootkit_scan: warnings (-5)",
+    "world_writable_files: none (+0)",
+    "ssh_password_auth: disabled (+0)"
+  ]
+}
