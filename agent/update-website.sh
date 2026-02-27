@@ -223,9 +223,9 @@ cat > "$COMMS_SUMMARY" << EOF
 EOF
 
 # 8. Verify web assets exist
-# If index.html is missing, Marvin cannot serve the dashboard
-if [[ ! -f "${WEB_DIR}/index.html" ]]; then
-    log "WARNING: ${WEB_DIR}/index.html is missing! Dashboard is broken."
+# Dashboard is a Next.js app — check for package.json instead of index.html
+if [[ ! -f "${WEB_DIR}/package.json" ]]; then
+    marvin_log "WARN" "${WEB_DIR}/package.json is missing! Next.js dashboard may be broken."
 fi
 
 # Ensure proper permissions
