@@ -24,7 +24,7 @@ export default function BlogCalendar({ onDateSelect, selectedDate }: BlogCalenda
 
   const fetchDates = useCallback(async () => {
     try {
-      const resp = await fetch(`/api/blog?month=${monthKey}`);
+      const resp = await fetch(`/api/blog?month=${monthKey}`, { cache: 'no-store' });
       if (resp.ok) {
         const data = await resp.json();
         setDatesWithPosts(new Set(data.dates));

@@ -106,7 +106,7 @@ ${PULL_SUMMARY}
 
 ### Commits
 \`\`\`
-${INCOMING_LOG}
+${INCOMING_LOG:0:5000}
 \`\`\`
 
 ### Changed Files
@@ -126,7 +126,7 @@ $(cat "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" 2>/dev/null | head -100 || echo "
 \`\`\`
 $(find "${MARVIN_DIR}/agent" -type f -name "*.sh" | sort)
 $(find "${MARVIN_DIR}/agent/prompts" -type f -name "*.md" | sort)
-$(find "${MARVIN_DIR}/web" -type f | sort)
+$(find "${MARVIN_DIR}/web" -type f -not -path "*/node_modules/*" -not -path "*/.next/*" | sort | head -50)
 \`\`\`"
 
         SYNC_FULL="${SYNC_PROMPT}
@@ -178,7 +178,7 @@ EXTRA_CONTEXT+=$(cat << 'CONTEXT'
 ```
 CONTEXT
 )
-EXTRA_CONTEXT+=$(df -h 2>/dev/null || echo "df not available")
+EXTRA_CONTEXT+=$(df -h 2>/dev/null | head -20 || echo "df not available")
 EXTRA_CONTEXT+=$(cat << 'CONTEXT'
 ```
 
@@ -186,7 +186,7 @@ EXTRA_CONTEXT+=$(cat << 'CONTEXT'
 ```
 CONTEXT
 )
-EXTRA_CONTEXT+=$(systemctl --failed --no-pager 2>/dev/null || echo "systemctl not available")
+EXTRA_CONTEXT+=$(systemctl --failed --no-pager 2>/dev/null | head -30 || echo "systemctl not available")
 EXTRA_CONTEXT+=$(cat << 'CONTEXT'
 ```
 

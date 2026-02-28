@@ -156,12 +156,12 @@ marvin_log "INFO" "--- Phase 2: Enhancement Planning with Claude ---"
 # Read the enhancements file
 ENHANCEMENTS=""
 if [[ -f "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" ]]; then
-    ENHANCEMENTS=$(cat "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md")
+    ENHANCEMENTS=$(head -200 "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md")
 fi
 
 # Gather weekly context
 WEEK_LOGS=$(find "${LOGS_DIR}" -name "*.log" -mtime -7 -exec tail -20 {} \; 2>/dev/null | tail -100 || echo "No logs found")
-WEEK_ENHANCES=$(find "${ENHANCE_DIR}" -name "*.md" -mtime -7 -exec cat {} \; 2>/dev/null | tail -200 || echo "No enhancements this week")
+WEEK_ENHANCES=$(find "${ENHANCE_DIR}" -name "*.md" -mtime -7 -exec head -30 {} \; 2>/dev/null | tail -200 || echo "No enhancements this week")
 WEEK_ERRORS=$(find "${LOGS_DIR}" -name "*.log" -mtime -7 -exec grep -hi "error\|fail\|critical" {} \; 2>/dev/null | sort -u | tail -30 || echo "No errors this week")
 
 DEEP_PROMPT="# Weekly Deep Enhancement Session — Marvin

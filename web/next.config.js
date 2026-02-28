@@ -14,6 +14,18 @@ const nextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
         ],
       },
+      {
+        source: '/api/blog/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, max-age=0' },
+        ],
+      },
+      {
+        source: '/api/blog',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, max-age=0' },
+        ],
+      },
     ];
   },
 };

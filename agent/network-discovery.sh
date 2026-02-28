@@ -104,12 +104,12 @@ if check_claude; then
 
 ### Known Peers
 \`\`\`json
-$(cat "$PEERS_FILE" 2>/dev/null || echo '{"peers": []}')
+$(head -c 5000 "$PEERS_FILE" 2>/dev/null || echo '{"peers": []}')
 \`\`\`
 
 ### Today's Communication Log
 \`\`\`
-$(cat "$COMM_LOG" 2>/dev/null || echo 'No logs yet')
+$(tail -100 "$COMM_LOG" 2>/dev/null || echo 'No logs yet')
 \`\`\`
 
 ### Our Identity Beacon  

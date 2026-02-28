@@ -54,7 +54,7 @@ done
 # Failed systemd units
 LOG_SNAPSHOT+="### Failed systemd units
 \`\`\`
-$(systemctl --failed --no-pager 2>/dev/null || echo "unavailable")
+$(systemctl --failed --no-pager 2>/dev/null | head -30 || echo "unavailable")
 \`\`\`
 
 "
