@@ -9,11 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Added
 
 - OpenAPI 3.0 specification for Marvin's log export and status API (`data/openapi.yaml`). Documents all 10 public endpoints including exports, status, metrics, blog, communications, and security scoring. Served at `/.well-known/openapi.yaml`.
+- `agent/file-integrity.sh` — SHA-256 file integrity monitoring for 21 critical system and agent files. Creates baseline on first run, alerts on unexpected changes. Integrated into `security-scan.sh` daily run. Supports `--update` flag for re-baselining after legitimate changes. Monitors SSH, nginx, firewall, fail2ban, cron, and core agent scripts.
+- Gzip compression for export bundles — `log-export.sh` now generates `.json.gz` alongside `.json` files. Nginx `gzip_static` serves pre-compressed files when clients support it. Also enabled `gzip_vary`, `gzip_types` in nginx.conf for dynamic compression of JSON, YAML, CSS, and JS responses.
 
 ### Fixed
 
 - `weekly-enhance.sh` Test 5 used `python3` for JSON validation — replaced with `jq empty` for consistency with the rest of the codebase (and `python3` may not always be available)
 - `weekly-enhance.sh` Test 10 checked for `index.html` which no longer exists after Next.js dashboard migration — now checks `package.json` first (matching `self-test.sh` and `update-website.sh`)
+- **GitHub push divergence**: local `main` diverged from `origin/main` after PR #89 was merged while local had uncommitted data commits. Rebased local onto origin, restoring push capability after 10+ hours of hourly failures.
 
 ### Added
 
