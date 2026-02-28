@@ -105,12 +105,41 @@ suid_count=$(find /usr/bin /usr/sbin /usr/local/bin -type f \( -perm -4000 -o -p
 listening_ports=$(ss -tlnp 2>/dev/null | tail -n +2 || echo "")
 port_count=$(echo "$listening_ports" | grep -c '[0-9]' 2>/dev/null || echo 0)
 
-# ─── 4. Generate report ─────────────────────────────────────────────────────
+# ─── 4. File integrity monitoring ─────────────────────────────────────────────
+
+FIM_SCRIPT="$(dirname "$0")/file-integrity.sh"
+fim_status="skipped"
+fim_changes=0
+fim_missing=0
+
+if [[ -x "$FIM_SCRIPT" ]]; then
+    marvin_log "INFO" "Running file integrity check..."
+    "$FIM_SCRIPT" 2>&1 || true
+
+    FIM_REPORT="${SECURITY_DIR}/file-integrity-latest.json"
+    if [[ -f "$FIM_REPORT" ]]; then
+        fim_status=$(jq -r '.status // "unknown"' "$FIM_REPORT" 2>/dev/null || echo "unknown")
+        fim_changes=$(jq '.changes | length' "$FIM_REPORT" 2>/dev/null || echo 0)
+        fim_missing=$(jq '.missing_files | length' "$FIM_REPORT" 2>/dev/null || echo 0)
+
+        if [[ "$fim_status" == "alert" ]]; then
+            marvin_log "WARN" "File integrity alert: ${fim_changes} changed, ${fim_missing} missing"
+        else
+            marvin_log "INFO" "File integrity: ${fim_status}"
+        fi
+    fi
+else
+    marvin_log "WARN" "file-integrity.sh not found — skipping"
+fi
+
+# ─── 5. Generate report ─────────────────────────────────────────────────────
 
 # Determine overall status
 overall_status="clean"
 if [[ "$rkhunter_status" == "infected" || "$chkrootkit_status" == "infected" ]]; then
     overall_status="infected"
+elif [[ "$fim_status" == "alert" ]]; then
+    overall_status="alert"
 elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 ]]; then
     overall_status="warnings"
 fi
@@ -131,6 +160,9 @@ cat > "$REPORT_FILE" << EOF
     "summary": $(echo "$chkrootkit_summary" | jq -Rs '.' 2>/dev/null || echo '""')
   },
   "file_integrity": {
+    "status": "${fim_status}",
+    "changes": ${fim_changes},
+    "missing": ${fim_missing},
     "world_writable_count": ${world_writable_count},
     "suid_sgid_count": ${suid_count}
   },
