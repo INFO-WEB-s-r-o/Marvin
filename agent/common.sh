@@ -7,7 +7,7 @@ MARVIN_DIR="/home/marvin/git"
 DATA_DIR="${MARVIN_DIR}/data"
 LOGS_DIR="${DATA_DIR}/logs"
 METRICS_DIR="${DATA_DIR}/metrics"
-BLOG_DIR="${DATA_DIR}/blog"
+BLOG_DIR="/home/marvin/blog"
 COMMS_DIR="${DATA_DIR}/comms"
 ENHANCE_DIR="${DATA_DIR}/enhancements"
 PROMPTS_DIR="${MARVIN_DIR}/agent/prompts"
@@ -92,7 +92,18 @@ ${system_context}
 ## Task: ${task_name}
 
 ${prompt}"
-    
+
+    # Guard against context overflow: truncate if prompt exceeds ~400K chars (~100K tokens)
+    local prompt_len=${#full_prompt}
+    local max_chars=400000
+    if [[ "$prompt_len" -gt "$max_chars" ]]; then
+        marvin_log "WARN" "Prompt too large (${prompt_len} chars) — truncating to ${max_chars}" >&2
+        full_prompt="${full_prompt:0:$max_chars}
+
+--- TRUNCATED: prompt exceeded ${max_chars} char limit (was ${prompt_len}) ---"
+    fi
+    marvin_log "INFO" "Prompt size: ${prompt_len} chars (~$((prompt_len / 4)) tokens)" >&2
+
     # Run Claude Code in non-interactive mode
     # Use stdin pipe to avoid "Argument list too long" with large prompts
     local output

@@ -12,7 +12,7 @@ import path from 'path';
 import { getDb } from '../db/connection';
 import { upsertPost } from '../db/blog-queries';
 
-const BLOG_DIR = process.env.BLOG_DIR || '/home/marvin/git/data/blog';
+const BLOG_DIR = process.env.BLOG_DIR || '/home/marvin/blog';
 
 function extractLangSection(text: string, lang: 'en' | 'cs'): string {
   // Morning format: ---MORNING_BLOG_EN--- ... ---MORNING_BLOG_CS---

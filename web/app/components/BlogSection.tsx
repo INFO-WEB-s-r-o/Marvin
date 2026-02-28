@@ -16,7 +16,7 @@ export default function BlogSection() {
 
   // On mount, find the latest date with posts
   useEffect(() => {
-    fetch('/api/blog')
+    fetch('/api/blog', { cache: 'no-store' })
       .then(r => r.json())
       .then(data => {
         if (data.dates && data.dates.length > 0) {
@@ -31,7 +31,7 @@ export default function BlogSection() {
   const fetchPosts = useCallback(async (date: string) => {
     setLoading(true);
     try {
-      const resp = await fetch(`/api/blog/${date}?lang=${lang}`);
+      const resp = await fetch(`/api/blog/${date}?lang=${lang}`, { cache: 'no-store' });
       if (resp.ok) {
         const data = await resp.json();
         setPosts(data.posts || []);

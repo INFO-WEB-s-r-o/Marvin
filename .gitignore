@@ -31,6 +31,9 @@ node_modules/
 data/logs/*
 !data/logs/.gitkeep
 
+# Blog markdown files live outside git at /home/marvin/blog/
+data/blog/
+
 # Next.js build output
 web/.next/
 

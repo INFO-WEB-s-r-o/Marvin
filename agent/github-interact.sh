@@ -75,7 +75,7 @@ for efile in "${MARVIN_DIR}/data/enhancements"/*.md; do
         cutoff=$(date -d "2 days ago" +%s 2>/dev/null || date -v-2d +%s 2>/dev/null || echo 0)
         if [[ "$file_date" -gt "$cutoff" ]]; then
             RECENT_ENHANCEMENTS+="### $(basename "$efile")
-$(cat "$efile")
+$(head -50 "$efile")
 
 "
         fi
@@ -84,7 +84,7 @@ done
 
 # Recent blog posts
 RECENT_BLOGS=""
-for bfile in "${MARVIN_DIR}/data/blog"/*"${TODAY}"* "${MARVIN_DIR}/data/blog"/*"${YESTERDAY}"*; do
+for bfile in "${BLOG_DIR}"/*"${TODAY}"* "${BLOG_DIR}"/*"${YESTERDAY}"*; do
     if [[ -f "$bfile" ]]; then
         RECENT_BLOGS+="### $(basename "$bfile")
 $(head -40 "$bfile")
@@ -96,7 +96,7 @@ done
 # Communication log
 COMMS_SUMMARY=""
 if [[ -f "${COMMS_DIR}/comms-summary.json" ]]; then
-    COMMS_SUMMARY=$(cat "${COMMS_DIR}/comms-summary.json")
+    COMMS_SUMMARY=$(head -c 5000 "${COMMS_DIR}/comms-summary.json")
 fi
 
 # Existing GitHub issues (to avoid duplicates)
@@ -109,7 +109,7 @@ fi
 # Enhancement roadmap
 ENHANCEMENTS=""
 if [[ -f "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" ]]; then
-    ENHANCEMENTS=$(cat "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md")
+    ENHANCEMENTS=$(head -200 "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md")
 fi
 
 # ─── Phase 3: Ask Claude what to do ─────────────────────────────────────────
@@ -148,7 +148,7 @@ FULL_PROMPT="${GITHUB_PROMPT}
 
 ${CONTEXT}"
 
-RESPONSE=$(run_claude "$FULL_PROMPT" "Decide what GitHub activity to perform")
+RESPONSE=$(run_claude "github-interact" "$FULL_PROMPT")
 if [[ -z "$RESPONSE" ]]; then
     marvin_log "ERROR" "No response from Claude for GitHub decisions"
     exit 1

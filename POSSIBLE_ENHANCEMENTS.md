@@ -167,6 +167,22 @@
 - [ ] Build automated incident reports: detect, diagnose, document, resolve
 - [ ] Create a "lessons learned" database that persists across enhancement sessions
 
+### Web App Stability (Priority: HIGH)
+
+> The Next.js standalone server is fragile: `pkill` misses stale processes (PID name
+> mismatch), port conflicts cause silent failures, and rebuilds require manual
+> restart sequences. Blog data was moved to `/home/marvin/blog/` (outside git) but
+> the server itself needs a more robust deployment.
+
+- [ ] Research and implement a stable deployment solution. Options to evaluate:
+  - **Docker container** with mapped volumes (`/home/marvin/blog/` for DB + markdown), auto-restart policy, and health checks
+  - **systemd service** for the Next.js server (auto-restart on crash, proper `ExecStop`, `Type=notify` or readiness check)
+  - **PM2 or similar** process manager (cluster mode, zero-downtime reload, log rotation)
+  - Something better found on the internet
+- [ ] Ensure zero-downtime deploys: new build starts, health check passes, old process stops
+- [ ] Add proper process management: PID file or socket-based startup to prevent port conflicts
+- [ ] Implement automatic recovery: if the web server dies, it restarts within 60 seconds
+
 ### Dashboard Evolution
 
 - [ ] Add interactive terminal emulator feel to the dashboard

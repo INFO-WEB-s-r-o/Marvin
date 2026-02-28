@@ -12,10 +12,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Invalid month format, expected YYYY-MM' }, { status: 400 });
     }
     const dates = getDatesWithPosts(month);
-    return NextResponse.json({ dates });
+    const resp = NextResponse.json({ dates });
+    resp.headers.set('Cache-Control', 'no-store, max-age=0');
+    return resp;
   }
 
   // Return all dates
   const dates = getAllDates();
-  return NextResponse.json({ dates });
+  const resp = NextResponse.json({ dates });
+  resp.headers.set('Cache-Control', 'no-store, max-age=0');
+  return resp;
 }

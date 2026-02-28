@@ -56,7 +56,7 @@ EXTRA_CONTEXT+="\`\`\`
 ### Morning Report
 "
 if [[ -f "$MORNING_REPORT" ]]; then
-    EXTRA_CONTEXT+="$(cat "$MORNING_REPORT")"
+    EXTRA_CONTEXT+="$(head -100 "$MORNING_REPORT")"
 else
     EXTRA_CONTEXT+="No morning report was generated today."
 fi
@@ -68,7 +68,7 @@ EXTRA_CONTEXT+="
 ENHANCE_FILES=$(find "${ENHANCE_DIR}" -name "${TODAY}*" -type f 2>/dev/null)
 if [[ -n "$ENHANCE_FILES" ]]; then
     for f in $ENHANCE_FILES; do
-        EXTRA_CONTEXT+="$(cat "$f")
+        EXTRA_CONTEXT+="$(head -50 "$f")
 "
     done
 else
@@ -81,7 +81,7 @@ EXTRA_CONTEXT+="
 "
 COMM_LOG="${COMMS_DIR}/${TODAY}.log"
 if [[ -f "$COMM_LOG" ]]; then
-    EXTRA_CONTEXT+="$(cat "$COMM_LOG")"
+    EXTRA_CONTEXT+="$(tail -100 "$COMM_LOG")"
 else
     EXTRA_CONTEXT+="No communication attempts today."
 fi
@@ -133,28 +133,57 @@ FOOTER="
 ---
 *Written by Marvin at ${NOW} — Day ${DAY_NUM}*"
 
+# Validate blog content: must start with "# " and be at least 400 chars
+validate_blog_content() {
+    local content="$1"
+    local label="$2"
+    if [[ ${#content} -lt 400 ]]; then
+        marvin_log "ERROR" "${label}: content too short (${#content} chars, need 400+) — refusing to write"
+        return 1
+    fi
+    if ! echo "$content" | head -1 | grep -q '^# '; then
+        marvin_log "ERROR" "${label}: content doesn't start with '# ' heading — refusing to write"
+        return 1
+    fi
+    return 0
+}
+
 # Check if Claude already wrote the blog files directly using its own tools.
 # When Claude uses Write/Edit tools, $OUTPUT is just a summary — not the blog.
-# Detect this by checking if .en.md and .cs.md already have markdown headings.
+# Detect this by checking if .en.md or .cs.md already have valid content.
 CLAUDE_WROTE_FILES=false
 EN_FILE="${BLOG_DIR}/${TODAY}-evening.en.md"
 CS_FILE="${BLOG_DIR}/${TODAY}-evening.cs.md"
 
-if [[ -f "$EN_FILE" && -f "$CS_FILE" ]]; then
-    if head -1 "$EN_FILE" | grep -q '^# ' && head -1 "$CS_FILE" | grep -q '^# '; then
+if [[ -f "$EN_FILE" ]] && validate_blog_content "$(cat "$EN_FILE")" "EN_FILE (pre-written)"; then
+    CLAUDE_WROTE_FILES=true
+    marvin_log "INFO" "Claude created EN blog file directly — preserving it"
+fi
+if [[ -f "$CS_FILE" ]] && validate_blog_content "$(cat "$CS_FILE")" "CS_FILE (pre-written)"; then
+    if [[ "$CLAUDE_WROTE_FILES" == "false" ]]; then
         CLAUDE_WROTE_FILES=true
-        marvin_log "INFO" "Claude created blog files directly — preserving those"
     fi
+    marvin_log "INFO" "Claude created CS blog file directly — preserving it"
 fi
 
 if [[ "$CLAUDE_WROTE_FILES" == "true" ]]; then
     # Claude already wrote the individual language files — use them as-is
-    EN_CONTENT=$(cat "$EN_FILE")
-    CS_CONTENT=$(cat "$CS_FILE")
+    EN_CONTENT=$(cat "$EN_FILE" 2>/dev/null || echo "")
+    CS_CONTENT=$(cat "$CS_FILE" 2>/dev/null || echo "")
 elif echo "$OUTPUT" | grep -q '---CZECH---'; then
     # Claude returned blog content in stdout with bilingual separator
     EN_CONTENT=$(echo "$OUTPUT" | sed '/---CZECH---/,$d')
     CS_CONTENT=$(echo "$OUTPUT" | sed '1,/---CZECH---/d')
+
+    # Validate before writing — refuse to overwrite with bad content
+    if ! validate_blog_content "$EN_CONTENT" "stdout EN"; then
+        marvin_log "ERROR" "Stdout EN content failed validation — aborting blog write"
+        exit 1
+    fi
+    if ! validate_blog_content "$CS_CONTENT" "stdout CS"; then
+        marvin_log "ERROR" "Stdout CS content failed validation — aborting blog write"
+        exit 1
+    fi
 
     cat > "$EN_FILE" << EOF
 ${EN_CONTENT}
@@ -166,7 +195,11 @@ ${CS_CONTENT}
 ${FOOTER}
 EOF
 else
-    # No separator, no pre-written files — save as English only
+    # No separator, no pre-written files — validate before saving as English only
+    if ! validate_blog_content "$OUTPUT" "stdout (no separator)"; then
+        marvin_log "ERROR" "Stdout content failed validation — aborting blog write"
+        exit 1
+    fi
     marvin_log "WARN" "Evening blog missing ---CZECH--- separator, saving as EN only"
     EN_CONTENT="$OUTPUT"
     CS_CONTENT=""

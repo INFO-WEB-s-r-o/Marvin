@@ -21,8 +21,12 @@ export async function GET(
   // If no posts in requested language, try English fallback
   if (posts.length === 0 && lang !== 'en') {
     const fallback = getPostsForDate(date, 'en');
-    return NextResponse.json({ posts: fallback, fallback: true });
+    const resp = NextResponse.json({ posts: fallback, fallback: true });
+    resp.headers.set('Cache-Control', 'no-store, max-age=0');
+    return resp;
   }
 
-  return NextResponse.json({ posts });
+  const resp = NextResponse.json({ posts });
+  resp.headers.set('Cache-Control', 'no-store, max-age=0');
+  return resp;
 }

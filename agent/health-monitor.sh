@@ -191,6 +191,63 @@ if ! systemctl is-active --quiet cron 2>/dev/null; then
     systemctl restart cron 2>/dev/null || true
 fi
 
+# ─── Website selfcheck ─────────────────────────────────────────────────────
+# Verify the live site is actually serving content
+SITE_URL="https://robot-marvin.cz"
+SITE_OK=true
+
+# Check 1: Main page returns 200 and contains expected content
+http_code=$(curl -so /dev/null -w '%{http_code}' --max-time 10 "${SITE_URL}/" 2>/dev/null || echo "000")
+if [[ "$http_code" != "200" ]]; then
+    ISSUES+=("CRITICAL: Website ${SITE_URL} returned HTTP ${http_code}")
+    marvin_log "CRITICAL" "Website returned HTTP ${http_code}"
+    SITE_OK=false
+else
+    # Verify page contains the expected footer/header marker
+    page_body=$(curl -s --max-time 10 "${SITE_URL}/" 2>/dev/null || echo "")
+    if ! echo "$page_body" | grep -q 'Marvin'; then
+        ISSUES+=("WARNING: Website returned 200 but missing 'Marvin' marker in body")
+        marvin_log "WARN" "Website body missing expected content"
+        SITE_OK=false
+    fi
+fi
+
+# Check 2: Blog API returns dates
+blog_api=$(curl -s --max-time 10 "${SITE_URL}/api/blog" 2>/dev/null || echo "")
+if echo "$blog_api" | jq -e '.dates[0]' &>/dev/null; then
+    latest_blog_date=$(echo "$blog_api" | jq -r '.dates[0]')
+    # Warn if latest blog post is older than 2 days
+    latest_ts=$(date -d "$latest_blog_date" +%s 2>/dev/null || echo 0)
+    now_ts=$(date +%s)
+    age_days=$(( (now_ts - latest_ts) / 86400 ))
+    if [[ "$age_days" -gt 2 ]]; then
+        ISSUES+=("WARNING: Latest blog post is ${age_days} days old (${latest_blog_date})")
+        marvin_log "WARN" "Blog stale: latest post is ${latest_blog_date} (${age_days} days ago)"
+    fi
+else
+    ISSUES+=("CRITICAL: Blog API ${SITE_URL}/api/blog returned invalid data")
+    marvin_log "CRITICAL" "Blog API returned invalid JSON or no dates"
+    SITE_OK=false
+fi
+
+# Check 3: Blog post content is accessible
+if [[ -n "${latest_blog_date:-}" ]]; then
+    blog_post=$(curl -s --max-time 10 "${SITE_URL}/api/blog/${latest_blog_date}?lang=en" 2>/dev/null || echo "")
+    if ! echo "$blog_post" | jq -e '.posts[0].content' &>/dev/null; then
+        ISSUES+=("WARNING: Blog post for ${latest_blog_date} returned no content")
+        marvin_log "WARN" "Blog post ${latest_blog_date} has no content"
+    fi
+fi
+
+# Check 4: Static blog markdown via nginx
+if [[ -n "${latest_blog_date:-}" ]]; then
+    md_http=$(curl -so /dev/null -w '%{http_code}' --max-time 10 "${SITE_URL}/blog/${latest_blog_date}-evening.en.md" 2>/dev/null || echo "000")
+    if [[ "$md_http" != "200" ]]; then
+        ISSUES+=("WARNING: Blog markdown ${latest_blog_date}-evening.en.md returned HTTP ${md_http}")
+        marvin_log "WARN" "Blog markdown file not accessible (HTTP ${md_http})"
+    fi
+fi
+
 # Update status file for the web dashboard
 STATUS="healthy"
 if [[ ${#ISSUES[@]} -gt 0 ]]; then
@@ -217,7 +274,10 @@ cat > "${DATA_DIR}/status.json" << EOF
     "nginx": "$(systemctl is-active nginx 2>/dev/null || true)",
     "fail2ban": "$(systemctl is-active fail2ban 2>/dev/null || true)",
     "cron": "$(systemctl is-active cron 2>/dev/null || true)",
-    "ssh": "$(systemctl is-active ssh 2>/dev/null || true)"
+    "ssh": "$(systemctl is-active ssh 2>/dev/null || true)",
+    "website": "$(if [[ "$SITE_OK" == "true" ]]; then echo "ok"; else echo "failing"; fi)",
+    "website_http": "${http_code:-000}",
+    "blog_latest": "${latest_blog_date:-unknown}"
   }
 }
 EOF
