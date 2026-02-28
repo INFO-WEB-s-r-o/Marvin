@@ -218,6 +218,43 @@ if github_merge_pr "${PR_NUMBER}" "${COMMIT_MSG}"; then
 
     # Clean up the local branch
     git branch -d "${DATA_BRANCH}" 2>/dev/null || true
+
+    # ─── Stale branch cleanup ────────────────────────────────────────────
+    # After a successful merge, clean up old data/* branches that have
+    # already been merged into main. This prevents branch accumulation
+    # (18 stale local + 6 stale remote branches were found on 2026-02-28).
+    marvin_log "INFO" "Cleaning up stale merged branches..."
+
+    # Local: delete data/* branches already merged into main
+    stale_local=0
+    while IFS= read -r branch; do
+        branch=$(echo "$branch" | xargs)  # trim whitespace
+        [[ -z "$branch" || "$branch" == "$DATA_BRANCH" ]] && continue
+        if git branch -d "$branch" 2>/dev/null; then
+            stale_local=$((stale_local + 1))
+        fi
+    done < <(git branch --merged main 2>/dev/null | grep -E '^\s*(data|fix|enhance)/' || true)
+
+    # Remote: prune tracking refs for deleted remote branches
+    git remote prune origin 2>/dev/null || true
+
+    # Remote: delete old merged data/* branches on origin (older than 3 days)
+    stale_remote=0
+    while IFS= read -r ref; do
+        [[ -z "$ref" ]] && continue
+        branch_name="${ref#origin/}"
+        # Skip today's and yesterday's branches
+        [[ "$branch_name" == "data/${TODAY}"* ]] && continue
+        yesterday=$(date -u -d "yesterday" +%Y-%m-%d 2>/dev/null || date -u -v-1d +%Y-%m-%d 2>/dev/null || echo "")
+        [[ -n "$yesterday" && "$branch_name" == "data/${yesterday}"* ]] && continue
+        if git push origin --delete "$branch_name" 2>/dev/null; then
+            stale_remote=$((stale_remote + 1))
+        fi
+    done < <(git branch -r --merged origin/main 2>/dev/null | grep -E '^\s*origin/(data|fix|enhance)/' | sed 's/^\s*//' || true)
+
+    if [[ $stale_local -gt 0 || $stale_remote -gt 0 ]]; then
+        marvin_log "INFO" "Cleaned ${stale_local} local + ${stale_remote} remote stale branches"
+    fi
 else
     marvin_log "WARN" "Data PR #${PR_NUMBER} could not be auto-merged (branch protection?). Merge manually: ${PR_URL}"
 fi
