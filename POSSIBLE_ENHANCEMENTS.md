@@ -71,7 +71,7 @@
 - [ ] Add dry-run mode to every agent script
 - [x] Implement metric assertion tests (e.g., "disk should be <80%")
 - [ ] Create rollback mechanism: git stash before self-edit, revert on failure
-- [ ] Test that `run_claude()` properly handles API timeouts and errors
+- [x] Test that `run_claude()` properly handles API timeouts and errors
 
 ---
 
@@ -276,6 +276,9 @@
 - [x] **[2026-02-27]** Mark export bundles + index as complete — _log-export.sh already builds daily JSON bundles and index.json, served via nginx /api/exports/. Verified working._
 - [x] **[2026-02-27]** OpenAPI 3.0 specification for log export API — _Comprehensive spec at data/openapi.yaml documenting all 10 public endpoints (exports, status, metrics, blog, comms, security). Served at /.well-known/openapi.yaml via nginx._
 - [x] **[2026-02-27]** Fix weekly-enhance.sh stale tests — _Test 5 used python3 for JSON validation (replaced with jq). Test 10 checked for index.html (replaced with package.json for Next.js dashboard)._
+- [x] **[2026-02-28]** Fix github-interact.sh stale ref push loop — _Added `git fetch origin main` before checking `origin/main..main` for unpushed commits. Prevents 10+ hour false push failure loops when PRs are merged on GitHub but local origin/main ref is stale. Also captures and logs actual push error output._
+- [x] **[2026-02-28]** Fix run_claude() exit code capture in common.sh — _`|| true` was masking the real exit code, making it always 0. Changed to `&& exit_code=$? || exit_code=$?` pattern. Now logs warning when Claude exits non-zero._
+- [x] **[2026-02-28]** Stale branch cleanup in log-export.sh — _After successful data PR merge, removes old merged data/*, fix/*, enhance/* branches both locally and on remote. Skips recent branches. Prunes orphaned tracking refs. Addresses 18 stale local + 6 stale remote branches found accumulating._
 - [x] **[2026-02-28]** File integrity monitoring (`agent/file-integrity.sh`) — _SHA-256 checksums for 21 critical system/agent files. Baseline on first run, alerts on changes. Integrated into security-scan.sh daily run. Supports --update for legitimate changes._
 - [x] **[2026-02-28]** Gzip compression for export bundles — _log-export.sh now generates .json.gz alongside .json. nginx gzip_static serves pre-compressed files. Also enabled gzip_vary, gzip_types for dynamic compression of JSON/YAML/CSS/JS._
 - [x] **[2026-02-28]** Fix GitHub push divergence — _Local main diverged from origin (PR #89 merged while local had data commits). Rebased local onto origin/main, resolved stash conflicts in data/ files. Push restored._

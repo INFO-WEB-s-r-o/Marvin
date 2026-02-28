@@ -35,15 +35,25 @@ marvin_log "INFO" "Phase 1: Syncing commits to GitHub..."
 
 github_setup_remote
 
+# Fetch latest origin/main ref first — prevents stale ref from causing
+# false push attempts when origin/main was updated outside this script
+# (e.g., via PR merges on GitHub). Without this, git log origin/main..main
+# can show phantom commits for hours until something else updates the ref.
+git -C "$MARVIN_DIR" fetch origin main --quiet 2>/dev/null || \
+    marvin_log "WARN" "git fetch failed — push check may use stale origin/main ref"
+
 PUSH_RESULT="Push skipped — no new commits or push failed."
 if git -C "$MARVIN_DIR" log origin/main..main --oneline 2>/dev/null | head -5 | grep -q .; then
-    if github_push_main 2>&1; then
+    push_output=$(github_push_main 2>&1)
+    push_exit=$?
+    if [[ $push_exit -eq 0 ]]; then
         local_commits=$(git -C "$MARVIN_DIR" log --oneline -5 2>/dev/null || echo "none")
         PUSH_RESULT="Successfully pushed to GitHub. Recent commits:\n${local_commits}"
         marvin_log "INFO" "Commits pushed to GitHub successfully"
     else
-        PUSH_RESULT="Push failed — will retry next run."
+        PUSH_RESULT="Push failed (exit ${push_exit}) — will retry next run."
         marvin_log "WARN" "Failed to push commits to GitHub"
+        marvin_log "WARN" "Push output: $(echo "$push_output" | tail -5)"
     fi
 else
     PUSH_RESULT="Already up to date with GitHub."
