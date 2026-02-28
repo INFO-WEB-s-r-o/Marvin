@@ -1,0 +1,110 @@
+{
+  "created": "2026-02-28T09:07:17Z",
+  "files": {
+    "/etc/ssh/sshd_config": {
+      "sha256": "b04f1a7f49c1fff5ee3289ae46d0c463dd71141f829a7b42daa1fc85e2b3d82a",
+      "size": 3486,
+      "mtime": 1771703266
+    },
+    "/etc/ufw/user.rules": {
+      "sha256": "503bf7a46ca9fdb69da9411e54ea2a09eebc4af026249414a0158d5792e74895",
+      "size": 1920,
+      "mtime": 1772096543
+    },
+    "/etc/ufw/user6.rules": {
+      "sha256": "6a584b0fb62f38d74544e3901f56a903dae62e0baf5c70acb552128f70b971c3",
+      "size": 1900,
+      "mtime": 1772096543
+    },
+    "/etc/fail2ban/jail.local": {
+      "sha256": "e3366e94a7962efe636d93db3feb3b4b5849ab07f1efc40bb81c9b5076639d97",
+      "size": 216,
+      "mtime": 1771769961
+    },
+    "/etc/nginx/nginx.conf": {
+      "sha256": "154bd2b921944c9f62dfb3a2110b39d8377acc744086df07466c0e16c9fc2502",
+      "size": 2020,
+      "mtime": 1772269626
+    },
+    "/etc/cron.d/marvin": {
+      "sha256": "99f0c0dbe5c0bb7ea92fa555060bbf3738ce353e6580711cfe942519de0d2bae",
+      "size": 2891,
+      "mtime": 1772182995
+    },
+    "/etc/pam.d/sshd": {
+      "sha256": "65822d20f36db29cb50275526854b584df7a04a9efe975f3801473f81b44f521",
+      "size": 2133,
+      "mtime": 1712345431
+    },
+    "/etc/sudoers": {
+      "sha256": "5bac27ce5ff1a78ace8f3ef81bfd60cbd44810ac3f3d280da9d7649fe90c18f8",
+      "size": 1800,
+      "mtime": 1706548196
+    },
+    "/etc/hosts": {
+      "sha256": "c52abf9998d9801f2ca799c6f83fec06a4b63afe4f22f674bced4d562b774131",
+      "size": 230,
+      "mtime": 1771753073
+    },
+    "/etc/resolv.conf": {
+      "sha256": "ebdf560272a77357195c39e98340b77e18c8a8ce2025ee950e9e0c7b01467ab8",
+      "size": 39,
+      "mtime": 1713865236
+    },
+    "/home/marvin/git/agent/common.sh": {
+      "sha256": "f671db92ac8ccb80496f4446bdff5a179d4cca269f4f61bb57a676e266077529",
+      "size": 4294,
+      "mtime": 1772056801
+    },
+    "/home/marvin/git/agent/health-monitor.sh": {
+      "sha256": "51c0cab1e65d0721155878720e4e1946515359dbf72e09888f5f53cbfaa7e03c",
+      "size": 9568,
+      "mtime": 1772182839
+    },
+    "/home/marvin/git/agent/morning-check.sh": {
+      "sha256": "076ac413a22b54c48e1e19d549c67dc862234162ffcf171c8b4457e28f7e13bf",
+      "size": 8839,
+      "mtime": 1772183215
+    },
+    "/home/marvin/git/agent/self-enhance.sh": {
+      "sha256": "dc4d4466dfbe4102b82385f6acdda6032c9ddd7da04346633c390b7f75f1d9c6",
+      "size": 2467,
+      "mtime": 1771872974
+    },
+    "/home/marvin/git/agent/log-export.sh": {
+      "sha256": "dd075f0cc1e5adec7320ade8b2c4cb4c39dd0a04df2ff1f28c0cd25705770ebc",
+      "size": 10647,
+      "mtime": 1772269592
+    },
+    "/home/marvin/git/agent/security-scan.sh": {
+      "sha256": "7545ac5c1de85893fb4e84b333f348472714a8cf159a7708bbc184a7acdcfb47",
+      "size": 7399,
+      "mtime": 1772269563
+    },
+    "/home/marvin/git/agent/self-test.sh": {
+      "sha256": "91c5426e6e68310f1b38be89801feb297a4db4870a59251fe2beb177722a10e5",
+      "size": 13466,
+      "mtime": 1772183215
+    },
+    "/home/marvin/git/agent/lib/github.sh": {
+      "sha256": "f71e2732db3aa678a9e4acb9336c9e0ea90df4dc46613e4e2a1f4cbca979236a",
+      "size": 13765,
+      "mtime": 1771939038
+    },
+    "/etc/nginx/sites-enabled/marvin": {
+      "sha256": "bf1a11dc354bb93df639e5755c61a6fd3ab7385cc0772b12aa03d888695f97d1",
+      "size": 33,
+      "mtime": 1771769967
+    },
+    "/etc/fail2ban/jail.d/defaults-debian.conf": {
+      "sha256": "f114213e9167a50a79d95d91edd74b3c38ce13c054b6fe3eab33202c3871f5c0",
+      "size": 117,
+      "mtime": 1718054865
+    },
+    "/etc/fail2ban/jail.d/sshd.conf": {
+      "sha256": "6d82545479f104cb2672f69bac3876fb246da72062ab068f31dee8a6935c1254",
+      "size": 136,
+      "mtime": 1719905223
+    }
+  }
+}
