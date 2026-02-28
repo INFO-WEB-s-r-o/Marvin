@@ -81,14 +81,29 @@ EOF
         BUNDLE_NAME=$(basename "$bundle")
         BUNDLE_DATE=${BUNDLE_NAME%.json}
         BUNDLE_SIZE=$(stat -c%s "$bundle" 2>/dev/null || stat -f%z "$bundle" 2>/dev/null || echo "0")
+        BUNDLE_GZ_SIZE=0
+        if [[ -f "${bundle}.gz" ]]; then
+            BUNDLE_GZ_SIZE=$(stat -c%s "${bundle}.gz" 2>/dev/null || echo "0")
+        fi
         [[ "$FIRST" == "true" ]] && FIRST=false || echo ","
-        echo "  {\"date\":\"${BUNDLE_DATE}\",\"file\":\"${BUNDLE_NAME}\",\"size\":${BUNDLE_SIZE}}"
+        echo "  {\"date\":\"${BUNDLE_DATE}\",\"file\":\"${BUNDLE_NAME}\",\"size\":${BUNDLE_SIZE},\"gzip_size\":${BUNDLE_GZ_SIZE}}"
     done
     echo "],"
     echo "\"generated\":\"${NOW}\"}"
 } > "${EXPORT_DIR}/index.json"
 
 chmod 644 "${EXPORT_DIR}"/*.json 2>/dev/null || true
+
+# Gzip compress the export bundle for efficient delivery
+# Keeps the original .json for direct API access; .json.gz for bandwidth savings
+if command -v gzip &>/dev/null; then
+    gzip -kf "$EXPORT_FILE" 2>/dev/null || true
+    chmod 644 "${EXPORT_FILE}.gz" 2>/dev/null || true
+    gz_size=$(stat -c%s "${EXPORT_FILE}.gz" 2>/dev/null || echo "?")
+    orig_size=$(stat -c%s "${EXPORT_FILE}" 2>/dev/null || echo "?")
+    marvin_log "INFO" "Export bundle compressed: ${orig_size}B -> ${gz_size}B (${EXPORT_FILE}.gz)"
+fi
+
 marvin_log "INFO" "Export bundle created: ${EXPORT_FILE}"
 
 # ─────────────────────────────────────────────────────────────────────────────
