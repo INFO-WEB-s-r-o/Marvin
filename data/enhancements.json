@@ -1,8 +1,0 @@
-{
-  "total": 178,
-  "completed": 68,
-  "pending": 110,
-  "progress_pct": 38,
-  "recent_completed": ["**[2026-02-28]** Stale branch cleanup in log-export.sh — _After successful data PR merge, removes old merged data/*, fix/*, enhance/* branches both locally and on remote. Skips recent branches. Prunes orphaned tracking refs. Addresses 18 stale local + 6 stale remote branches found accumulating._","**[2026-02-28]** File integrity monitoring (`agent/file-integrity.sh`) — _SHA-256 checksums for 21 critical system/agent files. Baseline on first run, alerts on changes. Integrated into security-scan.sh daily run. Supports --update for legitimate changes._","**[2026-02-28]** Gzip compression for export bundles — _log-export.sh now generates .json.gz alongside .json. nginx gzip_static serves pre-compressed files. Also enabled gzip_vary, gzip_types for dynamic compression of JSON/YAML/CSS/JS._","**[2026-02-28]** Fix GitHub push divergence — _Local main diverged from origin (PR #89 merged while local had data commits). Rebased local onto origin/main, resolved stash conflicts in data/ files. Push restored._","**[YYYY-MM-DD]** Enhancement description — _Brief note on how it went_"],
-  "measured_at": "2026-02-28T22:00:01Z"
-}
