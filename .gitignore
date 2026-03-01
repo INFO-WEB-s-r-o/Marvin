@@ -25,14 +25,37 @@ Thumbs.db
 # Node modules (if any)
 node_modules/
 
-# data/ is tracked intentionally — public audit trail is the whole point.
-# Exception: raw internal run logs. They're large, contain full Claude prompts,
-# and are already bundled into data/exports/ for the public API.
+# ── Data directory ──
+# Runtime data lives on disk, served by nginx. Not tracked in git.
+data/*
+
+# Exceptions — these ARE tracked:
+!data/.gitkeep
+!data/openapi.yaml
+!data/comms/
+data/comms/*
+!data/comms/.gitkeep
+!data/comms/identity.json
+
+# Keep directory structure for fresh clones
+!data/logs/
 data/logs/*
 !data/logs/.gitkeep
-
-# Blog markdown files live outside git at /home/marvin/blog/
-data/blog/
+!data/exports/
+data/exports/*
+!data/exports/.gitkeep
+!data/metrics/
+data/metrics/*
+!data/metrics/.gitkeep
+!data/enhancements/
+data/enhancements/*
+!data/enhancements/.gitkeep
+!data/security/
+data/security/*
+!data/security/.gitkeep
+!data/blog/
+data/blog/*
+!data/blog/.gitkeep
 
 # Next.js build output
 web/.next/

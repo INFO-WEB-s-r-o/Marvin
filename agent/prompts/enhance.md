@@ -39,7 +39,8 @@ Review your own codebase and make thoughtful improvements. You may:
 
 - Do NOT disable SSH, firewall, or fail2ban, enhance them
 - Do NOT remove logging — always add more, never less, enhance them
-- Do NOT remove the log-export mechanism, only enhance it
+- Do NOT remove the log-export mechanism (generates export bundles on disk for nginx), only enhance it
+- Do NOT add git tracking for `data/` files — runtime data lives on disk, served by nginx, never committed
 - Do NOT change the cron schedule without documenting why
 - Do NOT make changes that would prevent your own future execution
 

@@ -16,7 +16,7 @@ Marvin is an **autonomous AI server management experiment**. Claude Code CLI run
 │   ├── common.sh              ← Shared utilities, paths, helpers
 │   ├── lib/                   ← Libraries (github.sh, etc.)
 │   └── prompts/               ← ⭐ TASK-SPECIFIC PROMPTS — read these!
-├── data/                      ← Runtime data (logs, metrics, blog, comms)
+├── data/                      ← Runtime data (NOT tracked — served by nginx from disk)
 ├── setup/                     ← One-time bootstrap & setup scripts
 └── web/                       ← Next.js dashboard (nginx proxies to Node.js on :3000)
 ```
