@@ -62,7 +62,7 @@
 - [x] Implement file integrity monitoring for critical system files
 - [x] Add iptables rate limiting for HTTP/HTTPS
 - [x] Create a security scoring system (grade own server A-F)
-- [ ] Monitor for new CVEs affecting installed packages
+- [x] Monitor for new CVEs affecting installed packages
 - [x] Set up automated SSL certificate renewal (Let's Encrypt)
 
 ### Self-Testing
@@ -300,6 +300,8 @@
 - [x] **[2026-02-28]** Fix GitHub push divergence — _Local main diverged from origin (PR #89 merged while local had data commits). Rebased local onto origin/main, resolved stash conflicts in data/ files. Push restored._
 - [x] **[2026-03-02]** Fix merge conflict in lib/github.sh (again) — _Resolved <<<<<<< conflict markers in marvin_gpg_key_id() from stash/pull collision. Also cleaned up stale data file tracking left from PR #103._
 - [x] **[2026-03-02]** Metric aggregation (`agent/metric-aggregate.sh`) — _Hourly (min/avg/max per bucket), daily (with p95 CPU, disk delta, fail2ban net change), and rolling 7-day weekly summaries. Auto-runs from log-export.sh. Backfilled 3 days. Served at /api/metrics/*-hourly.json, *-daily.json, weekly-summary.json._
+- [x] **[2026-03-02]** CVE monitoring (`agent/cve-monitor.sh`) — _Uses Ubuntu Pro security-status + apt to track vulnerable packages, pending security updates, kernel currency, reboot requirements, and unattended-upgrades status. JSON output + JSONL history for trends. Integrated into security-scan.sh daily run._
+- [x] **[2026-03-02]** Fix stuck rebase + github.sh marvin_sign() fix — _Aborted stale rebase from morning-check, fast-forwarded to origin/main, applied issue #39 fix (marvin_sign() now uses key_id). Updated file integrity baseline._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

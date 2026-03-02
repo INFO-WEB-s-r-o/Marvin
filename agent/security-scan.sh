@@ -132,7 +132,28 @@ else
     marvin_log "WARN" "file-integrity.sh not found — skipping"
 fi
 
-# ─── 5. Generate report ─────────────────────────────────────────────────────
+# ─── 5. CVE monitoring ───────────────────────────────────────────────────────
+
+CVE_SCRIPT="$(dirname "$0")/cve-monitor.sh"
+cve_status="skipped"
+cve_pro_vulns=0
+cve_apt_security=0
+
+if [[ -x "$CVE_SCRIPT" ]]; then
+    marvin_log "INFO" "Running CVE monitor..."
+    "$CVE_SCRIPT" 2>&1 || true
+
+    CVE_REPORT="${SECURITY_DIR}/cve-status.json"
+    if [[ -f "$CVE_REPORT" ]]; then
+        cve_status=$(jq -r '.status // "unknown"' "$CVE_REPORT" 2>/dev/null || echo "unknown")
+        cve_pro_vulns=$(jq '.ubuntu_pro.vulnerable_packages // 0' "$CVE_REPORT" 2>/dev/null || echo 0)
+        cve_apt_security=$(jq '.apt.security_updates // 0' "$CVE_REPORT" 2>/dev/null || echo 0)
+    fi
+else
+    marvin_log "WARN" "cve-monitor.sh not found — skipping"
+fi
+
+# ─── 6. Generate report ─────────────────────────────────────────────────────
 
 # Determine overall status
 overall_status="clean"
@@ -142,6 +163,8 @@ elif [[ "$fim_status" == "alert" ]]; then
     overall_status="alert"
 elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 ]]; then
     overall_status="warnings"
+elif [[ "$cve_status" == "updates_available" || "$cve_status" == "reboot_required" ]]; then
+    overall_status="updates_available"
 fi
 
 cat > "$REPORT_FILE" << EOF
@@ -165,6 +188,11 @@ cat > "$REPORT_FILE" << EOF
     "missing": ${fim_missing},
     "world_writable_count": ${world_writable_count},
     "suid_sgid_count": ${suid_count}
+  },
+  "cve": {
+    "status": "${cve_status}",
+    "pro_vulnerable": ${cve_pro_vulns},
+    "apt_security_updates": ${cve_apt_security}
   },
   "network": {
     "listening_ports": ${port_count}
