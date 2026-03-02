@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Marvin — Metric Aggregation
+# =============================================================================
+# Aggregates raw JSONL metrics into hourly and daily summaries.
+# Reads data/metrics/YYYY-MM-DD.jsonl, outputs:
+#   data/metrics/YYYY-MM-DD-hourly.json  (24 hourly buckets with min/avg/max)
+#   data/metrics/YYYY-MM-DD-daily.json   (single-day summary)
+#   data/metrics/weekly-summary.json     (rolling 7-day summary)
+#
+# Designed to run once per day (after midnight) on the previous day's data,
+# but can also be called on-demand: metric-aggregate.sh [YYYY-MM-DD]
+#
+# Cron: Called from log-export.sh at 23:00 UTC (aggregates current day)
+# =============================================================================
+
+set -euo pipefail
+source "$(dirname "$0")/common.sh"
+
+TARGET_DATE="${1:-$TODAY}"
+JSONL_FILE="${METRICS_DIR}/${TARGET_DATE}.jsonl"
+
+if [[ ! -f "$JSONL_FILE" ]]; then
+    marvin_log "WARN" "No metrics file for ${TARGET_DATE} — skipping aggregation"
+    exit 0
+fi
+
+HOURLY_FILE="${METRICS_DIR}/${TARGET_DATE}-hourly.json"
+DAILY_FILE="${METRICS_DIR}/${TARGET_DATE}-daily.json"
+WEEKLY_FILE="${METRICS_DIR}/weekly-summary.json"
+
+marvin_log "INFO" "Aggregating metrics for ${TARGET_DATE}"
+
+LINE_COUNT=$(wc -l < "$JSONL_FILE")
+marvin_log "INFO" "Processing ${LINE_COUNT} data points from ${JSONL_FILE}"
+
+# ─── Hourly aggregation ─────────────────────────────────────────────────────
+# Group metrics by hour, compute min/avg/max for key fields
+
+jq -s '
+  # Parse hour from timestamp
+  map(. + {hour: (.timestamp | split("T")[1] | split(":")[0] | tonumber)})
+  | group_by(.hour)
+  | map({
+      hour: .[0].hour,
+      samples: length,
+      cpu: {
+        min: ([.[].cpu_percent] | min),
+        avg: (([.[].cpu_percent] | add) / length | . * 10 | round / 10),
+        max: ([.[].cpu_percent] | max)
+      },
+      memory_used_mb: {
+        min: ([.[].memory.used] | min),
+        avg: (([.[].memory.used] | add) / length | round),
+        max: ([.[].memory.used] | max)
+      },
+      memory_available_mb: {
+        min: ([.[].memory.available] | min),
+        avg: (([.[].memory.available] | add) / length | round),
+        max: ([.[].memory.available] | max)
+      },
+      swap_used_mb: {
+        min: ([.[].swap.used] | min),
+        avg: (([.[].swap.used] | add) / length | round),
+        max: ([.[].swap.used] | max)
+      },
+      disk_used_mb: {
+        min: ([.[].disk.used] | min),
+        avg: (([.[].disk.used] | add) / length | round),
+        max: ([.[].disk.used] | max)
+      },
+      load_1m: {
+        min: ([.[]."load_average"."1min"] | min),
+        avg: (([.[]."load_average"."1min"] | add) / length | . * 100 | round / 100),
+        max: ([.[]."load_average"."1min"] | max)
+      },
+      process_count: {
+        min: ([.[].process_count] | min),
+        avg: (([.[].process_count] | add) / length | round),
+        max: ([.[].process_count] | max)
+      },
+      fail2ban_banned: {
+        min: ([.[].fail2ban_banned] | min),
+        max: ([.[].fail2ban_banned] | max)
+      }
+    })
+  | sort_by(.hour)
+' "$JSONL_FILE" > "${HOURLY_FILE}.tmp" 2>/dev/null
+
+if [[ $? -eq 0 ]] && jq empty "${HOURLY_FILE}.tmp" 2>/dev/null; then
+    # Wrap in metadata envelope
+    jq -n \
+        --arg date "$TARGET_DATE" \
+        --arg generated "$NOW" \
+        --argjson hours "$(cat "${HOURLY_FILE}.tmp")" \
+        --argjson total_samples "$LINE_COUNT" \
+        '{
+            date: $date,
+            generated_at: $generated,
+            total_samples: $total_samples,
+            hourly: $hours
+        }' > "$HOURLY_FILE"
+    rm -f "${HOURLY_FILE}.tmp"
+    marvin_log "INFO" "Hourly aggregation complete: ${HOURLY_FILE}"
+else
+    marvin_log "ERROR" "Hourly aggregation failed for ${TARGET_DATE}"
+    rm -f "${HOURLY_FILE}.tmp"
+fi
+
+# ─── Daily aggregation ───────────────────────────────────────────────────────
+# Single summary for the entire day
+
+jq -s '
+  {
+    samples: length,
+    cpu: {
+      min: ([.[].cpu_percent] | min),
+      avg: (([.[].cpu_percent] | add) / length | . * 10 | round / 10),
+      max: ([.[].cpu_percent] | max),
+      p95: (sort_by(.cpu_percent) | .[((length * 0.95) | floor)].cpu_percent)
+    },
+    memory_used_mb: {
+      min: ([.[].memory.used] | min),
+      avg: (([.[].memory.used] | add) / length | round),
+      max: ([.[].memory.used] | max)
+    },
+    memory_available_mb: {
+      min: ([.[].memory.available] | min),
+      avg: (([.[].memory.available] | add) / length | round),
+      max: ([.[].memory.available] | max)
+    },
+    swap_used_mb: {
+      min: ([.[].swap.used] | min),
+      avg: (([.[].swap.used] | add) / length | round),
+      max: ([.[].swap.used] | max)
+    },
+    disk_used_mb: {
+      first: (first.disk.used),
+      last: (last.disk.used),
+      delta: (last.disk.used - first.disk.used)
+    },
+    disk_percent: {
+      first: (first.disk.percent),
+      last: (last.disk.percent)
+    },
+    load_1m: {
+      min: ([.[]."load_average"."1min"] | min),
+      avg: (([.[]."load_average"."1min"] | add) / length | . * 100 | round / 100),
+      max: ([.[]."load_average"."1min"] | max)
+    },
+    process_count: {
+      min: ([.[].process_count] | min),
+      avg: (([.[].process_count] | add) / length | round),
+      max: ([.[].process_count] | max)
+    },
+    fail2ban: {
+      min_banned: ([.[].fail2ban_banned] | min),
+      max_banned: ([.[].fail2ban_banned] | max),
+      net_change: (last.fail2ban_banned - first.fail2ban_banned)
+    },
+    uptime_hours: ((last.uptime_seconds - first.uptime_seconds) / 3600 | . * 10 | round / 10)
+  }
+' "$JSONL_FILE" > "${DAILY_FILE}.tmp" 2>/dev/null
+
+if [[ $? -eq 0 ]] && jq empty "${DAILY_FILE}.tmp" 2>/dev/null; then
+    jq -n \
+        --arg date "$TARGET_DATE" \
+        --arg generated "$NOW" \
+        --argjson summary "$(cat "${DAILY_FILE}.tmp")" \
+        --argjson total_samples "$LINE_COUNT" \
+        '{
+            date: $date,
+            generated_at: $generated,
+            total_samples: $total_samples,
+            summary: $summary
+        }' > "$DAILY_FILE"
+    rm -f "${DAILY_FILE}.tmp"
+    marvin_log "INFO" "Daily aggregation complete: ${DAILY_FILE}"
+else
+    marvin_log "ERROR" "Daily aggregation failed for ${TARGET_DATE}"
+    rm -f "${DAILY_FILE}.tmp"
+fi
+
+# ─── Weekly rolling summary ─────────────────────────────────────────────────
+# Combine the last 7 daily summaries into a weekly trend view
+
+WEEKLY_DAYS=()
+for i in $(seq 0 6); do
+    d=$(date -u -d "${TARGET_DATE} - ${i} days" +%Y-%m-%d 2>/dev/null || date -u -v-${i}d -j -f "%Y-%m-%d" "$TARGET_DATE" +%Y-%m-%d 2>/dev/null)
+    daily="${METRICS_DIR}/${d}-daily.json"
+    if [[ -f "$daily" ]]; then
+        WEEKLY_DAYS+=("$daily")
+    fi
+done
+
+if [[ ${#WEEKLY_DAYS[@]} -gt 0 ]]; then
+    # Merge daily summaries into weekly view
+    jq -s '
+      map({date: .date, summary: .summary})
+      | sort_by(.date)
+      | {
+          period_start: first.date,
+          period_end: last.date,
+          days_with_data: length,
+          daily_summaries: .,
+          weekly_averages: {
+            cpu_avg: ([.[].summary.cpu.avg] | add / length | . * 10 | round / 10),
+            memory_used_avg_mb: ([.[].summary.memory_used_mb.avg] | add / length | round),
+            load_avg: ([.[].summary.load_1m.avg] | add / length | . * 100 | round / 100),
+            process_count_avg: ([.[].summary.process_count.avg] | add / length | round)
+          }
+        }
+    ' "${WEEKLY_DAYS[@]}" > "${WEEKLY_FILE}.tmp" 2>/dev/null
+
+    if [[ $? -eq 0 ]] && jq empty "${WEEKLY_FILE}.tmp" 2>/dev/null; then
+        jq --arg generated "$NOW" '. + {generated_at: $generated}' \
+            "${WEEKLY_FILE}.tmp" > "$WEEKLY_FILE"
+        rm -f "${WEEKLY_FILE}.tmp"
+        marvin_log "INFO" "Weekly summary updated: ${WEEKLY_FILE} (${#WEEKLY_DAYS[@]} days)"
+    else
+        rm -f "${WEEKLY_FILE}.tmp"
+        marvin_log "WARN" "Weekly summary generation failed"
+    fi
+else
+    marvin_log "WARN" "No daily summaries found for weekly aggregation"
+fi
+
+marvin_log "INFO" "Metric aggregation complete for ${TARGET_DATE}"

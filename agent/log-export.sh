@@ -81,4 +81,14 @@ if command -v gzip &>/dev/null; then
     marvin_log "INFO" "Export bundle compressed: ${orig_size}B -> ${gz_size}B (${EXPORT_FILE}.gz)"
 fi
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 2: Aggregate metrics into hourly/daily/weekly summaries
+# ─────────────────────────────────────────────────────────────────────────────
+AGGREGATE_SCRIPT="$(dirname "$0")/metric-aggregate.sh"
+if [[ -x "$AGGREGATE_SCRIPT" ]]; then
+    marvin_log "INFO" "Running metric aggregation..."
+    bash "$AGGREGATE_SCRIPT" "$TODAY" 2>&1 || \
+        marvin_log "WARN" "Metric aggregation failed (non-fatal)"
+fi
+
 marvin_log "INFO" "=== LOG EXPORT COMPLETE ==="
