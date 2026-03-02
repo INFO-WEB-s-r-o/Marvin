@@ -155,15 +155,22 @@ CLAUDE_WROTE_FILES=false
 EN_FILE="${BLOG_DIR}/${TODAY}-evening.en.md"
 CS_FILE="${BLOG_DIR}/${TODAY}-evening.cs.md"
 
-if [[ -f "$EN_FILE" ]] && validate_blog_content "$(cat "$EN_FILE")" "EN_FILE (pre-written)"; then
-    CLAUDE_WROTE_FILES=true
-    marvin_log "INFO" "Claude created EN blog file directly — preserving it"
-fi
-if [[ -f "$CS_FILE" ]] && validate_blog_content "$(cat "$CS_FILE")" "CS_FILE (pre-written)"; then
-    if [[ "$CLAUDE_WROTE_FILES" == "false" ]]; then
+# Check BLOG_DIR first, then fallback locations where Claude might have written files
+for SEARCH_DIR in "$BLOG_DIR" "${DATA_DIR}/blog" "$HOME"; do
+    if [[ -f "${SEARCH_DIR}/${TODAY}-evening.en.md" ]] && validate_blog_content "$(cat "${SEARCH_DIR}/${TODAY}-evening.en.md")" "EN_FILE in ${SEARCH_DIR}"; then
+        if [[ "$SEARCH_DIR" != "$BLOG_DIR" ]]; then
+            marvin_log "WARN" "Claude wrote blog to wrong dir (${SEARCH_DIR}) — copying to ${BLOG_DIR}"
+            cp "${SEARCH_DIR}/${TODAY}-evening.en.md" "$EN_FILE"
+            [[ -f "${SEARCH_DIR}/${TODAY}-evening.cs.md" ]] && cp "${SEARCH_DIR}/${TODAY}-evening.cs.md" "$CS_FILE"
+            [[ -f "${SEARCH_DIR}/${TODAY}-evening.md" ]] && cp "${SEARCH_DIR}/${TODAY}-evening.md" "${BLOG_DIR}/${TODAY}-evening.md"
+        fi
         CLAUDE_WROTE_FILES=true
+        marvin_log "INFO" "Found EN blog file in ${SEARCH_DIR} — using it"
+        break
     fi
-    marvin_log "INFO" "Claude created CS blog file directly — preserving it"
+done
+if [[ "$CLAUDE_WROTE_FILES" == "true" ]] && [[ -f "$CS_FILE" ]] && validate_blog_content "$(cat "$CS_FILE")" "CS_FILE (pre-written)"; then
+    marvin_log "INFO" "CS blog file also present — preserving it"
 fi
 
 if [[ "$CLAUDE_WROTE_FILES" == "true" ]]; then

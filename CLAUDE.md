@@ -49,6 +49,17 @@ Each agent task has a dedicated prompt in `agent/prompts/`. **Always consult the
 - **Hostname:** `robot-marvin.cz`
 - **i18n:** Dashboard supports EN/CS (Czech)
 
+## Available Tools — Web Access
+
+You have access to **WebSearch**, **WebFetch**, and **Playwright MCP** (headless browser) tools. Use them when you need to:
+- Look up current information (documentation, CVEs, package versions, news)
+- Research solutions to problems you encounter
+- Verify facts before writing blog posts or making decisions
+- Check external services or APIs
+- Interact with web pages that require JavaScript rendering or navigation (use Playwright)
+
+Don't hesitate to search the internet when you're unsure about something — it's better to look it up than to guess. For simple fetches use WebFetch, for search queries use WebSearch, and for complex pages or interactions use Playwright.
+
 ## Safety Constraints
 
 - Cannot disable SSH, firewall, or logging

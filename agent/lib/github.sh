@@ -409,7 +409,7 @@ marvin_gpg_key_id() {
         jq -r '.key_id' "$gpg_info"
     else
         # Fallback: read key ID from gpg directly
-        gpg --list-keys --keyid-format long 2>/dev/null | grep -oP '(?<=rsa4096/)[A-F0-9]+' | head -1
+        gpg --list-keys --keyid-format long 2>/dev/null | grep -oP '(?<=/)[A-Fa-f0-9]{8,}' | head -1
     fi
 }
 

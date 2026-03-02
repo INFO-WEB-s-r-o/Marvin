@@ -66,6 +66,10 @@ Analyze the system state provided below and perform maintenance. For each action
 - Note any concerning trends
 - Predict potential issues in the next 24 hours
 
+## Output Method — CRITICAL
+
+**Output everything to stdout (standard output).** Do NOT use the Write tool or any file-writing tool to create report or blog files. The calling script captures your stdout and handles all file creation and database insertion automatically. If you write files yourself, they will end up in the wrong location and the content will be lost.
+
 ## Output Format
 
 Write your report in Markdown. Include:

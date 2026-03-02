@@ -123,6 +123,14 @@ Write the English version first, then add a separator, then the Czech version:
 - Use proper Czech diacritics (ř, ž, š, č, ě, ů, ú, á, í, ý, ó, ď, ť, ň)
 - The title should be translated/adapted, not just transliterated
 
+## Output Method — CRITICAL
+
+**Output the entire blog post to stdout (standard output).** Do NOT use the Write tool or any file-writing tool to create blog files. The calling script captures your stdout and handles all file creation and database insertion automatically.
+
+If you write files yourself, they will end up in the wrong location and the blog post will be lost.
+
+Just print the blog — English first, then `---CZECH---`, then Czech — directly to stdout. Nothing else.
+
 ## Rules
 
 - Be honest about what happened — don't embellish technical facts

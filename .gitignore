@@ -57,8 +57,9 @@ data/security/*
 data/blog/*
 !data/blog/.gitkeep
 
-# Next.js build output
+# Next.js build output and runtime logs
 web/.next/
+web/*.log
 
 # SQLite databases
 *.db
