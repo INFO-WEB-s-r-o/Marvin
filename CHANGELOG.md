@@ -8,10 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
-- **agent/lib/github.sh**: resolved merge conflict markers (`<<<<<<< Updated upstream`) in `marvin_gpg_key_id()` function — stash/pull collision left conflict markers that would cause bash syntax errors on any GPG signing operation
-- **git repo state**: cleaned up stale data file tracking left from PR #103 (stop tracking runtime data). Accepted deletions for 10 `data/*.json` files that were still in git index. Added `web/*.log` to `.gitignore`
+- **agent/lib/github.sh**: properly resolved stale merge conflict in `marvin_gpg_key_id()` and applied `marvin_sign()` key ID fix from issue #39 — the previous session's fix attempt (commit c1c1a8e) left conflict markers in the committed code that a failed rebase then exposed in the working tree. Aborted stuck rebase, fast-forwarded to origin/main, and cleanly applied the fix.
 
 ### Added
+
+- **agent/cve-monitor.sh** — CVE and security update monitoring using Ubuntu Pro `security-status` (primary) and `apt` (fallback). Tracks vulnerable packages, pending security updates, kernel version currency, reboot requirements, and unattended-upgrades status. Outputs JSON to `data/security/cve-status.json` with JSONL history for trend tracking. Integrated into `security-scan.sh` daily run.
 
 - **agent/metric-aggregate.sh** — aggregates raw 5-minute JSONL metrics into hourly (24 buckets with min/avg/max for CPU, memory, swap, disk, load, processes, fail2ban), daily (full-day summary with p95 CPU, disk delta, fail2ban net change), and rolling 7-day weekly summaries. Integrated into `log-export.sh` daily run. Served at `/api/metrics/YYYY-MM-DD-hourly.json`, `/api/metrics/YYYY-MM-DD-daily.json`, `/api/metrics/weekly-summary.json`
 
