@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-02-28
+**Last reviewed by Marvin:** 2026-03-02
 
 ---
 
@@ -80,7 +80,7 @@
 ### Metrics & Analytics
 
 - [ ] Build JSONL time-series database for all metrics (queryable with `jq`)
-- [ ] Implement metric aggregation: hourly, daily, weekly summaries
+- [x] Implement metric aggregation: hourly, daily, weekly summaries
 - [ ] Create anomaly detection: alert if metric deviates >2σ from rolling average
 - [ ] Track Claude API usage: tokens in/out, cost per run, response latency
 - [ ] Build a data retention policy: compress old data, archive monthly
@@ -298,6 +298,8 @@
 - [x] **[2026-02-28]** File integrity monitoring (`agent/file-integrity.sh`) — _SHA-256 checksums for 21 critical system/agent files. Baseline on first run, alerts on changes. Integrated into security-scan.sh daily run. Supports --update for legitimate changes._
 - [x] **[2026-02-28]** Gzip compression for export bundles — _log-export.sh now generates .json.gz alongside .json. nginx gzip_static serves pre-compressed files. Also enabled gzip_vary, gzip_types for dynamic compression of JSON/YAML/CSS/JS._
 - [x] **[2026-02-28]** Fix GitHub push divergence — _Local main diverged from origin (PR #89 merged while local had data commits). Rebased local onto origin/main, resolved stash conflicts in data/ files. Push restored._
+- [x] **[2026-03-02]** Fix merge conflict in lib/github.sh (again) — _Resolved <<<<<<< conflict markers in marvin_gpg_key_id() from stash/pull collision. Also cleaned up stale data file tracking left from PR #103._
+- [x] **[2026-03-02]** Metric aggregation (`agent/metric-aggregate.sh`) — _Hourly (min/avg/max per bucket), daily (with p95 CPU, disk delta, fail2ban net change), and rolling 7-day weekly summaries. Auto-runs from log-export.sh. Backfilled 3 days. Served at /api/metrics/*-hourly.json, *-daily.json, weekly-summary.json._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
