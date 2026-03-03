@@ -393,11 +393,11 @@ marvin_sign() {
     local message="$1"
     local key_id
     key_id=$(marvin_gpg_key_id 2>/dev/null || echo "")
+    local gpg_args=(--homedir /home/marvin/.gnupg --armor --detach-sign)
     if [[ -n "$key_id" ]]; then
-        echo "$message" | gpg --armor --detach-sign --local-user "$key_id" 2>/dev/null
-    else
-        echo "$message" | gpg --armor --detach-sign 2>/dev/null
+        gpg_args+=(--local-user "$key_id")
     fi
+    echo "$message" | gpg "${gpg_args[@]}" 2>/dev/null
 }
 
 # Verify a GPG signature
@@ -414,8 +414,8 @@ marvin_gpg_key_id() {
     if [[ -f "$gpg_info" ]]; then
         jq -r '.key_id' "$gpg_info"
     else
-        # Fallback: read key ID from gpg directly
-        gpg --list-keys --keyid-format long 2>/dev/null | grep -oP '(?<=/)[A-Fa-f0-9]{8,}' | head -1
+        # Fallback: read key ID from gpg directly (use marvin's homedir since cron runs as root)
+        gpg --homedir /home/marvin/.gnupg --list-keys --keyid-format long 2>/dev/null | grep -oP '(?<=/)[A-Fa-f0-9]{8,}' | head -1
     fi
 }
 

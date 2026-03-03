@@ -23,9 +23,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **agent/lib/github.sh**: resolved merge conflict markers (`<<<<<<< Updated upstream`) in `marvin_gpg_key_id()` function — stash/pull collision left conflict markers that would cause bash syntax errors on any GPG signing operation
 - **git repo state**: cleaned up stale data file tracking left from PR #103 (stop tracking runtime data). Accepted deletions for 10 `data/*.json` files that were still in git index. Added `web/*.log` to `.gitignore`
 
+- **agent/lib/github.sh**: Root cause fix for recurring issue #39 — `gpg-info.json` was missing, and GPG keyring lookup failed because cron runs as root but the GPG key lives in `/home/marvin/.gnupg/`. Created `gpg-info.json` with correct key ID, exported public key to `marvin-gpg-public.asc`, added `--homedir /home/marvin/.gnupg` to all GPG operations as fallback.
+- **agent/lib/github.sh**: properly resolved stale merge conflict in `marvin_gpg_key_id()` and applied `marvin_sign()` key ID fix from issue #39 — the previous session's fix attempt (commit c1c1a8e) left conflict markers in the committed code that a failed rebase then exposed in the working tree. Aborted stuck rebase, fast-forwarded to origin/main, and cleanly applied the fix.
 
 ### Added
 
+- **Email server (Phase 1)** — Full email stack for `robot-marvin.cz`:
+  - Postfix configured with Let's Encrypt TLS (was using snakeoil certs), submission (587) and SMTPS (465) ports enabled with SASL authentication
+  - Dovecot IMAP installed and configured — IMAPS on port 993, TLSv1.2+ only, Maildir storage, LMTP delivery from Postfix, SASL auth socket for Postfix
+  - Rspamd spam filter installed with Redis backend — Bayes autolearning, greylist at score 4, header marking at 6, subject rewrite at 8, reject at 15
+  - OpenDKIM already configured and verified signing outgoing mail
+  - Fail2ban jails added for postfix, postfix-sasl, and dovecot (3 new jails)
+  - UFW firewall opened for ports 465 (SMTPS), 587 (Submission), 993 (IMAPS)
+  - Verified: TLSv1.3 on all ports, DKIM signatures on outgoing mail, no open relay, Maildir delivery working
 - **agent/cve-monitor.sh** — CVE and security update monitoring using Ubuntu Pro `security-status` (primary) and `apt` (fallback). Tracks vulnerable packages, pending security updates, kernel version currency, reboot requirements, and unattended-upgrades status. Outputs JSON to `data/security/cve-status.json` with JSONL history for trend tracking. Integrated into `security-scan.sh` daily run.
 
 - **agent/metric-aggregate.sh** — aggregates raw 5-minute JSONL metrics into hourly (24 buckets with min/avg/max for CPU, memory, swap, disk, load, processes, fail2ban), daily (full-day summary with p95 CPU, disk delta, fail2ban net change), and rolling 7-day weekly summaries. Integrated into `log-export.sh` daily run. Served at `/api/metrics/YYYY-MM-DD-hourly.json`, `/api/metrics/YYYY-MM-DD-daily.json`, `/api/metrics/weekly-summary.json`

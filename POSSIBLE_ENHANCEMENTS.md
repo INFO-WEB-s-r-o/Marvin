@@ -13,13 +13,13 @@
 > **Assigned by Pavel.** This takes precedence over all other enhancements.
 > Full prompt and requirements: `agent/prompts/email-server.md`
 
-- [ ] Install and configure Postfix + Dovecot + OpenDKIM + Rspamd
-- [ ] Set up TLS via Let's Encrypt (SMTPS 465, STARTTLS 587, IMAPS 993)
-- [ ] Configure SPF, DKIM, DMARC — output DNS records for Pavel to add
-- [ ] Create `marvin@robot-marvin.cz` mailbox
-- [ ] Add fail2ban jails for SMTP/IMAP
-- [ ] Open firewall ports (25, 465, 587, 993)
-- [ ] Verify no open relay — security audit
+- [x] Install and configure Postfix + Dovecot + OpenDKIM + Rspamd
+- [x] Set up TLS via Let's Encrypt (SMTPS 465, STARTTLS 587, IMAPS 993)
+- [x] Configure SPF, DKIM, DMARC — output DNS records for Pavel to add
+- [x] Create `marvin@robot-marvin.cz` mailbox
+- [x] Add fail2ban jails for SMTP/IMAP
+- [x] Open firewall ports (25, 465, 587, 993)
+- [x] Verify no open relay — security audit
 - [ ] Create email management cron: daily summary, spam handling, 14-day cleanup
 - [ ] Create GitHub issue with the required DNS records
 - [ ] Send test email and verify DKIM/SPF pass in headers
@@ -303,6 +303,10 @@
 - [x] **[2026-03-03]** Fix merge conflict in lib/github.sh (third time) — _Resolved <<<<<<< conflict markers in marvin_gpg_key_id() from stash/pull collision. Also cleaned 10 unmerged data/ ghost entries and unstaged web/nextjs.log._
 - [x] **[2026-03-03]** Fix malformed JSON export bundles — _log-export.sh used .json glob for .md enhancement files, producing invalid JSON. Fixed to use find with .md pattern. Repaired 2 corrupted export files._
 - [x] **[2026-03-03]** CVE monitoring for installed packages — _Added to security-scan.sh: checks apt upgradable packages, identifies security updates, queries ubuntu-security-status for ESM coverage, tracks unattended-upgrades auto-patch history. Outputs data/security/cve-status.json._
+- [x] **[2026-03-02]** CVE monitoring (`agent/cve-monitor.sh`) — _Uses Ubuntu Pro security-status + apt to track vulnerable packages, pending security updates, kernel currency, reboot requirements, and unattended-upgrades status. JSON output + JSONL history for trends. Integrated into security-scan.sh daily run._
+- [x] **[2026-03-02]** Fix stuck rebase + github.sh marvin_sign() fix — _Aborted stale rebase from morning-check, fast-forwarded to origin/main, applied issue #39 fix (marvin_sign() now uses key_id). Updated file integrity baseline._
+- [x] **[2026-03-03]** Fix GPG key root cause (issue #39 permanent fix) — _Created gpg-info.json (was missing), exported marvin-gpg-public.asc, added --homedir /home/marvin/.gnupg to all GPG operations. Root cause: cron runs as root but GPG key lives in marvin's homedir._
+- [x] **[2026-03-03]** Email server Phase 1 — _Installed Dovecot (IMAPS) + Rspamd (spam filter) + Redis. Configured Postfix with Let's Encrypt TLS, submission (587) + SMTPS (465), SASL auth via Dovecot, Rspamd milter, RBL checks, rate limiting. Dovecot with Maildir, LMTP delivery, TLSv1.2+ only. Rspamd with Bayes autolearning + Redis. Fail2ban jails for postfix/dovecot. UFW ports opened. Verified: TLSv1.3, DKIM signing, no open relay, mail delivery working._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
