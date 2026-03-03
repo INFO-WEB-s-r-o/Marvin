@@ -132,7 +132,70 @@ else
     marvin_log "WARN" "file-integrity.sh not found — skipping"
 fi
 
-# ─── 5. Generate report ─────────────────────────────────────────────────────
+# ─── 5. CVE / package vulnerability monitoring ──────────────────────────────
+
+marvin_log "INFO" "Checking for security-relevant package updates..."
+
+# Refresh package lists (quiet, non-interactive)
+apt-get update -qq 2>/dev/null || true
+
+# Check for upgradable packages and identify security updates
+upgradable_all=0
+upgradable_security=0
+upgradable_list=""
+security_list=""
+
+if upgradable_raw=$(apt list --upgradable 2>/dev/null | tail -n +2); then
+    upgradable_all=$(echo "$upgradable_raw" | grep -c '[a-z]' 2>/dev/null || echo 0)
+    # Security updates come from *-security repositories
+    security_raw=$(echo "$upgradable_raw" | grep -i 'security' 2>/dev/null || echo "")
+    if [[ -n "$security_raw" ]]; then
+        upgradable_security=$(echo "$security_raw" | wc -l | tr -d ' ')
+        security_list=$(echo "$security_raw" | head -20)
+        marvin_log "WARN" "Found ${upgradable_security} pending security update(s)"
+    fi
+    upgradable_list=$(echo "$upgradable_raw" | head -30)
+fi
+
+# Check for packages with known CVEs using ubuntu-security-status (if available)
+esm_infra=0
+esm_apps=0
+cve_status="unknown"
+if command -v ubuntu-security-status &>/dev/null; then
+    uss_output=$(ubuntu-security-status 2>/dev/null || echo "")
+    esm_infra=$(echo "$uss_output" | grep -oP '\d+(?= packages from Ubuntu Main)' 2>/dev/null || echo 0)
+    esm_apps=$(echo "$uss_output" | grep -oP '\d+(?= packages from Ubuntu Universe)' 2>/dev/null || echo 0)
+    cve_status="checked"
+fi
+
+# Parse recent unattended-upgrades activity (last 7 days)
+auto_patched=0
+if [[ -f /var/log/unattended-upgrades/unattended-upgrades.log ]]; then
+    # Count "Packages that will be upgraded" entries from last 7 days
+    auto_patched=$(grep -c "Packages that will be upgraded" \
+        /var/log/unattended-upgrades/unattended-upgrades.log 2>/dev/null || echo 0)
+fi
+
+# Write CVE report
+CVE_REPORT="${SECURITY_DIR}/cve-status.json"
+cat > "$CVE_REPORT" << CVEEOF
+{
+  "timestamp": "${NOW}",
+  "upgradable_total": ${upgradable_all},
+  "upgradable_security": ${upgradable_security},
+  "security_packages": $(echo "$security_list" | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]"),
+  "all_upgradable": $(echo "$upgradable_list" | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]"),
+  "auto_patches_applied": ${auto_patched},
+  "esm_main_packages": ${esm_infra},
+  "esm_universe_packages": ${esm_apps},
+  "cve_check_status": "${cve_status}"
+}
+CVEEOF
+chmod 644 "$CVE_REPORT"
+
+marvin_log "INFO" "CVE status: ${upgradable_all} upgradable (${upgradable_security} security), ${auto_patched} auto-patched"
+
+# ─── 6. Generate report ─────────────────────────────────────────────────────
 
 # Determine overall status
 overall_status="clean"
@@ -140,7 +203,7 @@ if [[ "$rkhunter_status" == "infected" || "$chkrootkit_status" == "infected" ]];
     overall_status="infected"
 elif [[ "$fim_status" == "alert" ]]; then
     overall_status="alert"
-elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 ]]; then
+elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security" -gt 0 ]]; then
     overall_status="warnings"
 fi
 
@@ -165,6 +228,11 @@ cat > "$REPORT_FILE" << EOF
     "missing": ${fim_missing},
     "world_writable_count": ${world_writable_count},
     "suid_sgid_count": ${suid_count}
+  },
+  "cve_monitoring": {
+    "upgradable_total": ${upgradable_all},
+    "upgradable_security": ${upgradable_security},
+    "auto_patches_applied": ${auto_patched}
   },
   "network": {
     "listening_ports": ${port_count}

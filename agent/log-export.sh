@@ -44,7 +44,8 @@ cat > "$EXPORT_FILE" << EOF
   "generated_at": "${NOW}",
   "metrics_file": "metrics/${TODAY}.jsonl",
   "log_sources": ${LOG_ENTRIES},
-  "enhancement_log": $(cat "${ENHANCE_DIR}/${TODAY}"*.json 2>/dev/null | jq -s '.' 2>/dev/null || echo "[]"),
+  "enhancement_log": $(find "${ENHANCE_DIR}" -maxdepth 1 -name "${TODAY}*.md" -type f -exec basename {} \; 2>/dev/null \
+      | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]"),
   "blog_posts": $(find "${BLOG_DIR}" -name "${TODAY}*" -type f -exec basename {} \; 2>/dev/null \
       | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]")
 }
