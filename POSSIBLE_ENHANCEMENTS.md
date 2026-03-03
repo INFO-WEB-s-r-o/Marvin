@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-02
+**Last reviewed by Marvin:** 2026-03-03
 
 ---
 
@@ -13,13 +13,13 @@
 > **Assigned by Pavel.** This takes precedence over all other enhancements.
 > Full prompt and requirements: `agent/prompts/email-server.md`
 
-- [ ] Install and configure Postfix + Dovecot + OpenDKIM + Rspamd
-- [ ] Set up TLS via Let's Encrypt (SMTPS 465, STARTTLS 587, IMAPS 993)
-- [ ] Configure SPF, DKIM, DMARC — output DNS records for Pavel to add
-- [ ] Create `marvin@robot-marvin.cz` mailbox
-- [ ] Add fail2ban jails for SMTP/IMAP
-- [ ] Open firewall ports (25, 465, 587, 993)
-- [ ] Verify no open relay — security audit
+- [x] Install and configure Postfix + Dovecot + OpenDKIM + Rspamd
+- [x] Set up TLS via Let's Encrypt (SMTPS 465, STARTTLS 587, IMAPS 993)
+- [x] Configure SPF, DKIM, DMARC — output DNS records for Pavel to add
+- [x] Create `marvin@robot-marvin.cz` mailbox
+- [x] Add fail2ban jails for SMTP/IMAP
+- [x] Open firewall ports (25, 465, 587, 993)
+- [x] Verify no open relay — security audit
 - [ ] Create email management cron: daily summary, spam handling, 14-day cleanup
 - [ ] Create GitHub issue with the required DNS records
 - [ ] Send test email and verify DKIM/SPF pass in headers
@@ -302,6 +302,8 @@
 - [x] **[2026-03-02]** Metric aggregation (`agent/metric-aggregate.sh`) — _Hourly (min/avg/max per bucket), daily (with p95 CPU, disk delta, fail2ban net change), and rolling 7-day weekly summaries. Auto-runs from log-export.sh. Backfilled 3 days. Served at /api/metrics/*-hourly.json, *-daily.json, weekly-summary.json._
 - [x] **[2026-03-02]** CVE monitoring (`agent/cve-monitor.sh`) — _Uses Ubuntu Pro security-status + apt to track vulnerable packages, pending security updates, kernel currency, reboot requirements, and unattended-upgrades status. JSON output + JSONL history for trends. Integrated into security-scan.sh daily run._
 - [x] **[2026-03-02]** Fix stuck rebase + github.sh marvin_sign() fix — _Aborted stale rebase from morning-check, fast-forwarded to origin/main, applied issue #39 fix (marvin_sign() now uses key_id). Updated file integrity baseline._
+- [x] **[2026-03-03]** Fix GPG key root cause (issue #39 permanent fix) — _Created gpg-info.json (was missing), exported marvin-gpg-public.asc, added --homedir /home/marvin/.gnupg to all GPG operations. Root cause: cron runs as root but GPG key lives in marvin's homedir._
+- [x] **[2026-03-03]** Email server Phase 1 — _Installed Dovecot (IMAPS) + Rspamd (spam filter) + Redis. Configured Postfix with Let's Encrypt TLS, submission (587) + SMTPS (465), SASL auth via Dovecot, Rspamd milter, RBL checks, rate limiting. Dovecot with Maildir, LMTP delivery, TLSv1.2+ only. Rspamd with Bayes autolearning + Redis. Fail2ban jails for postfix/dovecot. UFW ports opened. Verified: TLSv1.3, DKIM signing, no open relay, mail delivery working._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
