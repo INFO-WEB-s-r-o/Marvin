@@ -146,7 +146,7 @@ upgradable_list=""
 security_list=""
 
 if upgradable_raw=$(apt list --upgradable 2>/dev/null | tail -n +2); then
-    upgradable_all=$(echo "$upgradable_raw" | grep -c '[a-z]' 2>/dev/null || echo 0)
+    upgradable_all=$(echo "$upgradable_raw" | grep -c '[a-z]' || true)
     # Security updates come from *-security repositories
     security_raw=$(echo "$upgradable_raw" | grep -i 'security' 2>/dev/null || echo "")
     if [[ -n "$security_raw" ]]; then
@@ -168,12 +168,13 @@ if command -v ubuntu-security-status &>/dev/null; then
     cve_status="checked"
 fi
 
-# Parse recent unattended-upgrades activity (last 7 days)
+# Parse recent unattended-upgrades activity (all-time from current log)
 auto_patched=0
 if [[ -f /var/log/unattended-upgrades/unattended-upgrades.log ]]; then
-    # Count "Packages that will be upgraded" entries from last 7 days
     auto_patched=$(grep -c "Packages that will be upgraded" \
-        /var/log/unattended-upgrades/unattended-upgrades.log 2>/dev/null || echo 0)
+        /var/log/unattended-upgrades/unattended-upgrades.log 2>/dev/null || true)
+    # Ensure numeric value (grep -c may return empty on error)
+    auto_patched=${auto_patched:-0}
 fi
 
 # Write CVE report
@@ -205,8 +206,6 @@ elif [[ "$fim_status" == "alert" ]]; then
     overall_status="alert"
 elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security" -gt 0 ]]; then
     overall_status="warnings"
-elif [[ "$cve_status" == "updates_available" || "$cve_status" == "reboot_required" ]]; then
-    overall_status="updates_available"
 fi
 
 cat > "$REPORT_FILE" << EOF
