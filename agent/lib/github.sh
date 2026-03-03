@@ -391,7 +391,13 @@ github_upload_gpg_key() {
 # Usage: marvin_sign "message" → outputs detached signature
 marvin_sign() {
     local message="$1"
-    echo "$message" | gpg --armor --detach-sign 2>/dev/null
+    local key_id
+    key_id=$(marvin_gpg_key_id 2>/dev/null || echo "")
+    if [[ -n "$key_id" ]]; then
+        echo "$message" | gpg --armor --detach-sign --local-user "$key_id" 2>/dev/null
+    else
+        echo "$message" | gpg --armor --detach-sign 2>/dev/null
+    fi
 }
 
 # Verify a GPG signature

@@ -205,6 +205,8 @@ elif [[ "$fim_status" == "alert" ]]; then
     overall_status="alert"
 elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security" -gt 0 ]]; then
     overall_status="warnings"
+elif [[ "$cve_status" == "updates_available" || "$cve_status" == "reboot_required" ]]; then
+    overall_status="updates_available"
 fi
 
 cat > "$REPORT_FILE" << EOF
