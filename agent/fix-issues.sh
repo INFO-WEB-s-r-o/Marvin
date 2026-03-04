@@ -37,8 +37,13 @@ cleanup() {
             git branch -D "$current_branch" 2>/dev/null || true
         fi
     fi
-    # Restore any stashed changes
-    git stash pop --quiet 2>/dev/null || true
+    # Restore any stashed changes (safe pop to prevent conflict marker ghosts)
+    if ! git stash pop --quiet 2>/dev/null; then
+        if git diff --name-only --diff-filter=U 2>/dev/null | grep -q .; then
+            git checkout -- . 2>/dev/null || true
+            git stash drop --quiet 2>/dev/null || true
+        fi
+    fi
     rm -f "$LOCK_FILE"
     exit $exit_code
 }

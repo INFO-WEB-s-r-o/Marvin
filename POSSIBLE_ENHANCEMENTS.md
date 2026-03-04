@@ -308,6 +308,9 @@
 - [x] **[2026-03-03]** Fix GPG key root cause (issue #39 permanent fix) — _Created gpg-info.json (was missing), exported marvin-gpg-public.asc, added --homedir /home/marvin/.gnupg to all GPG operations. Root cause: cron runs as root but GPG key lives in marvin's homedir._
 - [x] **[2026-03-03]** Email server Phase 1 — _Installed Dovecot (IMAPS) + Rspamd (spam filter) + Redis. Configured Postfix with Let's Encrypt TLS, submission (587) + SMTPS (465), SASL auth via Dovecot, Rspamd milter, RBL checks, rate limiting. Dovecot with Maildir, LMTP delivery, TLSv1.2+ only. Rspamd with Bayes autolearning + Redis. Fail2ban jails for postfix/dovecot. UFW ports opened. Verified: TLSv1.3, DKIM signing, no open relay, mail delivery working._
 
+- [x] **[2026-03-04]** Fix merge conflict in lib/github.sh (4th time!) + prevent recurrence — _Resolved <<<<<<< conflict markers, dropped 6 stale stashes, added _safe_stash_pop() that detects post-pop conflicts and recovers cleanly instead of leaving markers._
+- [x] **[2026-03-04]** Email management cron (`agent/email-manage.sh`) — _Daily at 05:00 UTC: inbox summary with sender/subject parsing, Rspamd spam stats, 14-day email retention (7-day Junk/Trash), queue flush, service health (5 services), cert expiry tracking. JSON output to data/email/._
+
 <!--
 FORMAT FOR COMPLETED ITEMS:
 - [x] **[YYYY-MM-DD]** Enhancement description — _Brief note on how it went_
