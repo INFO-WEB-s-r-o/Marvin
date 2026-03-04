@@ -116,6 +116,10 @@ EXPECTED_PORTS="22 25 53 80 443 465 587 631 993 3000 6379 8043 11332 11333 11334
 active_ports=$(echo "$listening_ports" | awk '{print $4}' | grep -oP '\d+$' | sort -un)
 unexpected_ports=""
 unexpected_count=0
+unexpected_details_json="[]"
+
+# Ports expected only on localhost — alert if bound to 0.0.0.0 or [::]
+LOCALHOST_ONLY_PORTS="631 6379 11332 11333 11334"
 
 for port in $active_ports; do
     if ! echo "$EXPECTED_PORTS" | grep -qw "$port"; then
@@ -124,6 +128,15 @@ for port in $active_ports; do
         # Log the process listening on this unexpected port (reuse captured ss output)
         proc_info=$(echo "$ss_output" | grep ":${port} " | awk '{print $6}' | head -1)
         marvin_log "WARN" "Unexpected listener on port ${port}: ${proc_info}"
+        # Accumulate details for JSON
+        unexpected_details_json=$(echo "$unexpected_details_json" | jq --arg p "$port" --arg proc "$proc_info" '. + [{"port": ($p | tonumber), "process": $proc}]' 2>/dev/null || echo "$unexpected_details_json")
+    fi
+done
+
+# Verify localhost-only ports are not bound to public interfaces
+for port in $LOCALHOST_ONLY_PORTS; do
+    if echo "$listening_ports" | grep -qP "(\*|0\.0\.0\.0|::):${port}\b"; then
+        marvin_log "WARN" "Port ${port} expected localhost-only but bound to public interface"
     fi
 done
 
@@ -140,6 +153,7 @@ cat > "$PORT_INVENTORY" << PORTEOF
   "total_ports": ${port_count},
   "unexpected_count": ${unexpected_count},
   "unexpected_ports": "${unexpected_ports}",
+  "unexpected_port_details": ${unexpected_details_json},
   "expected_ports": "${EXPECTED_PORTS}",
   "active_ports": ${port_list_json}
 }
