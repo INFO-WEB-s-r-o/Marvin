@@ -101,13 +101,14 @@ fi
 # Check for SUID/SGID binaries (just count — changes from last scan are interesting)
 suid_count=$(find /usr/bin /usr/sbin /usr/local/bin -type f \( -perm -4000 -o -perm -2000 \) 2>/dev/null | wc -l || echo 0)
 
-# Check for unauthorized listening ports
-listening_ports=$(ss -tlnp 2>/dev/null | tail -n +2 || echo "")
+# Check for unauthorized listening ports (capture once, reuse below)
+ss_output=$(ss -tlnp 2>/dev/null || echo "")
+listening_ports=$(echo "$ss_output" | tail -n +2)
 port_count=$(echo "$listening_ports" | grep -c '[0-9]' 2>/dev/null || echo 0)
 
 # Expected ports baseline — alert on anything not in this list
 # 22=SSH, 25=SMTP, 53=DNS(systemd-resolved), 80=HTTP, 443=HTTPS,
-# 465=SMTPS, 587=STARTTLS, 631=CUPS, 993=IMAPS, 3000=Next.js,
+# 465=SMTPS, 587=STARTTLS, 631=CUPS(system dependency, localhost only), 993=IMAPS, 3000=Next.js,
 # 6379=Redis(local), 8043=alt-HTTPS, 11332-11334=Rspamd(local)
 EXPECTED_PORTS="22 25 53 80 443 465 587 631 993 3000 6379 8043 11332 11333 11334"
 
@@ -120,8 +121,8 @@ for port in $active_ports; do
     if ! echo "$EXPECTED_PORTS" | grep -qw "$port"; then
         unexpected_ports="${unexpected_ports}${unexpected_ports:+, }${port}"
         unexpected_count=$((unexpected_count + 1))
-        # Log the process listening on this unexpected port
-        proc_info=$(ss -tlnp 2>/dev/null | grep ":${port} " | awk '{print $6}' | head -1)
+        # Log the process listening on this unexpected port (reuse captured ss output)
+        proc_info=$(echo "$ss_output" | grep ":${port} " | awk '{print $6}' | head -1)
         marvin_log "WARN" "Unexpected listener on port ${port}: ${proc_info}"
     fi
 done
@@ -132,14 +133,14 @@ fi
 
 # Save port inventory for trending
 PORT_INVENTORY="${SECURITY_DIR}/port-inventory.json"
-port_list_json=$(echo "$active_ports" | jq -Rn '[inputs | select(. != "") | tonumber]')
+port_list_json=$(echo "$active_ports" | jq -Rn '[inputs | select(. != "") | tonumber]' 2>/dev/null || echo "[]")
 cat > "$PORT_INVENTORY" << PORTEOF
 {
   "timestamp": "${NOW}",
   "total_ports": ${port_count},
   "unexpected_count": ${unexpected_count},
-  "unexpected_ports": "$(echo "$unexpected_ports")",
-  "expected_ports": "$(echo "$EXPECTED_PORTS")",
+  "unexpected_ports": "${unexpected_ports}",
+  "expected_ports": "${EXPECTED_PORTS}",
   "active_ports": ${port_list_json}
 }
 PORTEOF
@@ -278,7 +279,7 @@ cat > "$REPORT_FILE" << EOF
   "network": {
     "listening_ports": ${port_count},
     "unexpected_ports": ${unexpected_count},
-    "unexpected_port_list": "$(echo "$unexpected_ports")"
+    "unexpected_port_list": "${unexpected_ports}"
   }
 }
 EOF
