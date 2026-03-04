@@ -302,6 +302,19 @@ github_push_main() {
     marvin_log "INFO" "Pushed main branch to GitHub"
 }
 
+# Safe stash pop — recovers from conflicts instead of leaving markers
+# If pop produces conflicts, discard conflicted merge and drop the stash
+_safe_stash_pop() {
+    if ! git stash pop --quiet 2>/dev/null; then
+        # Stash pop failed (likely conflicts) — check for conflict markers
+        if git diff --name-only --diff-filter=U 2>/dev/null | grep -q .; then
+            marvin_log "WARN" "Stash pop produced conflicts — discarding stash (data regenerates via cron)"
+            git checkout -- . 2>/dev/null || true
+            git stash drop --quiet 2>/dev/null || true
+        fi
+    fi
+}
+
 # Create a signed commit on a new branch
 # Usage: github_signed_commit "branch" "message" [files...]
 github_signed_commit() {
@@ -332,7 +345,7 @@ github_signed_commit() {
     if git diff --cached --quiet 2>/dev/null; then
         marvin_log "WARN" "No changes to commit on branch ${branch}"
         git checkout main 2>/dev/null || true
-        git stash pop --quiet 2>/dev/null || true
+        _safe_stash_pop
         return 1
     fi
 
@@ -340,7 +353,7 @@ github_signed_commit() {
     git commit -S -m "$message" 2>&1 || {
         marvin_log "ERROR" "GPG-signed commit failed"
         git checkout main 2>/dev/null || true
-        git stash pop --quiet 2>/dev/null || true
+        _safe_stash_pop
         return 1
     }
 
@@ -348,7 +361,7 @@ github_signed_commit() {
 
     # Return to main, keep the branch
     git checkout main 2>/dev/null || true
-    git stash pop --quiet 2>/dev/null || true
+    _safe_stash_pop
     return 0
 }
 

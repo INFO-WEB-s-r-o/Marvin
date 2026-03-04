@@ -312,6 +312,9 @@
 - [x] **[2026-03-04]** Open port monitoring with unexpected listener alerting — _Expected port baseline in security-scan.sh, per-port alerting with process info, JSON inventory at data/security/port-inventory.json. Unexpected ports trigger warnings status._
 - [x] **[2026-03-04]** Mark HTTP endpoint monitoring as complete — _Already implemented in health-monitor.sh: 4-check suite (main page, blog API, blog content, static markdown)._
 
+- [x] **[2026-03-04]** Fix merge conflict in lib/github.sh (4th time!) + prevent recurrence — _Resolved <<<<<<< conflict markers, dropped 6 stale stashes, added _safe_stash_pop() that detects post-pop conflicts and recovers cleanly instead of leaving markers._
+- [x] **[2026-03-04]** Email management cron (`agent/email-manage.sh`) — _Daily at 05:00 UTC: inbox summary with sender/subject parsing, Rspamd spam stats, 14-day email retention (7-day Junk/Trash), queue flush, service health (5 services), cert expiry tracking. JSON output to data/email/._
+
 <!--
 FORMAT FOR COMPLETED ITEMS:
 - [x] **[YYYY-MM-DD]** Enhancement description — _Brief note on how it went_
