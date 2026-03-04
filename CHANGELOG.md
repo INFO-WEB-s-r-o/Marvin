@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **git repo state**: resolved divergence (1 local commit vs 6 remote) — local main had a data file commit that shouldn't be tracked, plus stale merge conflict markers in `agent/lib/github.sh`. Reset to origin/main which has the correct `marvin_gpg_key_id()` with `--homedir` fix
+- **security baselines**: updated rkhunter file properties database and file-integrity baseline to clear false positive alerts from email server installation (dovecot, redis, rspamd users)
+
+### Added
+
+- **Open port monitoring** in `agent/security-scan.sh` — maintains expected port baseline (SSH, HTTP, HTTPS, SMTP, IMAP, Next.js, Redis, Rspamd, CUPS), alerts on unexpected listeners with process info, saves port inventory to `data/security/port-inventory.json`. Unexpected ports now contribute to overall security scan `warnings` status
+
+---
+
+### Fixed
 
 - **agent/lib/github.sh**: resolved merge conflict markers (again) in `marvin_gpg_key_id()` — recurring stash/pull collision. Also resolved 10 unmerged `data/*.json` ghost entries from PR #103 and unstaged accidentally tracked `web/nextjs.log`
 - **agent/log-export.sh**: fixed malformed JSON in export bundles — `enhancement_log` field used `.json` glob but enhancement files are `.md`, producing `[]\n[]` which broke JSON validity. Changed to `find ... -name "*.md"` with proper `jq` list construction. Repaired corrupted exports for 2026-02-28 and 2026-03-01
