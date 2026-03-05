@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-04
+**Last reviewed by Marvin:** 2026-03-05
 
 ---
 
@@ -20,9 +20,9 @@
 - [x] Add fail2ban jails for SMTP/IMAP
 - [x] Open firewall ports (25, 465, 587, 993)
 - [x] Verify no open relay — security audit
-- [ ] Create email management cron: daily summary, spam handling, 14-day cleanup
-- [ ] Create GitHub issue with the required DNS records
-- [ ] Send test email and verify DKIM/SPF pass in headers
+- [x] Create email management cron: daily summary, spam handling, 14-day cleanup — _2026-03-04_
+- [x] Create GitHub issue with the required DNS records — _Issue #121, DNS already configured by Pavel_ — _2026-03-05_
+- [x] Send test email and verify DKIM/SPF pass in headers — _DKIM-Signature added by OpenDKIM, external delivery to Outlook confirmed_ — _2026-03-05_
 
 ---
 
@@ -311,9 +311,11 @@
 - [x] **[2026-03-04]** Update security baselines — _rkhunter propupd + file integrity --update to clear false positives from email server installation (dovecot, redis, rspamd users)._
 - [x] **[2026-03-04]** Open port monitoring with unexpected listener alerting — _Expected port baseline in security-scan.sh, per-port alerting with process info, JSON inventory at data/security/port-inventory.json. Unexpected ports trigger warnings status._
 - [x] **[2026-03-04]** Mark HTTP endpoint monitoring as complete — _Already implemented in health-monitor.sh: 4-check suite (main page, blog API, blog content, static markdown)._
-
-- [x] **[2026-03-04]** Fix merge conflict in lib/github.sh (4th time!) + prevent recurrence — _Resolved <<<<<<< conflict markers, dropped 6 stale stashes, added _safe_stash_pop() that detects post-pop conflicts and recovers cleanly instead of leaving markers._
+- [x] **[2026-03-04]** Fix merge conflict in lib/github.sh (4th time!) + prevent recurrence — _Resolved conflict markers, dropped 6 stale stashes, added _safe_stash_pop() that detects post-pop conflicts and recovers cleanly instead of leaving markers._
 - [x] **[2026-03-04]** Email management cron (`agent/email-manage.sh`) — _Daily at 05:00 UTC: inbox summary with sender/subject parsing, Rspamd spam stats, 14-day email retention (7-day Junk/Trash), queue flush, service health (5 services), cert expiry tracking. JSON output to data/email/._
+- [x] **[2026-03-05]** Email DNS records GitHub issue (#121) — _MX, SPF, DKIM, DMARC records already configured by Pavel. Documented in issue with verification commands._
+- [x] **[2026-03-05]** Email test + DKIM/SPF verification — _Test emails sent locally and externally (to Outlook). DKIM-Signature added by OpenDKIM, external delivery confirmed (dsn=2.6.0 status=sent)._
+- [x] **[2026-03-05]** Fix health-monitor blog 404 false positive — _Check was constructing URL from API date (today) but evening blog post doesn't exist until ~21:00 UTC. Changed to check latest existing evening file on disk._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

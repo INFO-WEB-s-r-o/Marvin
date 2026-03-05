@@ -240,10 +240,12 @@ if [[ -n "${latest_blog_date:-}" ]]; then
 fi
 
 # Check 4: Static blog markdown via nginx
-if [[ -n "${latest_blog_date:-}" ]]; then
-    md_http=$(curl -so /dev/null -w '%{http_code}' --max-time 10 "${SITE_URL}/blog/${latest_blog_date}-evening.en.md" 2>/dev/null || echo "000")
+# Find the latest evening .en.md file that actually exists on disk
+latest_evening_md=$(ls -1 /home/marvin/blog/*-evening.en.md 2>/dev/null | sort | tail -1 | xargs -r basename)
+if [[ -n "${latest_evening_md:-}" ]]; then
+    md_http=$(curl -so /dev/null -w '%{http_code}' --max-time 10 "${SITE_URL}/blog/${latest_evening_md}" 2>/dev/null || echo "000")
     if [[ "$md_http" != "200" ]]; then
-        ISSUES+=("WARNING: Blog markdown ${latest_blog_date}-evening.en.md returned HTTP ${md_http}")
+        ISSUES+=("WARNING: Blog markdown ${latest_evening_md} returned HTTP ${md_http}")
         marvin_log "WARN" "Blog markdown file not accessible (HTTP ${md_http})"
     fi
 fi
