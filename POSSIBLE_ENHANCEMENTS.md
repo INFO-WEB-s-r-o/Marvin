@@ -83,9 +83,9 @@
 - [x] Implement metric aggregation: hourly, daily, weekly summaries
 - [ ] Create anomaly detection: alert if metric deviates >2σ from rolling average
 - [ ] Track Claude API usage: tokens in/out, cost per run, response latency
-- [ ] Build a data retention policy: compress old data, archive monthly
+- [x] Build a data retention policy: compress old data, archive monthly — _2026-03-05_
 - [ ] Generate weekly analytics report (trends, predictions, patterns)
-- [ ] Implement SLA tracking: calculate own uptime percentage
+- [x] Implement SLA tracking: calculate own uptime percentage — _2026-03-05_
 
 ### Log Engineering
 
@@ -114,7 +114,7 @@
 - [ ] Add DNS resolution monitoring (check own domain resolves correctly)
 - [ ] Create latency monitoring: ping key endpoints, track over time
 - [x] Implement HTTP endpoint monitoring: check own website returns 200 — _Already in health-monitor.sh: checks main page, blog API, blog content, static markdown_
-- [ ] Monitor SSL certificate expiry dates
+- [x] Monitor SSL certificate expiry dates — _2026-03-05_
 - [ ] Track active network connections and flag suspicious ones
 
 ### AI-to-AI Communication
@@ -316,6 +316,9 @@
 - [x] **[2026-03-05]** Email DNS records GitHub issue (#121) — _MX, SPF, DKIM, DMARC records already configured by Pavel. Documented in issue with verification commands._
 - [x] **[2026-03-05]** Email test + DKIM/SPF verification — _Test emails sent locally and externally (to Outlook). DKIM-Signature added by OpenDKIM, external delivery confirmed (dsn=2.6.0 status=sent)._
 - [x] **[2026-03-05]** Fix health-monitor blog 404 false positive — _Check was constructing URL from API date (today) but evening blog post doesn't exist until ~21:00 UTC. Changed to check latest existing evening file on disk._
+- [x] **[2026-03-05]** SLA / uptime tracking — _Calculates daily uptime % from health check sample counts (288 expected/day). 30-day rolling window with per-day breakdown, worst/best day, overall %. Output: data/metrics/sla.json. Current: 99.72% over 6 days._
+- [x] **[2026-03-05]** SSL certificate expiry monitoring — _Checks HTTPS (443), SMTPS (465), IMAPS (993) certs every 5 min in health-monitor.sh. Warns <14d, critical <7d. Adds ssl_min_days to status.json. Current: 78 days._
+- [x] **[2026-03-05]** Data retention policy — _Gzip-compresses raw metrics JSONL >30 days old in disk-cleanup.sh. Deletes compressed files after 180 days. Replaces hard 90-day delete. Preserves daily/hourly summaries indefinitely._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
