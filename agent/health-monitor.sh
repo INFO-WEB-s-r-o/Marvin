@@ -56,10 +56,14 @@ if [[ -n "$mem_available" ]] && [[ "$mem_available" -lt 200 ]]; then
         current_swap_used_pct=$((swap_used * 100 / current_swap_mb))
     fi
 
+    # Check available disk space before attempting swap operations
+    disk_free_mb=$(df -m / --output=avail | tail -1 | tr -d ' ')
+
     if [[ "$current_swap_mb" -eq 0 ]]; then
         # No swap at all — create a 1GB swap file
-        marvin_log "WARN" "RAM pressure (${mem_available}MB available) and no swap — creating 1GB swap"
-        if dd if=/dev/zero of="${swap_file}" bs=1M count=1024 status=none 2>/dev/null \
+        if [[ "$disk_free_mb" -lt 1200 ]]; then
+            marvin_log "WARN" "Insufficient disk space (${disk_free_mb}MB free) to create 1GB swap — skipping"
+        elif dd if=/dev/zero of="${swap_file}" bs=1M count=1024 status=none 2>/dev/null \
             && chmod 600 "${swap_file}" \
             && mkswap "${swap_file}" >/dev/null 2>&1 \
             && swapon "${swap_file}" 2>/dev/null; then
@@ -73,6 +77,9 @@ if [[ -n "$mem_available" ]] && [[ "$mem_available" -lt 200 ]]; then
         # Swap exists but is >80% used and under 2GB — try to expand
         new_size_mb=$((current_swap_mb * 2))
         [[ "$new_size_mb" -gt 2048 ]] && new_size_mb=2048
+        if [[ "$disk_free_mb" -lt $((new_size_mb + 200)) ]]; then
+            marvin_log "WARN" "Insufficient disk space (${disk_free_mb}MB free) to expand swap to ${new_size_mb}MB — skipping"
+        else
         marvin_log "WARN" "RAM pressure + swap ${current_swap_used_pct}% used — expanding swap to ${new_size_mb}MB"
         swapoff "${swap_file}" 2>/dev/null || true
         if dd if=/dev/zero of="${swap_file}" bs=1M count="$new_size_mb" status=none 2>/dev/null \
@@ -86,6 +93,7 @@ if [[ -n "$mem_available" ]] && [[ "$mem_available" -lt 200 ]]; then
             ISSUES+=("WARNING: Failed to expand swap under memory pressure")
             # Try to re-enable old swap
             swapon "${swap_file}" 2>/dev/null || true
+        fi
         fi
     fi
 fi
@@ -250,6 +258,48 @@ if [[ -n "${latest_evening_md:-}" ]]; then
     fi
 fi
 
+# ─── SSL certificate expiry checks ──────────────────────────────────────────
+# Check TLS certificates for web and email services, warn if <14 days to expiry
+
+ssl_min_days=999
+_check_cert_expiry() {
+    local host="$1"
+    local port="$2"
+    local label="$3"
+    local starttls_flag="${4:-}"
+
+    local openssl_args=(-connect "${host}:${port}" -servername "$host")
+    [[ -n "$starttls_flag" ]] && openssl_args+=(-starttls "$starttls_flag")
+
+    local expiry_date
+    expiry_date=$(echo | openssl s_client "${openssl_args[@]}" 2>/dev/null \
+        | openssl x509 -noout -enddate 2>/dev/null \
+        | sed 's/notAfter=//')
+
+    if [[ -n "$expiry_date" ]]; then
+        local expiry_epoch now_epoch days_left
+        expiry_epoch=$(date -d "$expiry_date" +%s 2>/dev/null || echo 0)
+        now_epoch=$(date +%s)
+        if [[ "$expiry_epoch" -gt 0 ]]; then
+            days_left=$(( (expiry_epoch - now_epoch) / 86400 ))
+            if [[ "$days_left" -lt "$ssl_min_days" ]]; then
+                ssl_min_days=$days_left
+            fi
+            if [[ "$days_left" -lt 7 ]]; then
+                ISSUES+=("CRITICAL: ${label} SSL cert expires in ${days_left} days")
+                marvin_log "CRITICAL" "${label} SSL cert expires in ${days_left} days"
+            elif [[ "$days_left" -lt 14 ]]; then
+                ISSUES+=("WARNING: ${label} SSL cert expires in ${days_left} days")
+                marvin_log "WARN" "${label} SSL cert expires in ${days_left} days"
+            fi
+        fi
+    fi
+}
+
+_check_cert_expiry "robot-marvin.cz" 443 "HTTPS"
+_check_cert_expiry "robot-marvin.cz" 465 "SMTPS"
+_check_cert_expiry "robot-marvin.cz" 993 "IMAPS"
+
 # Update status file for the web dashboard
 STATUS="healthy"
 if [[ ${#ISSUES[@]} -gt 0 ]]; then
@@ -279,7 +329,8 @@ cat > "${DATA_DIR}/status.json" << EOF
     "ssh": "$(systemctl is-active ssh 2>/dev/null || true)",
     "website": "$(if [[ "$SITE_OK" == "true" ]]; then echo "ok"; else echo "failing"; fi)",
     "website_http": "${http_code:-000}",
-    "blog_latest": "${latest_blog_date:-unknown}"
+    "blog_latest": "${latest_blog_date:-unknown}",
+    "ssl_min_days": ${ssl_min_days}
   }
 }
 EOF

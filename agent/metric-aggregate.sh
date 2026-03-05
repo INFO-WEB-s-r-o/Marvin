@@ -225,4 +225,98 @@ else
     marvin_log "WARN" "No daily summaries found for weekly aggregation"
 fi
 
+# ─── SLA / Uptime tracking ─────────────────────────────────────────────────
+# Calculate uptime percentage from health check sample count.
+# Expected: 288 samples/day (every 5 minutes = 12/hour * 24 hours).
+# A missing sample means the health monitor didn't run (downtime or cron issue).
+# Also accounts for partial days (first/last sample timestamps).
+
+SLA_FILE="${METRICS_DIR}/sla.json"
+
+_calculate_day_uptime() {
+    local date="$1"
+    local jsonl="${METRICS_DIR}/${date}.jsonl"
+    [[ -f "$jsonl" ]] || return 0
+
+    local samples
+    samples=$(wc -l < "$jsonl")
+    [[ "$samples" -gt 0 ]] || return 0
+
+    # Get first and last timestamps to determine the observation window
+    local first_ts last_ts
+    first_ts=$(head -1 "$jsonl" | jq -r '.timestamp' 2>/dev/null || echo "")
+    last_ts=$(tail -1 "$jsonl" | jq -r '.timestamp' 2>/dev/null || echo "")
+
+    if [[ -z "$first_ts" || -z "$last_ts" ]]; then
+        echo "{\"date\":\"${date}\",\"samples\":${samples},\"expected\":288,\"uptime_pct\":0}"
+        return
+    fi
+
+    # Calculate expected samples based on actual observation window
+    local first_epoch last_epoch window_minutes expected
+    first_epoch=$(date -d "$first_ts" +%s 2>/dev/null || echo 0)
+    last_epoch=$(date -d "$last_ts" +%s 2>/dev/null || echo 0)
+
+    if [[ "$first_epoch" -eq 0 || "$last_epoch" -eq 0 ]]; then
+        # Fallback: assume full day
+        expected=288
+    else
+        window_minutes=$(( (last_epoch - first_epoch) / 60 ))
+        # Expected = window / 5min interval + 1 (for the first sample)
+        expected=$(( window_minutes / 5 + 1 ))
+        [[ "$expected" -lt 1 ]] && expected=1
+    fi
+
+    # Uptime % = samples collected / expected samples * 100
+    local uptime_pct
+    if [[ "$expected" -gt 0 ]]; then
+        uptime_pct=$(awk "BEGIN {v = ($samples / $expected) * 100; if (v > 100) v = 100; printf \"%.2f\", v}")
+    else
+        uptime_pct="0.00"
+    fi
+
+    echo "{\"date\":\"${date}\",\"samples\":${samples},\"expected\":${expected},\"uptime_pct\":${uptime_pct}}"
+}
+
+# Calculate SLA for the last 30 days
+SLA_DAYS=()
+for i in $(seq 0 29); do
+    d=$(date -u -d "${TARGET_DATE} - ${i} days" +%Y-%m-%d 2>/dev/null || \
+        date -u -v-${i}d -j -f "%Y-%m-%d" "$TARGET_DATE" +%Y-%m-%d 2>/dev/null)
+    day_sla=$(_calculate_day_uptime "$d")
+    if [[ -n "$day_sla" ]]; then
+        SLA_DAYS+=("$day_sla")
+    fi
+done
+
+if [[ ${#SLA_DAYS[@]} -gt 0 ]]; then
+    # Build JSON array from collected day SLAs
+    sla_json=$(printf '%s\n' "${SLA_DAYS[@]}" | jq -s '
+        sort_by(.date) |
+        {
+            days: .,
+            summary: {
+                days_tracked: length,
+                total_samples: ([.[].samples] | add),
+                total_expected: ([.[].expected] | add),
+                overall_uptime_pct: (([.[].samples] | add) / ([.[].expected] | add) * 100 | . * 100 | round / 100),
+                worst_day: (min_by(.uptime_pct) | {date: .date, uptime_pct: .uptime_pct}),
+                best_day: (max_by(.uptime_pct) | {date: .date, uptime_pct: .uptime_pct}),
+                days_at_100pct: ([.[] | select(.uptime_pct >= 99.9)] | length)
+            }
+        }
+    ' 2>/dev/null)
+
+    if [[ -n "$sla_json" ]] && echo "$sla_json" | jq empty 2>/dev/null; then
+        echo "$sla_json" | jq --arg generated "$NOW" '. + {generated_at: $generated}' > "$SLA_FILE"
+        overall=$(echo "$sla_json" | jq -r '.summary.overall_uptime_pct')
+        days_tracked=$(echo "$sla_json" | jq -r '.summary.days_tracked')
+        marvin_log "INFO" "SLA tracking: ${overall}% uptime over ${days_tracked} days"
+    else
+        marvin_log "WARN" "SLA calculation produced invalid JSON"
+    fi
+else
+    marvin_log "WARN" "No metric data found for SLA calculation"
+fi
+
 marvin_log "INFO" "Metric aggregation complete for ${TARGET_DATE}"
