@@ -188,7 +188,14 @@ EOF
 
 log "Installing Node.js 20 LTS..."
 if ! command -v node &> /dev/null; then
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    # Use NodeSource signed apt repository instead of curl|bash
+    apt-get install -y -qq ca-certificates curl gnupg
+    mkdir -p /etc/apt/keyrings
+    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+        | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+        > /etc/apt/sources.list.d/nodesource.list
+    apt-get update -qq
     apt-get install -y -qq nodejs
 fi
 log "Node.js $(node --version) installed."
@@ -445,7 +452,8 @@ if [[ -n "$GITHUB_TOKEN" ]]; then
     GITHUB_REPO="${GITHUB_REPO:-INFO-WEB-s-r-o/Marvin}"
     cd "${MARVIN_DIR}"
     git remote remove origin 2>/dev/null || true
-    git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
+    git remote add origin "https://github.com/${GITHUB_REPO}.git"
+    git config credential.helper '!f() { echo "username=x-access-token"; echo "password=${GITHUB_TOKEN}"; }; f'
     log "GitHub remote configured for ${GITHUB_REPO}."
     
     # Upload GPG key to GitHub

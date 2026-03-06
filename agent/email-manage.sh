@@ -46,7 +46,7 @@ redis_status=$(check_service redis-server)
 opendkim_status=$(check_service opendkim)
 
 # Check mail queue size
-queue_count=$(postqueue -p 2>/dev/null | grep -oP 'in \K\d+(?= Request)' || echo "0")
+queue_count=$(postqueue -p 2>/dev/null | grep -oP 'in \K\d+(?= Request)' | head -1 || echo "0")
 
 # Check certificate expiry
 cert_expiry="unknown"
