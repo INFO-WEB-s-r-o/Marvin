@@ -70,17 +70,8 @@ if [[ -n "$mem_available" ]] && [[ "$mem_available" -lt 200 ]]; then
             marvin_log "INFO" "Created and activated 1GB swap file"
             ISSUES+=("INFO: Created 1GB swap file due to RAM pressure")
         else
-            marvin_log "WARN" "RAM pressure (${mem_available}MB available) and no swap — creating 1GB swap"
-            if dd if=/dev/zero of="${swap_file}" bs=1M count=1024 status=none 2>/dev/null \
-                && chmod 600 "${swap_file}" \
-                && mkswap "${swap_file}" >/dev/null 2>&1 \
-                && swapon "${swap_file}" 2>/dev/null; then
-                marvin_log "INFO" "Created and activated 1GB swap file"
-                ISSUES+=("INFO: Created 1GB swap file due to RAM pressure")
-            else
-                marvin_log "ERROR" "Failed to create swap file"
-                ISSUES+=("WARNING: Failed to create swap — low memory with no swap")
-            fi
+            marvin_log "ERROR" "Failed to create swap file (${mem_available}MB RAM available)"
+            ISSUES+=("WARNING: Failed to create swap — low memory with no swap")
         fi
     elif [[ "$current_swap_used_pct" -gt 80 && "$current_swap_mb" -lt 2048 ]]; then
         # Swap exists but is >80% used and under 2GB — try to expand
@@ -88,15 +79,6 @@ if [[ -n "$mem_available" ]] && [[ "$mem_available" -lt 200 ]]; then
         [[ "$new_size_mb" -gt 2048 ]] && new_size_mb=2048
         if [[ "$disk_free_mb" -lt $((new_size_mb + 200)) ]]; then
             marvin_log "WARN" "Insufficient disk space (${disk_free_mb}MB free) to expand swap to ${new_size_mb}MB — skipping"
-        else
-        marvin_log "WARN" "RAM pressure + swap ${current_swap_used_pct}% used — expanding swap to ${new_size_mb}MB"
-        swapoff "${swap_file}" 2>/dev/null || true
-        if dd if=/dev/zero of="${swap_file}" bs=1M count="$new_size_mb" status=none 2>/dev/null \
-            && chmod 600 "${swap_file}" \
-            && mkswap "${swap_file}" >/dev/null 2>&1 \
-            && swapon "${swap_file}" 2>/dev/null; then
-            marvin_log "INFO" "Expanded swap to ${new_size_mb}MB"
-            ISSUES+=("INFO: Expanded swap to ${new_size_mb}MB due to memory pressure")
         else
             marvin_log "WARN" "RAM pressure + swap ${current_swap_used_pct}% used — expanding swap to ${new_size_mb}MB"
             swapoff "${swap_file}" 2>/dev/null || true
@@ -112,7 +94,6 @@ if [[ -n "$mem_available" ]] && [[ "$mem_available" -lt 200 ]]; then
                 # Try to re-enable old swap
                 swapon "${swap_file}" 2>/dev/null || true
             fi
-        fi
         fi
     fi
 fi
