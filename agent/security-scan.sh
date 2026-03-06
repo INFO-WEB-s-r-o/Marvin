@@ -10,6 +10,7 @@
 
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/lib/github.sh"
 
 SECURITY_DIR="${DATA_DIR}/security"
 REPORT_FILE="${SECURITY_DIR}/scan-${TODAY}.json"
@@ -306,6 +307,33 @@ EOF
 # Also maintain a latest scan pointer for the dashboard
 cp "$REPORT_FILE" "${SECURITY_DIR}/latest-scan.json"
 chmod 644 "${SECURITY_DIR}/latest-scan.json"
+
+# ─── 7. Alert escalation for critical findings ──────────────────────────────
+
+if [[ "$overall_status" == "infected" ]]; then
+    marvin_log "CRITICAL" "Rootkit infection detected — escalating via GitHub issue"
+    alert_body=$(cat <<ALERTEOF
+## Automated Security Alert
+
+**Scan date:** ${NOW}
+**rkhunter:** ${rkhunter_status} (${rkhunter_infected} infected)
+**chkrootkit:** ${chkrootkit_status} (${chkrootkit_infected} infected)
+
+### Findings
+
+$(if [[ -n "$rkhunter_summary" ]]; then echo "**rkhunter:**"; echo '```'; echo "$rkhunter_summary"; echo '```'; fi)
+$(if [[ -n "$chkrootkit_summary" ]]; then echo "**chkrootkit:**"; echo '```'; echo "$chkrootkit_summary"; echo '```'; fi)
+
+This server may be compromised. **Manual investigation is required.**
+Full report: \`${REPORT_FILE}\`
+ALERTEOF
+    )
+    github_create_issue \
+        "CRITICAL: Rootkit infection detected — ${TODAY}" \
+        "$alert_body" \
+        "security" || \
+        marvin_log "ERROR" "Failed to create GitHub issue for rootkit alert"
+fi
 
 # Clean up old scan reports (keep 30 days)
 find "$SECURITY_DIR" -name 'scan-*.json' -mtime +30 -delete 2>/dev/null || true
