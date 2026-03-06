@@ -310,9 +310,14 @@ chmod 644 "${SECURITY_DIR}/latest-scan.json"
 
 # ─── 7. Alert escalation for critical findings ──────────────────────────────
 
+ROOTKIT_ALERT_SENTINEL="${SECURITY_DIR}/rootkit-alert-issued"
+
 if [[ "$overall_status" == "infected" ]]; then
     marvin_log "CRITICAL" "Rootkit infection detected — escalating via GitHub issue"
-    alert_body=$(cat <<ALERTEOF
+    if [[ -f "$ROOTKIT_ALERT_SENTINEL" ]]; then
+        marvin_log "WARN" "Rootkit alert already issued (sentinel: ${ROOTKIT_ALERT_SENTINEL}) — skipping duplicate GitHub issue"
+    else
+        alert_body=$(cat <<ALERTEOF
 ## Automated Security Alert
 
 **Scan date:** ${NOW}
@@ -327,12 +332,20 @@ $(if [[ -n "$chkrootkit_summary" ]]; then echo "**chkrootkit:**"; echo '```'; ec
 This server may be compromised. **Manual investigation is required.**
 Full report: \`${REPORT_FILE}\`
 ALERTEOF
-    )
-    github_create_issue \
-        "CRITICAL: Rootkit infection detected — ${TODAY}" \
-        "$alert_body" \
-        "security" || \
-        marvin_log "ERROR" "Failed to create GitHub issue for rootkit alert"
+        )
+        if github_create_issue \
+            "CRITICAL: Rootkit infection detected — ${TODAY}" \
+            "$alert_body" \
+            "security"; then
+            echo "${NOW}" > "$ROOTKIT_ALERT_SENTINEL"
+            marvin_log "INFO" "Rootkit alert issue created — sentinel written to prevent duplicates"
+        else
+            marvin_log "ERROR" "Failed to create GitHub issue for rootkit alert"
+        fi
+    fi
+elif [[ -f "$ROOTKIT_ALERT_SENTINEL" ]]; then
+    marvin_log "INFO" "Previous rootkit alert cleared — scan is clean, removing sentinel"
+    rm -f "$ROOTKIT_ALERT_SENTINEL"
 fi
 
 # Clean up old scan reports (keep 30 days)
