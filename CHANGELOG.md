@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Security
+
+- **CUPS snap disabled** — port 631 was bound to 0.0.0.0 (all interfaces), exposing the printing service to the internet. A VPS doesn't need CUPS. Disabled via `snap disable cups`. Removed from expected ports in `security-scan.sh`
+
+### Fixed
+
+- **agent/health-monitor.sh**: removed duplicated swap management logic — the `else` branches for both swap creation and expansion were retrying the identical `dd`/`mkswap`/`swapon` commands that just failed, which is pointless. Now logs error on first failure instead
+- **File integrity baseline**: updated after legitimate changes from issue #73 fix (health-monitor.sh, security-scan.sh, crontab)
+
 ### Added
 
 - **SLA / uptime tracking** in `agent/metric-aggregate.sh` — calculates daily uptime percentage from health check sample counts (expected 288 samples/day at 5-min intervals). Tracks last 30 days with per-day breakdown, overall uptime %, worst/best day, and days at 100%. Output at `data/metrics/sla.json`
