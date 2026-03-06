@@ -46,7 +46,11 @@ redis_status=$(check_service redis-server)
 opendkim_status=$(check_service opendkim)
 
 # Check mail queue size
+# postqueue -p last line is "-- N Kbytes in M Requests." or "Mail queue is empty"
 queue_count=$(postqueue -p 2>/dev/null | grep -oP 'in \K\d+(?= Request)' | head -1 || echo "0")
+if [[ -z "$queue_count" ]]; then
+    queue_count=0
+fi
 
 # Check certificate expiry
 cert_expiry="unknown"
@@ -71,7 +75,7 @@ marvin_log "INFO" "Mail queue: ${queue_count} messages, cert expires: ${cert_exp
 
 inbox_count=0
 
-# Count messages across Maildir directories
+# Count messages across Maildir directories (null-terminated for safety)
 for subdir in new cur; do
     dir="${MAILDIR}/${subdir}"
     if [[ -d "$dir" ]]; then
@@ -80,7 +84,7 @@ for subdir in new cur; do
     fi
 done
 
-# Count recent messages (last 24 hours)
+# Count recent messages (last 24 hours) — sender details redacted from public JSON
 recent_count=0
 cutoff_epoch=$(($(date +%s) - 86400))
 
@@ -95,6 +99,7 @@ for subdir in new cur; do
         recent_count=$((recent_count + 1))
     done < <(find "$dir" -type f -print0 2>/dev/null)
 done
+
 marvin_log "INFO" "Inbox: ${inbox_count} total, ${recent_count} in last 24h"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -166,13 +171,13 @@ if [[ "$queue_count" -gt 0 ]]; then
     postqueue -f 2>/dev/null || true
     marvin_log "INFO" "Flushed mail queue (${queue_count} messages)"
 
-    # Cache queue listing once, then parse stuck messages older than 3 days
+    # Cache queue listing once, then delete messages stuck for >3 days
     queue_output=$(postqueue -p 2>/dev/null || echo "")
     stuck_ids=$(echo "$queue_output" | grep -oP '^\w+[*!]?' | head -20 || echo "")
     while IFS= read -r qid; do
         [[ -n "$qid" ]] || continue
         qid_clean=$(echo "$qid" | tr -d '*!')
-        # Check queue time — delete if older than 3 days
+        # Check queue time — delete if older than 3 days (-F avoids regex metachar issues)
         queue_time=$(echo "$queue_output" | grep -A1 -F "${qid_clean}" | grep -oP '\w+ \w+ +\d+ \d+:\d+:\d+' | head -1 || echo "")
         if [[ -n "$queue_time" ]]; then
             queue_epoch=$(date -d "$queue_time" +%s 2>/dev/null || echo "0")

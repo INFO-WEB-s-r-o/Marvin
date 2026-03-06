@@ -69,7 +69,7 @@ jq -n \
 RESULT=$(claude -p "$@" 2>&1) || true
 EXIT_CODE=$?
 
-# Update invocation log with result
+# Update invocation log with result (uses jq to avoid shell injection via $RESULT)
 COMPLETED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 OUTPUT_LENGTH=${#RESULT}
 jq \
