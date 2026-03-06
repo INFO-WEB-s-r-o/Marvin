@@ -70,15 +70,37 @@ while IFS= read -r -d '' f; do
 done < <(find "${LOGS_DIR}" -type f -name "????-??-??.log" -mtime +30 -print0 2>/dev/null)
 track_freed "Marvin daily logs (>30d)" "$daily_logs_size"
 
-# ─── 5. Old metrics JSONL files (>90 days) ──────────────────────────────────
+# ─── 5. Compress metrics JSONL files (>30 days) ─────────────────────────────
+# Data retention policy: compress raw JSONL at 30 days, delete at 180 days.
+# Daily/hourly summary JSONs are small and kept indefinitely.
 
+# 5a. Compress uncompressed JSONL files older than 30 days
+compressed_count=0
+compressed_bytes=0
+while IFS= read -r -d '' f; do
+    if [[ ! -f "${f}.gz" ]]; then
+        fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
+        if gzip "$f" 2>/dev/null; then
+            gz_size=$(stat -c%s "${f}.gz" 2>/dev/null || echo 0)
+            saved=$((fsize - gz_size))
+            [[ "$saved" -lt 0 ]] && saved=0
+            compressed_bytes=$((compressed_bytes + saved))
+            compressed_count=$((compressed_count + 1))
+        fi
+    fi
+done < <(find "${METRICS_DIR}" -type f -name "????-??-??.jsonl" -mtime +30 -print0 2>/dev/null)
+if [[ "$compressed_count" -gt 0 ]]; then
+    track_freed "Compressed ${compressed_count} metrics JSONL (>30d)" "$compressed_bytes"
+fi
+
+# 5b. Delete compressed JSONL files older than 180 days
 metrics_size=0
 while IFS= read -r -d '' f; do
     fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
     metrics_size=$((metrics_size + fsize))
     rm -f "$f"
-done < <(find "${METRICS_DIR}" -type f -name "????-??-??.jsonl" -mtime +90 -print0 2>/dev/null)
-track_freed "Old metrics JSONL (>90d)" "$metrics_size"
+done < <(find "${METRICS_DIR}" -type f -name "????-??-??.jsonl.gz" -mtime +180 -print0 2>/dev/null)
+track_freed "Old metrics JSONL.gz (>180d)" "$metrics_size"
 
 # ─── 6. Temp files ──────────────────────────────────────────────────────────
 
