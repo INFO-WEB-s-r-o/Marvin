@@ -46,11 +46,7 @@ redis_status=$(check_service redis-server)
 opendkim_status=$(check_service opendkim)
 
 # Check mail queue size
-queue_count=$(postqueue -p 2>/dev/null | tail -1 | grep -oP '^\d+' || echo "0")
-if [[ "$queue_count" == "Mail" || -z "$queue_count" ]]; then
-    # "Mail queue is empty" or parse failure
-    queue_count=0
-fi
+queue_count=$(postqueue -p 2>/dev/null | grep -oP 'in \K\d+(?= Request)' | head -1 || echo "0")
 
 # Check certificate expiry
 cert_expiry="unknown"
@@ -74,19 +70,18 @@ marvin_log "INFO" "Mail queue: ${queue_count} messages, cert expires: ${cert_exp
 # ─────────────────────────────────────────────────────────────────────────────
 
 inbox_count=0
-inbox_messages="[]"
 
 # Count messages across Maildir directories
 for subdir in new cur; do
     dir="${MAILDIR}/${subdir}"
     if [[ -d "$dir" ]]; then
-        count=$(find "$dir" -type f 2>/dev/null | wc -l)
+        count=$(find "$dir" -type f -print0 2>/dev/null | tr -dc '\0' | wc -c)
         inbox_count=$((inbox_count + count))
     fi
 done
 
-# Parse recent messages (last 24 hours) for summary
-recent_messages="[]"
+# Count recent messages (last 24 hours)
+recent_count=0
 cutoff_epoch=$(($(date +%s) - 86400))
 
 for subdir in new cur; do
@@ -97,21 +92,9 @@ for subdir in new cur; do
         [[ -f "$msgfile" ]] || continue
         file_epoch=$(stat -c %Y "$msgfile" 2>/dev/null || echo "0")
         [[ "$file_epoch" -gt "$cutoff_epoch" ]] || continue
-
-        # Extract basic headers
-        from=$(grep -m1 -i '^From:' "$msgfile" 2>/dev/null | sed 's/^[Ff]rom: *//' | head -c 200 || echo "unknown")
-        subject=$(grep -m1 -i '^Subject:' "$msgfile" 2>/dev/null | sed 's/^[Ss]ubject: *//' | head -c 200 || echo "(no subject)")
-        date_hdr=$(grep -m1 -i '^Date:' "$msgfile" 2>/dev/null | sed 's/^[Dd]ate: *//' | head -c 100 || echo "unknown")
-
-        recent_messages=$(echo "$recent_messages" | jq \
-            --arg from "$from" \
-            --arg subject "$subject" \
-            --arg date "$date_hdr" \
-            '. + [{"from": $from, "subject": $subject, "date": $date}]')
+        recent_count=$((recent_count + 1))
     done < <(find "$dir" -type f -print0 2>/dev/null)
 done
-
-recent_count=$(echo "$recent_messages" | jq 'length')
 marvin_log "INFO" "Inbox: ${inbox_count} total, ${recent_count} in last 24h"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -183,12 +166,14 @@ if [[ "$queue_count" -gt 0 ]]; then
     postqueue -f 2>/dev/null || true
     marvin_log "INFO" "Flushed mail queue (${queue_count} messages)"
 
-    # If messages have been stuck for >3 days, delete them
-    stuck_ids=$(postqueue -p 2>/dev/null | grep -oP '^\w+[*!]?' | head -20 || echo "")
-    for qid in $stuck_ids; do
+    # Cache queue listing once, then parse stuck messages older than 3 days
+    queue_output=$(postqueue -p 2>/dev/null || echo "")
+    stuck_ids=$(echo "$queue_output" | grep -oP '^\w+[*!]?' | head -20 || echo "")
+    while IFS= read -r qid; do
+        [[ -n "$qid" ]] || continue
         qid_clean=$(echo "$qid" | tr -d '*!')
         # Check queue time — delete if older than 3 days
-        queue_time=$(postqueue -p 2>/dev/null | grep -A1 "^${qid}" | grep -oP '\w+ \w+ +\d+ \d+:\d+:\d+' | head -1 || echo "")
+        queue_time=$(echo "$queue_output" | grep -A1 -F "${qid_clean}" | grep -oP '\w+ \w+ +\d+ \d+:\d+:\d+' | head -1 || echo "")
         if [[ -n "$queue_time" ]]; then
             queue_epoch=$(date -d "$queue_time" +%s 2>/dev/null || echo "0")
             three_days_ago=$(( $(date +%s) - 259200 ))
@@ -197,7 +182,7 @@ if [[ "$queue_count" -gt 0 ]]; then
                 marvin_log "INFO" "Deleted stuck queue message: ${qid_clean}"
             fi
         fi
-    done
+    done <<< "$stuck_ids"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -209,7 +194,6 @@ jq -n \
     --arg timestamp "$NOW" \
     --argjson inbox_total "$inbox_count" \
     --argjson recent_count "$recent_count" \
-    --argjson recent_messages "$recent_messages" \
     --argjson spam_stats "$spam_stats" \
     --argjson deleted "$deleted_count" \
     --argjson queue "$queue_count" \
@@ -224,8 +208,7 @@ jq -n \
         timestamp: $timestamp,
         inbox: {
             total_messages: $inbox_total,
-            last_24h: $recent_count,
-            recent: $recent_messages
+            last_24h: $recent_count
         },
         spam: $spam_stats,
         cleanup: {

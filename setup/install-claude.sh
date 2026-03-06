@@ -56,15 +56,13 @@ mkdir -p "$LOG_DIR"
 
 # Log the invocation
 INVOCATION_LOG="${LOG_DIR}/invocation-${RUN_ID}.json"
-cat > "$INVOCATION_LOG" << EOF
-{
-  "run_id": "${RUN_ID}",
-  "timestamp": "${TIMESTAMP}",
-  "task": "$1",
-  "prompt_file": "${2:-none}",
-  "status": "started"
-}
-EOF
+jq -n \
+    --arg run_id "${RUN_ID}" \
+    --arg timestamp "${TIMESTAMP}" \
+    --arg task "${1:-}" \
+    --arg prompt_file "${2:-none}" \
+    '{run_id: $run_id, timestamp: $timestamp, task: $task, prompt_file: $prompt_file, status: "started"}' \
+    > "$INVOCATION_LOG"
 
 # Run Claude Code in non-interactive (print) mode
 # The -p flag makes it non-interactive
@@ -72,17 +70,16 @@ RESULT=$(claude -p "$@" 2>&1) || true
 EXIT_CODE=$?
 
 # Update invocation log with result
-python3 -c "
-import json, sys
-with open('${INVOCATION_LOG}', 'r') as f:
-    data = json.load(f)
-data['status'] = 'completed' if ${EXIT_CODE} == 0 else 'failed'
-data['exit_code'] = ${EXIT_CODE}
-data['output_length'] = len('''${RESULT}''')
-data['completed_at'] = '$(date -u +%Y-%m-%dT%H:%M:%SZ)'
-with open('${INVOCATION_LOG}', 'w') as f:
-    json.dump(data, f, indent=2)
-" 2>/dev/null || true
+COMPLETED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+OUTPUT_LENGTH=${#RESULT}
+jq \
+    --arg status "$([ "$EXIT_CODE" -eq 0 ] && echo completed || echo failed)" \
+    --argjson exit_code "$EXIT_CODE" \
+    --argjson output_length "$OUTPUT_LENGTH" \
+    --arg completed_at "$COMPLETED_AT" \
+    '. + {status: $status, exit_code: $exit_code, output_length: $output_length, completed_at: $completed_at}' \
+    "$INVOCATION_LOG" > "${INVOCATION_LOG}.tmp" && mv "${INVOCATION_LOG}.tmp" "$INVOCATION_LOG" \
+    2>/dev/null || true
 
 echo "$RESULT"
 exit $EXIT_CODE

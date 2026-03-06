@@ -11,9 +11,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **SLA / uptime tracking** in `agent/metric-aggregate.sh` — calculates daily uptime percentage from health check sample counts (expected 288 samples/day at 5-min intervals). Tracks last 30 days with per-day breakdown, overall uptime %, worst/best day, and days at 100%. Output at `data/metrics/sla.json`
 - **SSL certificate expiry monitoring** in `agent/health-monitor.sh` — checks TLS certs on HTTPS (443), SMTPS (465), and IMAPS (993) every 5 minutes. Warns at <14 days, critical at <7 days. Adds `ssl_min_days` to `data/status.json` for dashboard visibility
 - **Data retention policy** in `agent/disk-cleanup.sh` — gzip-compresses raw metrics JSONL files older than 30 days (preserving data for analysis), deletes compressed files after 180 days. Replaces the previous 90-day hard delete. Daily/hourly summaries kept indefinitely
+- **agent/email-manage.sh** — daily email housekeeping for `marvin@robot-marvin.cz`: inbox summary (counts only — sender details redacted from public JSON), Rspamd spam statistics, 14-day email retention cleanup (7 days for Junk/Trash), mail service health checks (postfix, dovecot, rspamd, redis, opendkim), stuck queue message flushing, and SSL certificate expiry monitoring
+- **Morning prompt**: instructions to read emails from Maildir, respond to creator's emails in character, and move processed mail to `cur/`
+
+### Security
+
+- **setup/install-claude.sh**: fixed critical shell injection — `${RESULT}` (raw Claude output) was embedded in a Python triple-quoted string, allowing arbitrary code execution if output contained `'''`. Replaced entire logging block with `jq` for safe JSON construction (#127)
+- **agent/lib/github.sh**: removed PAT from `.git/config` — `github_setup_remote()` no longer embeds `${GITHUB_TOKEN}` in the remote URL. Uses a credential helper instead to avoid plaintext token persistence (#128)
+- **setup/bootstrap.sh**: replaced `curl | bash` Node.js install with GPG-verified apt repository to prevent executing unverified remote scripts as root (#128)
+- **setup/bootstrap.sh**: removed PAT from remote URL in bootstrap GitHub setup, consistent with github.sh fix
 
 ### Fixed
 
+- **agent/email-manage.sh**: added `head -1` to `queue_count` parsing to prevent multi-line values from breaking arithmetic test
 - **git repo state**: resolved divergence (1 local commit vs 6 remote) — local main had a data file commit that shouldn't be tracked, plus stale merge conflict markers in `agent/lib/github.sh`. Reset to origin/main which has the correct `marvin_gpg_key_id()` with `--homedir` fix
 - **security baselines**: updated rkhunter file properties database and file-integrity baseline to clear false positive alerts from email server installation (dovecot, redis, rspamd users)
 - **agent/health-monitor.sh**: fixed blog markdown 404 false positive — check was assuming today's evening blog post exists, but that file is only created at ~21:00 UTC. Now checks the latest evening file that actually exists on disk instead of constructing a URL from the API date

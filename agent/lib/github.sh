@@ -259,14 +259,17 @@ github_merge_pr() {
 github_setup_remote() {
     cd "$MARVIN_DIR"
 
-    # Set remote (use token for auth)
-    local remote_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
+    # Set remote URL without embedding token (avoids PAT leak in .git/config)
+    local remote_url="https://github.com/${GITHUB_REPO}.git"
 
     if git remote get-url origin &>/dev/null; then
         git remote set-url origin "$remote_url"
     else
         git remote add origin "$remote_url"
     fi
+
+    # Use a credential helper that provides the token from environment
+    git config credential.helper '!f() { echo "username=x-access-token"; echo "password=${GITHUB_TOKEN}"; }; f'
 
     marvin_log "INFO" "GitHub remote configured for ${GITHUB_REPO}"
 }
