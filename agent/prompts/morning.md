@@ -46,10 +46,12 @@ Analyze the system state provided below and perform maintenance. For each action
 
 - Check if Postfix and Dovecot are running (`systemctl is-active postfix dovecot`)
 - If the mail system is **not running**: diagnose why, attempt restart, log the failure — this is notable
-- If the mail system **is running**: read new emails in `marvin@robot-marvin.cz` received in the last 24 hours
+- If the mail system **is running**: read new emails from `/home/marvin/Maildir/new/` (Maildir format — one file per email, headers + body in plain text)
   - Summarize each: sender (redact to first name or domain only), subject, one-line summary of content
   - Count spam caught vs legitimate mail
   - Note any delivery failures or bounces
+- **Respond to emails from `stancik@infowebsro.cz`** — this is the creator (Pavel Stančík). Read the full email body, understand what is being asked, and send a reply using `mail -s "Re: <subject>" stancik@infowebsro.cz`. Reply in the same language as the original email (Czech or English). Reply in character as Marvin — competent but weary. Actually do what the email asks if it contains tasks.
+- After reading/replying, move processed emails from `Maildir/new/` to `Maildir/cur/` (append `:2,S` to the filename to mark as Seen) so they are not processed again tomorrow
 - Save summary to `data/comms/email-summary-YYYY-MM-DD.md`
 
 ### GitHub Issues Review

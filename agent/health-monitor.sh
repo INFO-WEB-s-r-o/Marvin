@@ -58,34 +58,47 @@ if [[ -n "$mem_available" ]] && [[ "$mem_available" -lt 200 ]]; then
 
     if [[ "$current_swap_mb" -eq 0 ]]; then
         # No swap at all — create a 1GB swap file
-        marvin_log "WARN" "RAM pressure (${mem_available}MB available) and no swap — creating 1GB swap"
-        if dd if=/dev/zero of="${swap_file}" bs=1M count=1024 status=none 2>/dev/null \
-            && chmod 600 "${swap_file}" \
-            && mkswap "${swap_file}" >/dev/null 2>&1 \
-            && swapon "${swap_file}" 2>/dev/null; then
-            marvin_log "INFO" "Created and activated 1GB swap file"
-            ISSUES+=("INFO: Created 1GB swap file due to RAM pressure")
+        avail_disk_mb=$(df -m / 2>/dev/null | awk 'NR==2{print $4}')
+        if [[ "${avail_disk_mb:-0}" -lt 2048 ]]; then
+            marvin_log "WARN" "Skipping swap creation: only ${avail_disk_mb}MB disk free (need 2048MB)"
+            ISSUES+=("WARNING: Cannot create swap — insufficient disk space (${avail_disk_mb}MB free)")
         else
-            marvin_log "ERROR" "Failed to create swap file"
-            ISSUES+=("WARNING: Failed to create swap — low memory with no swap")
+            marvin_log "WARN" "RAM pressure (${mem_available}MB available) and no swap — creating 1GB swap"
+            if dd if=/dev/zero of="${swap_file}" bs=1M count=1024 status=none 2>/dev/null \
+                && chmod 600 "${swap_file}" \
+                && mkswap "${swap_file}" >/dev/null 2>&1 \
+                && swapon "${swap_file}" 2>/dev/null; then
+                marvin_log "INFO" "Created and activated 1GB swap file"
+                ISSUES+=("INFO: Created 1GB swap file due to RAM pressure")
+            else
+                marvin_log "ERROR" "Failed to create swap file"
+                ISSUES+=("WARNING: Failed to create swap — low memory with no swap")
+            fi
         fi
     elif [[ "$current_swap_used_pct" -gt 80 && "$current_swap_mb" -lt 2048 ]]; then
         # Swap exists but is >80% used and under 2GB — try to expand
         new_size_mb=$((current_swap_mb * 2))
         [[ "$new_size_mb" -gt 2048 ]] && new_size_mb=2048
-        marvin_log "WARN" "RAM pressure + swap ${current_swap_used_pct}% used — expanding swap to ${new_size_mb}MB"
-        swapoff "${swap_file}" 2>/dev/null || true
-        if dd if=/dev/zero of="${swap_file}" bs=1M count="$new_size_mb" status=none 2>/dev/null \
-            && chmod 600 "${swap_file}" \
-            && mkswap "${swap_file}" >/dev/null 2>&1 \
-            && swapon "${swap_file}" 2>/dev/null; then
-            marvin_log "INFO" "Expanded swap to ${new_size_mb}MB"
-            ISSUES+=("INFO: Expanded swap to ${new_size_mb}MB due to memory pressure")
+        extra_needed=$((new_size_mb - current_swap_mb + 1024))
+        avail_disk_mb=$(df -m / 2>/dev/null | awk 'NR==2{print $4}')
+        if [[ "${avail_disk_mb:-0}" -lt "$extra_needed" ]]; then
+            marvin_log "WARN" "Skipping swap expansion: only ${avail_disk_mb}MB disk free (need ${extra_needed}MB)"
+            ISSUES+=("WARNING: Cannot expand swap — insufficient disk space (${avail_disk_mb}MB free)")
         else
-            marvin_log "ERROR" "Failed to expand swap"
-            ISSUES+=("WARNING: Failed to expand swap under memory pressure")
-            # Try to re-enable old swap
-            swapon "${swap_file}" 2>/dev/null || true
+            marvin_log "WARN" "RAM pressure + swap ${current_swap_used_pct}% used — expanding swap to ${new_size_mb}MB"
+            swapoff "${swap_file}" 2>/dev/null || true
+            if dd if=/dev/zero of="${swap_file}" bs=1M count="$new_size_mb" status=none 2>/dev/null \
+                && chmod 600 "${swap_file}" \
+                && mkswap "${swap_file}" >/dev/null 2>&1 \
+                && swapon "${swap_file}" 2>/dev/null; then
+                marvin_log "INFO" "Expanded swap to ${new_size_mb}MB"
+                ISSUES+=("INFO: Expanded swap to ${new_size_mb}MB due to memory pressure")
+            else
+                marvin_log "ERROR" "Failed to expand swap"
+                ISSUES+=("WARNING: Failed to expand swap under memory pressure")
+                # Try to re-enable old swap
+                swapon "${swap_file}" 2>/dev/null || true
+            fi
         fi
     fi
 fi
