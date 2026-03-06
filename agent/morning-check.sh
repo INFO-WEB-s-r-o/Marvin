@@ -25,6 +25,8 @@ marvin_log "INFO" "=== MORNING CHECK STARTING ==="
 
 PULL_SUMMARY=""
 INCOMING_DIFF=""
+INCOMING_LOG=""
+INCOMING_FULL_DIFF=""
 
 if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
     source "$(dirname "$0")/lib/github.sh"
@@ -55,7 +57,9 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         git fetch origin main 2>/dev/null || true
 
         # Pull with rebase to keep history clean
-        if git pull --rebase origin main 2>&1; then
+        pull_output=$(git pull --rebase origin main 2>&1) && pull_ok=true || pull_ok=false
+        marvin_log "INFO" "git pull output: ${pull_output}"
+        if [[ "$pull_ok" == "true" ]]; then
             NEW_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
 
             if [[ "$OLD_HEAD" != "$NEW_HEAD" ]]; then
