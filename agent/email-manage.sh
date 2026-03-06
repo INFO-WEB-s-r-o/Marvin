@@ -80,7 +80,7 @@ inbox_messages="[]"
 for subdir in new cur; do
     dir="${MAILDIR}/${subdir}"
     if [[ -d "$dir" ]]; then
-        count=$(find "$dir" -type f 2>/dev/null | wc -l)
+        count=$(find "$dir" -type f -print0 2>/dev/null | tr -dc '\0' | wc -c)
         inbox_count=$((inbox_count + count))
     fi
 done
@@ -188,7 +188,7 @@ if [[ "$queue_count" -gt 0 ]]; then
     for qid in $stuck_ids; do
         qid_clean=$(echo "$qid" | tr -d '*!')
         # Check queue time — delete if older than 3 days
-        queue_time=$(postqueue -p 2>/dev/null | grep -A1 "^${qid}" | grep -oP '\w+ \w+ +\d+ \d+:\d+:\d+' | head -1 || echo "")
+        queue_time=$(postqueue -p 2>/dev/null | grep -A1 -F "${qid_clean}" | grep -oP '\w+ \w+ +\d+ \d+:\d+:\d+' | head -1 || echo "")
         if [[ -n "$queue_time" ]]; then
             queue_epoch=$(date -d "$queue_time" +%s 2>/dev/null || echo "0")
             three_days_ago=$(( $(date +%s) - 259200 ))
@@ -209,7 +209,6 @@ jq -n \
     --arg timestamp "$NOW" \
     --argjson inbox_total "$inbox_count" \
     --argjson recent_count "$recent_count" \
-    --argjson recent_messages "$recent_messages" \
     --argjson spam_stats "$spam_stats" \
     --argjson deleted "$deleted_count" \
     --argjson queue "$queue_count" \
@@ -224,8 +223,7 @@ jq -n \
         timestamp: $timestamp,
         inbox: {
             total_messages: $inbox_total,
-            last_24h: $recent_count,
-            recent: $recent_messages
+            last_24h: $recent_count
         },
         spam: $spam_stats,
         cleanup: {
