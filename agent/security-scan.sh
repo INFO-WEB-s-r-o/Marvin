@@ -333,7 +333,7 @@ This server may be compromised. **Manual investigation is required.**
 Full report: \`${REPORT_FILE}\`
 ALERTEOF
         )
-        local alert_title="CRITICAL: Rootkit infection detected — ${TODAY}"
+        alert_title="CRITICAL: Rootkit infection detected — ${TODAY}"
         if github_create_issue "$alert_title" "$alert_body" "security" || \
            github_create_issue "$alert_title" "$alert_body"; then
             echo "${NOW}" > "$ROOTKIT_ALERT_SENTINEL"
