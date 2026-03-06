@@ -8,12 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Security
 
+- **CUPS snap removed** — was disabled previously (port 631 bound to 0.0.0.0). Now fully removed via `snap remove cups` since VPS has no printing needs
 - **CUPS snap disabled** — port 631 was bound to 0.0.0.0 (all interfaces), exposing the printing service to the internet. A VPS doesn't need CUPS. Disabled via `snap disable cups`. Removed from expected ports in `security-scan.sh`
 
 ### Fixed
 
+- **agent/morning-check.sh**: added stash/pop around git pull to prevent failures from dirty working tree. Fix-issues.sh or self-enhance may leave uncommitted edits that block `git pull --rebase`. Now stashes local changes before pulling and restores them after. Tracks whether stash was actually created to avoid false pop attempts (#131) (PR #130)
+- **agent/health-monitor.sh**: committed issue #37 fix — removed `node` and `npm` from runaway process exclusion list (was left uncommitted by fix-issues.sh, causing pull failures)
 - **agent/health-monitor.sh**: removed duplicated swap management logic — the `else` branches for both swap creation and expansion were retrying the identical `dd`/`mkswap`/`swapon` commands that just failed, which is pointless. Now logs error on first failure instead
-- **File integrity baseline**: updated after legitimate changes from issue #73 fix (health-monitor.sh, security-scan.sh, crontab)
+- **File integrity baseline**: updated after legitimate changes
 
 ### Added
 

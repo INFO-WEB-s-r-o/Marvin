@@ -121,9 +121,9 @@ while IFS= read -r line; do
     proc_cpu=$(echo "$line" | awk '{print $2}')
     proc_name=$(echo "$line" | awk '{print $3}')
 
-    # Skip known-good processes (Claude, apt, dpkg*, npm, node, ps, jq)
+    # Skip known-good processes (Claude, apt, dpkg*, ps, jq)
     case "$proc_name" in
-        claude|apt*|dpkg*|npm|node|ps|jq) continue ;;
+        claude|apt*|dpkg*|ps|jq) continue ;;
     esac
 
     # Check if this PID was already flagged
