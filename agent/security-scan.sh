@@ -99,7 +99,7 @@ if [[ -n "$world_writable" ]]; then
 fi
 
 # Check for SUID/SGID binaries (just count — changes from last scan are interesting)
-suid_count=$(find /usr/bin /usr/sbin /usr/local/bin -type f \( -perm -4000 -o -perm -2000 \) 2>/dev/null | wc -l || echo 0)
+suid_count=$(find /usr/bin /usr/sbin /usr/local/bin /usr/lib /usr/libexec -type f \( -perm -4000 -o -perm -2000 \) 2>/dev/null | wc -l || echo 0)
 
 # Check for unauthorized listening ports (capture once, reuse below)
 ss_output=$(ss -tlnp 2>/dev/null || echo "")
