@@ -54,7 +54,7 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         OLD_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
 
         # Fetch first so we know if there's anything to pull
-        git fetch --prune origin main 2>/dev/null || true
+        git fetch --prune origin 2>/dev/null || true
 
         # Pull with rebase to keep history clean
         pull_output=$(git pull --rebase origin main 2>&1) && pull_ok=true || pull_ok=false
@@ -113,7 +113,10 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
             fi
             # Only delete if merged into main (safe) or older than 7 days
             if git branch --merged main 2>/dev/null | grep -qF "  ${branch}"; then
-                git branch -d "$branch" 2>/dev/null && stale_cleaned=$((stale_cleaned + 1)) || true
+                git branch -d "$branch" 2>/dev/null && {
+                    stale_cleaned=$((stale_cleaned + 1))
+                    marvin_log "INFO" "Deleted merged stale branch ${branch}"
+                } || true
             else
                 # Check branch age — force-delete if >7 days old with no remote
                 branch_date=$(git log -1 --format='%ci' "$branch" 2>/dev/null | cut -d' ' -f1)
@@ -127,7 +130,7 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
                     fi
                 fi
             fi
-        done < <(git branch 2>/dev/null | grep -v '^\* ' | sed 's/^  //')
+        done < <(git branch 2>/dev/null | grep -v '^\* ' | sed 's/^ *//')
         if [[ "$stale_cleaned" -gt 0 ]]; then
             marvin_log "INFO" "Cleaned ${stale_cleaned} stale local branch(es)"
         fi
