@@ -142,6 +142,19 @@ EOF
     
     marvin_log "INFO" "Claude run complete: ${task_name} (${duration}s, exit=${exit_code})" >&2
 
+    # Track Claude API usage for analytics (Phase 2 roadmap)
+    local output_len=${#output}
+    local usage_file="${METRICS_DIR}/claude-usage.jsonl"
+    jq -nc \
+        --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --arg task "$task_name" \
+        --argjson duration "$duration" \
+        --argjson prompt_chars "$prompt_len" \
+        --argjson output_chars "$output_len" \
+        --argjson exit_code "$exit_code" \
+        '{timestamp: $ts, task: $task, duration_s: $duration, prompt_chars: $prompt_chars, output_chars: $output_chars, exit_code: $exit_code}' \
+        >> "$usage_file" 2>/dev/null || true
+
     echo "$output"
 }
 

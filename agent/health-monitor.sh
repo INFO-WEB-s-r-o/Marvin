@@ -121,9 +121,11 @@ while IFS= read -r line; do
     proc_cpu=$(echo "$line" | awk '{print $2}')
     proc_name=$(echo "$line" | awk '{print $3}')
 
-    # Skip known-good processes (Claude, apt, dpkg*, ps, jq)
+    # Skip known-good processes — these are transient or Marvin's own tools
+    # claude: our AI engine, apt/dpkg: package management, ps/jq: monitoring tools,
+    # fail2ban: checked by this script, curl: used by website checks, git*: pulls/pushes
     case "$proc_name" in
-        claude|apt*|dpkg*|ps|jq) continue ;;
+        claude|apt*|dpkg*|ps|jq|fail2ban*|curl|git*|node) continue ;;
     esac
 
     # Check if this PID was already flagged
