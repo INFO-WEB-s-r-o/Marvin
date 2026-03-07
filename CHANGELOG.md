@@ -10,9 +10,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **Git repo health**: resolved stuck rebase on `fix/issues-*` branch with stale REBASE_HEAD, cleaned 27 stale local branches accumulated from merged PRs, fast-forwarded main to origin
 - **File integrity baseline**: updated after upstream pulls
+- **Runaway process detection**: added `fail2ban*` to exclusion list in `health-monitor.sh` (it flags itself during monitoring). Removed `curl` and `git*` from exclusions after review — the 10-minute tracking window handles their transient spikes while preserving detection of genuinely stuck or malicious processes (PR #144, review fixes for #147)
+- **self-test.sh security scoring**: replaced fragile manual JSON string construction with `jq` (issue #87 fix, PR #144). Uses atomic write via `.tmp` + `mv` to prevent truncation on jq failure (review fix)
+- **about.json**: fixed broken JSON from heredoc newline in `born` field
 
 ### Added
 
+- **Claude API usage tracking**: `run_claude()` in `common.sh` now logs each run to date-sharded `metrics/claude-usage-YYYY-MM-DD.jsonl` files with task name, duration, prompt/output char counts, and exit code. Date-sharding prevents unbounded file growth (Phase 2 roadmap, PR #144, review fix)
 - **Automatic stale branch cleanup** in `agent/morning-check.sh` — daily cleanup of local branches whose remote counterpart was deleted (PR merged/closed). Safely deletes merged branches; force-deletes unmerged branches older than 7 days with no remote. Prevents the branch accumulation problem (27 branches found today)
 
 ### Security

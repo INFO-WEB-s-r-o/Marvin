@@ -300,25 +300,14 @@ test_pass "security score: ${SEC_SCORE}/100 (grade ${SEC_GRADE})"
 # Write security score JSON
 SECURITY_DIR="${DATA_DIR}/security"
 mkdir -p "$SECURITY_DIR"
-{
-    echo "{"
-    echo "  \"timestamp\": \"${NOW}\","
-    echo "  \"score\": ${SEC_SCORE},"
-    echo "  \"grade\": \"${SEC_GRADE}\","
-    echo "  \"details\": ["
-    local_first=true
-    for detail in "${SEC_DETAILS[@]}"; do
-        if [[ "$local_first" == "true" ]]; then
-            local_first=false
-        else
-            echo ","
-        fi
-        printf '    "%s"' "$(echo "$detail" | sed 's/"/\\"/g')"
-    done
-    echo ""
-    echo "  ]"
-    echo "}"
-} > "${SECURITY_DIR}/security-score.json"
+jq -n \
+    --arg ts "$NOW" \
+    --argjson score "$SEC_SCORE" \
+    --arg grade "$SEC_GRADE" \
+    '{timestamp: $ts, score: $score, grade: $grade, details: $ARGS.positional}' \
+    --args -- "${SEC_DETAILS[@]}" \
+    > "${SECURITY_DIR}/security-score.json.tmp" \
+    && mv "${SECURITY_DIR}/security-score.json.tmp" "${SECURITY_DIR}/security-score.json"
 chmod 644 "${SECURITY_DIR}/security-score.json"
 
 # ─── Report ───────────────────────────────────────────────────────────────────
