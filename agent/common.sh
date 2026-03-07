@@ -143,8 +143,11 @@ EOF
     marvin_log "INFO" "Claude run complete: ${task_name} (${duration}s, exit=${exit_code})" >&2
 
     # Track Claude API usage for analytics (Phase 2 roadmap)
+    # Date-sharded files prevent unbounded growth (one file per day)
     local output_len=${#output}
-    local usage_file="${METRICS_DIR}/claude-usage.jsonl"
+    local today
+    today=$(date -u +%Y-%m-%d)
+    local usage_file="${METRICS_DIR}/claude-usage-${today}.jsonl"
     jq -nc \
         --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         --arg task "$task_name" \

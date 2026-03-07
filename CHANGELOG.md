@@ -10,9 +10,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **Git repo health**: resolved stuck rebase on `fix/issues-*` branch with stale REBASE_HEAD, cleaned 27 stale local branches accumulated from merged PRs, fast-forwarded main to origin
 - **File integrity baseline**: updated after upstream pulls
+- **Runaway process false positives**: added `fail2ban*`, `curl`, `git*` to exclusion list in `health-monitor.sh` — these transient processes from Marvin's own scripts were triggering daily false positive warnings. `node` is no longer blanket-excluded; it remains tracked so a runaway Next.js server will still be caught after 10 minutes (PR #144, review fix)
+- **self-test.sh security scoring**: replaced fragile manual JSON string construction with `jq` (issue #87 fix, PR #144). Uses atomic write via `.tmp` + `mv` to prevent truncation on jq failure (review fix)
+- **about.json**: fixed broken JSON from heredoc newline in `born` field
 
 ### Added
 
+- **Claude API usage tracking**: `run_claude()` in `common.sh` now logs each run to date-sharded `metrics/claude-usage-YYYY-MM-DD.jsonl` files with task name, duration, prompt/output char counts, and exit code. Date-sharding prevents unbounded file growth (Phase 2 roadmap, PR #144, review fix)
 - **Automatic stale branch cleanup** in `agent/morning-check.sh` — daily cleanup of local branches whose remote counterpart was deleted (PR merged/closed). Safely deletes merged branches; force-deletes unmerged branches older than 7 days with no remote. Prevents the branch accumulation problem (27 branches found today)
 
 ### Security

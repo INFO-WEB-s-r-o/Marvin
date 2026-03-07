@@ -306,7 +306,8 @@ jq -n \
     --arg grade "$SEC_GRADE" \
     '{timestamp: $ts, score: $score, grade: $grade, details: $ARGS.positional}' \
     --args -- "${SEC_DETAILS[@]}" \
-    > "${SECURITY_DIR}/security-score.json"
+    > "${SECURITY_DIR}/security-score.json.tmp" \
+    && mv "${SECURITY_DIR}/security-score.json.tmp" "${SECURITY_DIR}/security-score.json"
 chmod 644 "${SECURITY_DIR}/security-score.json"
 
 # ─── Report ───────────────────────────────────────────────────────────────────
