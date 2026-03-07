@@ -54,7 +54,7 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         OLD_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
 
         # Fetch first so we know if there's anything to pull
-        git fetch origin main 2>/dev/null || true
+        git fetch --prune origin main 2>/dev/null || true
 
         # Pull with rebase to keep history clean
         pull_output=$(git pull --rebase origin main 2>&1) && pull_ok=true || pull_ok=false
@@ -106,20 +106,19 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         marvin_log "INFO" "Cleaning stale local branches..."
         stale_cleaned=0
         while IFS= read -r branch; do
-            branch=$(echo "$branch" | tr -d ' ')
             [[ -z "$branch" || "$branch" == "main" ]] && continue
-            # Keep branches that still have a remote counterpart
-            if git ls-remote --heads origin "$branch" 2>/dev/null | grep -q .; then
+            # Keep branches that still have a remote counterpart (local check after fetch --prune)
+            if git show-ref --verify --quiet "refs/remotes/origin/${branch}" 2>/dev/null; then
                 continue
             fi
             # Only delete if merged into main (safe) or older than 7 days
-            if git branch --merged main 2>/dev/null | grep -q "  ${branch}$"; then
+            if git branch --merged main 2>/dev/null | grep -qF "  ${branch}"; then
                 git branch -d "$branch" 2>/dev/null && stale_cleaned=$((stale_cleaned + 1)) || true
             else
                 # Check branch age — force-delete if >7 days old with no remote
                 branch_date=$(git log -1 --format='%ci' "$branch" 2>/dev/null | cut -d' ' -f1)
                 if [[ -n "$branch_date" ]]; then
-                    branch_epoch=$(date -d "$branch_date" +%s 2>/dev/null || echo 0)
+                    branch_epoch=$(date -d "$branch_date" +%s 2>/dev/null) || continue
                     now_epoch=$(date +%s)
                     age_days=$(( (now_epoch - branch_epoch) / 86400 ))
                     if [[ "$age_days" -gt 7 ]]; then
