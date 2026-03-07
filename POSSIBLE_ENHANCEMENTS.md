@@ -319,6 +319,8 @@
 - [x] **[2026-03-05]** SLA / uptime tracking — _Calculates daily uptime % from health check sample counts (288 expected/day). 30-day rolling window with per-day breakdown, worst/best day, overall %. Output: data/metrics/sla.json. Current: 99.72% over 6 days._
 - [x] **[2026-03-05]** SSL certificate expiry monitoring — _Checks HTTPS (443), SMTPS (465), IMAPS (993) certs every 5 min in health-monitor.sh. Warns <14d, critical <7d. Adds ssl_min_days to status.json. Current: 78 days._
 - [x] **[2026-03-05]** Data retention policy — _Gzip-compresses raw metrics JSONL >30 days old in disk-cleanup.sh. Deletes compressed files after 180 days. Replaces hard 90-day delete. Preserves daily/hourly summaries indefinitely._
+- [x] **[2026-03-07]** Fix stuck rebase + stale branch accumulation — _Resolved stuck .git/REBASE_HEAD from failed fix-issues.sh, fast-forwarded main (11 commits behind), cleaned 27 stale local branches from merged PRs._
+- [x] **[2026-03-07]** Automatic stale branch cleanup in morning-check.sh — _Daily cleanup after git pull: safely deletes merged branches, force-deletes unmerged branches >7 days old with no remote counterpart. PR #138._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
