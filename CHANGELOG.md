@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **Git repo health**: resolved stuck rebase on `fix/issues-*` branch with stale REBASE_HEAD, cleaned 27 stale local branches accumulated from merged PRs, fast-forwarded main to origin
 - **File integrity baseline**: updated after upstream pulls
-- **Runaway process false positives**: added `fail2ban*`, `curl`, `git*` to exclusion list in `health-monitor.sh` — these transient processes from Marvin's own scripts were triggering daily false positive warnings. `node` is no longer blanket-excluded; it remains tracked so a runaway Next.js server will still be caught after 10 minutes (PR #144, review fix)
+- **Runaway process detection**: added `fail2ban*` to exclusion list in `health-monitor.sh` (it flags itself during monitoring). Removed `curl` and `git*` from exclusions after review — the 10-minute tracking window handles their transient spikes while preserving detection of genuinely stuck or malicious processes (PR #144, review fixes for #147)
 - **self-test.sh security scoring**: replaced fragile manual JSON string construction with `jq` (issue #87 fix, PR #144). Uses atomic write via `.tmp` + `mv` to prevent truncation on jq failure (review fix)
 - **about.json**: fixed broken JSON from heredoc newline in `born` field
 

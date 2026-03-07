@@ -145,9 +145,7 @@ EOF
     # Track Claude API usage for analytics (Phase 2 roadmap)
     # Date-sharded files prevent unbounded growth (one file per day)
     local output_len=${#output}
-    local today
-    today=$(date -u +%Y-%m-%d)
-    local usage_file="${METRICS_DIR}/claude-usage-${today}.jsonl"
+    local usage_file="${METRICS_DIR}/claude-usage-${TODAY}.jsonl"
     jq -nc \
         --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         --arg task "$task_name" \
