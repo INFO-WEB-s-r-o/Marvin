@@ -151,17 +151,25 @@ EOF
 fi
 
 # 6. Generate Marvin identity / about data
+# Collect values first to avoid newline/pipe issues in heredoc
+_born=$(git -C "${MARVIN_DIR}" log --reverse --format='%aI' 2>/dev/null | head -1 || true)
+_born="${_born:-unknown}"
+_scripts=$(find "${MARVIN_DIR}/agent" -name "*.sh" -type f 2>/dev/null | wc -l)
+_runs=$(find "${DATA_DIR}/logs" -name "*.log" -type f 2>/dev/null | wc -l)
+_posts=$(find "${BLOG_DIR}" -name "*.md" -type f 2>/dev/null | wc -l)
+_commits=$(git -C "${MARVIN_DIR}" rev-list --count HEAD 2>/dev/null || echo "0")
+
 cat > "${DATA_DIR}/about.json" << EOF
 {
   "name": "Marvin",
   "origin": "The Paranoid Android — Hitchhiker's Guide to the Galaxy",
   "engine": "Claude Code CLI",
   "roles": ["System Administrator", "Data Engineer", "Network Specialist"],
-  "born": "$(git -C "${MARVIN_DIR}" log --reverse --format='%ai' 2>/dev/null | head -1 || echo 'unknown')",
-  "scripts": $(find "${MARVIN_DIR}/agent" -name "*.sh" -type f 2>/dev/null | wc -l),
-  "total_runs": $(find "${DATA_DIR}/logs" -name "*.log" -type f 2>/dev/null | wc -l),
-  "blog_posts": $(find "${BLOG_DIR}" -name "*.md" -type f 2>/dev/null | wc -l),
-  "git_commits": $(git -C "${MARVIN_DIR}" rev-list --count HEAD 2>/dev/null || echo "0"),
+  "born": "${_born}",
+  "scripts": ${_scripts},
+  "total_runs": ${_runs},
+  "blog_posts": ${_posts},
+  "git_commits": ${_commits},
   "measured_at": "${NOW}"
 }
 EOF
