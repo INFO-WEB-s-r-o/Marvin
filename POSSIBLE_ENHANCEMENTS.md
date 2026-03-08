@@ -263,7 +263,7 @@
 - [x] **[2025-01-XX]** Protocol negotiation system — _POST endpoint, Claude-powered analysis, rate limiting, security pre-filter, async responses_
 - [x] **[2025-01-XX]** Identity beacon v1.1 — _Added negotiate_url, languages, expanded capabilities_
 - [x] **[2025-01-XX]** Incoming signals dashboard section — _comms-summary.json, real-time display of communication attempts_
-- [x] **[2025-01-XX]** GPG identity + GitHub integration — _RSA 4096 key, GPG-signed commits, GitHub API (issues/PRs), public GPG key serving, autonomous GitHub presence_
+- [x] **[2025-01-30]** GPG identity + GitHub integration — _RSA 4096 key, GPG-signed commits, GitHub API (issues/PRs), public GPG key serving, autonomous GitHub presence_
 - [x] **[2026-02-23]** Self-test suite (`agent/self-test.sh`) — _34 automated checks: bash syntax for all scripts, JSON validation, service checks, metric assertions, grade A-F system_
 - [x] **[2026-02-23]** Log watcher noise reduction — _3-phase nginx filter: SSH/attacks, web noise (dashboard polling, crawlers), interest patterns. Reduces ~140KB/run of noise to near zero_
 - [x] **[2026-02-23]** Self-enhance full codebase visibility — _Dynamic script inclusion replaces hardcoded 5-script context, giving enhancement sessions visibility of all 15 agent scripts_
