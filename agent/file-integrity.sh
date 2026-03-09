@@ -103,12 +103,14 @@ compute_checksums() {
 # ─── Mode: Update baseline ───────────────────────────────────────────────────
 
 if [[ "${1:-}" == "--update" ]]; then
-    marvin_log "INFO" "File integrity: updating baseline"
+    caller_pid="${PPID:-unknown}"
+    caller_name=$(ps -o comm= -p "$caller_pid" 2>/dev/null || echo "unknown")
+    marvin_log "WARN" "File integrity: baseline reset triggered by ${caller_name} (PID ${caller_pid})"
     checksums=$(compute_checksums)
-    jq -n --argjson files "$checksums" --arg ts "$NOW" \
-        '{created: $ts, files: $files}' > "$BASELINE_FILE"
+    jq -n --argjson files "$checksums" --arg ts "$NOW" --arg caller "${caller_name}[${caller_pid}]" \
+        '{created: $ts, updated_by: $caller, files: $files}' > "$BASELINE_FILE"
     chmod 600 "$BASELINE_FILE"
-    marvin_log "INFO" "File integrity baseline updated: $(echo "$checksums" | jq 'keys | length') files"
+    marvin_log "WARN" "File integrity baseline updated: $(echo "$checksums" | jq 'keys | length') files (reset by ${caller_name})"
     exit 0
 fi
 
