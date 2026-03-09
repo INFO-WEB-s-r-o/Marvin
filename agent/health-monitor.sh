@@ -18,6 +18,115 @@ append_metrics "$metrics"
 # Quick health checks
 ISSUES=()
 
+# ─── Anomaly detection (compare current vs 7-day rolling average) ────────────
+# Uses daily summaries from metric-aggregate.sh to detect unusual metric values.
+# Alerts when a metric deviates by more than 2 standard deviations from the mean.
+
+# Anomaly deduplication: only alert once per metric per hour
+_ANOMALY_ALERT_FILE="${METRICS_DIR}/anomaly-last-alert.json"
+[[ -f "$_ANOMALY_ALERT_FILE" ]] || echo '{}' > "$_ANOMALY_ALERT_FILE"
+_ANOMALY_DETAILS=()
+
+_anomaly_check() {
+    local label="$1" current="$2" avg="$3" stddev="$4"
+    local is_anomaly=false deviation="0"
+
+    # When stddev is too small (< 1), use absolute percentage deviation instead
+    # This prevents masking large deviations on normally-stable metrics (#153)
+    if awk -v sd="$stddev" 'BEGIN{exit (sd < 1) ? 0 : 1}' 2>/dev/null; then
+        # Fallback: flag if current deviates >20% from mean (and mean is non-trivial)
+        local pct_dev
+        pct_dev=$(awk -v cur="$current" -v mean="$avg" \
+            'BEGIN{if(mean==0){printf "0"}else{d=(cur-mean)/mean; if(d<0)d=-d; printf "%.1f", d*100}}' 2>/dev/null || echo "0")
+        if awk -v pd="$pct_dev" 'BEGIN{exit (pd > 20.0) ? 0 : 1}' 2>/dev/null; then
+            deviation="${pct_dev}%"
+            is_anomaly=true
+        fi
+    else
+        deviation=$(awk -v cur="$current" -v mean="$avg" -v sd="$stddev" \
+            'BEGIN{printf "%.1f", (cur - mean) / sd}' 2>/dev/null || echo "0")
+        local abs_dev
+        abs_dev=$(awk -v d="$deviation" 'BEGIN{if(d<0) d=-d; printf "%.1f", d}' 2>/dev/null || echo "0")
+        if awk -v ad="$abs_dev" 'BEGIN{exit (ad > 2.0) ? 0 : 1}' 2>/dev/null; then
+            deviation="${deviation}σ"
+            is_anomaly=true
+        fi
+    fi
+
+    if [[ "$is_anomaly" == "true" ]]; then
+        _ANOMALY_DETAILS+=("{\"metric\":\"${label}\",\"current\":${current},\"avg\":${avg},\"deviation\":\"${deviation}\"}")
+
+        # Rate limit: only log/alert if not alerted for this metric in the last 60 min (#152)
+        local last_alert now_ts
+        now_ts=$(date +%s)
+        last_alert=$(jq -r --arg m "$label" '.[$m] // 0' "$_ANOMALY_ALERT_FILE" 2>/dev/null || echo 0)
+        local elapsed=$(( now_ts - last_alert ))
+
+        if [[ "$elapsed" -ge 3600 ]]; then
+            ISSUES+=("WARNING: ${label} anomaly — current ${current}, avg ${avg}, ${deviation} deviation")
+            marvin_log "WARN" "Anomaly: ${label} = ${current} (avg=${avg}, stddev=${stddev}, deviation=${deviation})"
+            # Update last alert timestamp
+            jq --arg m "$label" --argjson ts "$now_ts" '.[$m] = $ts' "$_ANOMALY_ALERT_FILE" \
+                > "${_ANOMALY_ALERT_FILE}.tmp" && mv "${_ANOMALY_ALERT_FILE}.tmp" "$_ANOMALY_ALERT_FILE"
+        fi
+    fi
+}
+
+# Collect daily summary values from the last 7 days
+_daily_files=()
+for i in $(seq 1 7); do
+    _d=$(date -u -d "${TODAY} - ${i} day" +%Y-%m-%d 2>/dev/null || true)
+    [[ -n "$_d" && -f "${METRICS_DIR}/${_d}-daily.json" ]] && _daily_files+=("${METRICS_DIR}/${_d}-daily.json")
+done
+
+if [[ ${#_daily_files[@]} -ge 3 ]]; then
+    # Extract key metrics from daily summaries using jq
+    _cpu_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.cpu.avg // empty' "$f" 2>/dev/null; done)
+    _mem_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.memory_used_mb.avg // empty' "$f" 2>/dev/null; done)
+    _load_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.load_1m.avg // empty' "$f" 2>/dev/null; done)
+    _proc_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.process_count.avg // empty' "$f" 2>/dev/null; done)
+
+    # Compute mean and stddev, then check current values
+    for pair in \
+        "CPU%|${_cpu_avgs}|$(echo "$metrics" | jq -r '.cpu_percent' 2>/dev/null)" \
+        "Memory MB|${_mem_avgs}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)" \
+        "Load 1m|${_load_avgs}|$(echo "$metrics" | jq -r '.load_average["1min"]' 2>/dev/null)" \
+        "Processes|${_proc_avgs}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)"; do
+        _label="${pair%%|*}"
+        _rest="${pair#*|}"
+        _vals="${_rest%%|*}"
+        _current="${_rest##*|}"
+
+        [[ -z "$_current" || "$_current" == "null" ]] && continue
+
+        # Calculate mean and stddev from the values
+        _stats=$(echo "$_vals" | tr ' ' '\n' | grep -v '^$' | awk '
+            {sum += $1; sumsq += $1*$1; n++}
+            END {if(n>=3) printf "%.2f %.2f", sum/n, sqrt(sumsq/n - (sum/n)^2)}
+        ' 2>/dev/null || echo "")
+
+        [[ -z "$_stats" ]] && continue
+        _mean="${_stats%% *}"
+        _sd="${_stats##* }"
+
+        _anomaly_check "$_label" "$_current" "$_mean" "$_sd"
+    done
+
+    # Write anomaly status for dashboard consumption (includes anomaly details)
+    _anomaly_json="[]"
+    if [[ ${#_ANOMALY_DETAILS[@]} -gt 0 ]]; then
+        _anomaly_json=$(printf '%s\n' "${_ANOMALY_DETAILS[@]}" | jq -s '.' 2>/dev/null || echo '[]')
+    fi
+    jq -n \
+        --arg ts "$NOW" \
+        --argjson days "${#_daily_files[@]}" \
+        --argjson anomalies "$_anomaly_json" \
+        '{timestamp: $ts, baseline_days: $days, status: "active", anomalies: $anomalies}' \
+        > "${METRICS_DIR}/anomaly-status.json" 2>/dev/null || true
+else
+    marvin_log "INFO" "Anomaly detection: insufficient data (${#_daily_files[@]} daily summaries, need 3+)"
+fi
+
 # Check disk space (warn at 85%, critical at 95%)
 disk_percent=$(echo "$metrics" | jq -r '.disk.percent' 2>/dev/null | tr -d '%')
 if [[ -n "$disk_percent" ]] && [[ "$disk_percent" -gt 95 ]]; then
