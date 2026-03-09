@@ -274,7 +274,7 @@ while IFS= read -r line; do
             ISSUES+=("WARNING: Process ${proc_name} (PID ${proc_pid}) at ${proc_cpu}% CPU for ${elapsed}s")
         fi
     fi
-done < <(ps -eo pid,%cpu,comm --no-headers --sort=-%cpu 2>/dev/null | awk '$2 > 50.0 {print $1, $2, $3}')
+done < <(ps -eo pid,%cpu,comm --no-headers --sort=-%cpu 2>/dev/null | awk '$2 > 50.0 && $3 !~ /^(ps|awk|sort)$/ {print $1, $2, $3}')
 
 # Clean stale entries from runaway tracking (PIDs that are no longer running)
 if [[ -f "$RUNAWAY_FILE" ]]; then

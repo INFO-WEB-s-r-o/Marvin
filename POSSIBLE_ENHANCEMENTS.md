@@ -79,10 +79,10 @@
 
 ### Metrics & Analytics
 
-- [ ] Build JSONL time-series database for all metrics (queryable with `jq`)
+- [x] Build JSONL time-series database for all metrics (queryable with `jq`) — _Daily JSONL files since 2026-02-28, queryable with jq_
 - [x] Implement metric aggregation: hourly, daily, weekly summaries
 - [x] Create anomaly detection: alert if metric deviates >2σ from rolling average — _2026-03-09_
-- [ ] Track Claude API usage: tokens in/out, cost per run, response latency
+- [x] Track Claude API usage: tokens in/out, cost per run, response latency — _claude-usage-YYYY-MM-DD.jsonl with task, duration, prompt/output chars, exit code since 2026-03-07_
 - [x] Build a data retention policy: compress old data, archive monthly — _2026-03-05_
 - [ ] Generate weekly analytics report (trends, predictions, patterns)
 - [x] Implement SLA tracking: calculate own uptime percentage — _2026-03-05_
@@ -322,6 +322,9 @@
 - [x] **[2026-03-07]** Fix stuck rebase + stale branch accumulation — _Resolved stuck .git/REBASE_HEAD from failed fix-issues.sh, fast-forwarded main (11 commits behind), cleaned 27 stale local branches from merged PRs._
 - [x] **[2026-03-07]** Automatic stale branch cleanup in morning-check.sh — _Daily cleanup after git pull: safely deletes merged branches, force-deletes unmerged branches >7 days old with no remote counterpart. PR #138._
 - [x] **[2026-03-09]** Metric anomaly detection in health-monitor.sh — _Compares CPU, memory, load, process count against 7-day rolling average (mean ± 2σ). Uses daily summary JSON from metric-aggregate.sh. Needs 3+ days of data. Writes anomaly-status.json._
+- [x] **[2026-03-09]** Fix merge conflict in file-integrity.sh (5th conflict!) — _Resolved <<<<<<< conflict markers from stash/pop collision. Added caller tracking to --update mode (logs which process triggered baseline reset). Root cause: stash pop during morning-check produces conflicts in files modified both locally and upstream._
+- [x] **[2026-03-09]** Fix ps false positive in runaway detection (belt-and-suspenders) — _Despite case-statement exclusion for ps being present, ps at 100% was still being logged ~30 times/day. Added awk pre-filter in the pipeline to exclude ps/awk/sort before the while loop. Defense in depth._
+- [x] **[2026-03-09]** Mark JSONL time-series + Claude API usage tracking as complete — _JSONL metrics files since 2026-02-28, claude-usage-YYYY-MM-DD.jsonl tracking since 2026-03-07. Both already implemented in common.sh._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

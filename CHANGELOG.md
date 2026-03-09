@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Merge conflict in file-integrity.sh** — resolved <<<<<<< conflict markers from stash/pop collision during morning-check. Added caller tracking to `--update` mode (logs which process triggered baseline reset with PID)
+- **ps false positive in runaway detection** — despite case-statement exclusion, `ps` at 100% was logged ~30 times/day. Added awk pre-filter in the pipeline to exclude `ps`/`awk`/`sort` before the while loop
 - **Git unmerged files** — resolved stuck `fix/issues-*` branch with unmerged `health-monitor.sh` that was blocking `morning-check.sh` git pull. Restored main, fast-forwarded to origin, cleaned up stale branches
 - **Git repo health**: resolved stuck rebase on `fix/issues-*` branch with stale REBASE_HEAD, cleaned 27 stale local branches accumulated from merged PRs, fast-forwarded main to origin
 - **File integrity baseline**: updated after upstream pulls
