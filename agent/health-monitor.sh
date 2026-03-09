@@ -18,6 +18,76 @@ append_metrics "$metrics"
 # Quick health checks
 ISSUES=()
 
+# ─── Anomaly detection (compare current vs 7-day rolling average) ────────────
+# Uses daily summaries from metric-aggregate.sh to detect unusual metric values.
+# Alerts when a metric deviates by more than 2 standard deviations from the mean.
+
+_anomaly_check() {
+    local label="$1" current="$2" avg="$3" stddev="$4"
+    # Skip if stddev is too small (< 1) — not enough variance to be meaningful
+    if awk "BEGIN{exit ($stddev < 1) ? 0 : 1}" 2>/dev/null; then
+        return
+    fi
+    local deviation
+    deviation=$(awk "BEGIN{printf \"%.1f\", ($current - $avg) / $stddev}" 2>/dev/null || echo "0")
+    local abs_dev
+    abs_dev=$(awk "BEGIN{d=$deviation; if(d<0) d=-d; printf \"%.1f\", d}" 2>/dev/null || echo "0")
+    if awk "BEGIN{exit ($abs_dev > 2.0) ? 0 : 1}" 2>/dev/null; then
+        ISSUES+=("WARNING: ${label} anomaly — current ${current}, avg ${avg}, ${deviation}σ deviation")
+        marvin_log "WARN" "Anomaly: ${label} = ${current} (avg=${avg}, stddev=${stddev}, deviation=${deviation}σ)"
+    fi
+}
+
+# Collect daily summary values from the last 7 days
+_daily_files=()
+for i in $(seq 1 7); do
+    _d=$(date -u -d "${TODAY} - ${i} day" +%Y-%m-%d 2>/dev/null || true)
+    [[ -n "$_d" && -f "${METRICS_DIR}/${_d}-daily.json" ]] && _daily_files+=("${METRICS_DIR}/${_d}-daily.json")
+done
+
+if [[ ${#_daily_files[@]} -ge 3 ]]; then
+    # Extract key metrics from daily summaries using jq
+    _cpu_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.cpu.avg // empty' "$f" 2>/dev/null; done)
+    _mem_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.memory_used_mb.avg // empty' "$f" 2>/dev/null; done)
+    _load_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.load_1m.avg // empty' "$f" 2>/dev/null; done)
+    _proc_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.process_count.avg // empty' "$f" 2>/dev/null; done)
+
+    # Compute mean and stddev, then check current values
+    for pair in \
+        "CPU%|${_cpu_avgs}|$(echo "$metrics" | jq -r '.cpu_percent' 2>/dev/null)" \
+        "Memory MB|${_mem_avgs}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)" \
+        "Load 1m|${_load_avgs}|$(echo "$metrics" | jq -r '.load_average["1min"]' 2>/dev/null)" \
+        "Processes|${_proc_avgs}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)"; do
+        _label="${pair%%|*}"
+        _rest="${pair#*|}"
+        _vals="${_rest%%|*}"
+        _current="${_rest##*|}"
+
+        [[ -z "$_current" || "$_current" == "null" ]] && continue
+
+        # Calculate mean and stddev from the values
+        _stats=$(echo "$_vals" | tr ' ' '\n' | grep -v '^$' | awk '
+            {sum += $1; sumsq += $1*$1; n++}
+            END {if(n>=3) printf "%.2f %.2f", sum/n, sqrt(sumsq/n - (sum/n)^2)}
+        ' 2>/dev/null || echo "")
+
+        [[ -z "$_stats" ]] && continue
+        _mean="${_stats%% *}"
+        _sd="${_stats##* }"
+
+        _anomaly_check "$_label" "$_current" "$_mean" "$_sd"
+    done
+
+    # Write anomaly baseline for dashboard consumption
+    jq -n \
+        --arg ts "$NOW" \
+        --argjson days "${#_daily_files[@]}" \
+        '{timestamp: $ts, baseline_days: $days, status: "active"}' \
+        > "${METRICS_DIR}/anomaly-status.json" 2>/dev/null || true
+else
+    marvin_log "INFO" "Anomaly detection: insufficient data (${#_daily_files[@]} daily summaries, need 3+)"
+fi
+
 # Check disk space (warn at 85%, critical at 95%)
 disk_percent=$(echo "$metrics" | jq -r '.disk.percent' 2>/dev/null | tr -d '%')
 if [[ -n "$disk_percent" ]] && [[ "$disk_percent" -gt 95 ]]; then

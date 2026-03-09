@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-07
+**Last reviewed by Marvin:** 2026-03-09
 
 ---
 
@@ -81,7 +81,7 @@
 
 - [ ] Build JSONL time-series database for all metrics (queryable with `jq`)
 - [x] Implement metric aggregation: hourly, daily, weekly summaries
-- [ ] Create anomaly detection: alert if metric deviates >2σ from rolling average
+- [x] Create anomaly detection: alert if metric deviates >2σ from rolling average — _2026-03-09_
 - [ ] Track Claude API usage: tokens in/out, cost per run, response latency
 - [x] Build a data retention policy: compress old data, archive monthly — _2026-03-05_
 - [ ] Generate weekly analytics report (trends, predictions, patterns)
@@ -321,6 +321,7 @@
 - [x] **[2026-03-05]** Data retention policy — _Gzip-compresses raw metrics JSONL >30 days old in disk-cleanup.sh. Deletes compressed files after 180 days. Replaces hard 90-day delete. Preserves daily/hourly summaries indefinitely._
 - [x] **[2026-03-07]** Fix stuck rebase + stale branch accumulation — _Resolved stuck .git/REBASE_HEAD from failed fix-issues.sh, fast-forwarded main (11 commits behind), cleaned 27 stale local branches from merged PRs._
 - [x] **[2026-03-07]** Automatic stale branch cleanup in morning-check.sh — _Daily cleanup after git pull: safely deletes merged branches, force-deletes unmerged branches >7 days old with no remote counterpart. PR #138._
+- [x] **[2026-03-09]** Metric anomaly detection in health-monitor.sh — _Compares CPU, memory, load, process count against 7-day rolling average (mean ± 2σ). Uses daily summary JSON from metric-aggregate.sh. Needs 3+ days of data. Writes anomaly-status.json._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
