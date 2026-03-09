@@ -113,7 +113,7 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
     done
 
     # Write anomaly status for dashboard consumption (includes anomaly details)
-    local _anomaly_json="[]"
+    _anomaly_json="[]"
     if [[ ${#_ANOMALY_DETAILS[@]} -gt 0 ]]; then
         _anomaly_json=$(printf '%s\n' "${_ANOMALY_DETAILS[@]}" | jq -s '.' 2>/dev/null || echo '[]')
     fi
