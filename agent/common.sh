@@ -64,7 +64,7 @@ collect_metrics() {
   "load_average": ${load_avg},
   "process_count": ${process_count},
   "fail2ban_banned": ${fail2ban_banned},
-  "kernel": "$(uname -r)"
+  "kernel": "$(uname -r | cut -d'-' -f1)"
 }
 EOF
 }
