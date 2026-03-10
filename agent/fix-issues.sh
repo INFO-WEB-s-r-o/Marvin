@@ -28,7 +28,8 @@ cleanup() {
     local current_branch
     current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
     if [[ "$current_branch" != "main" ]]; then
-        # Discard any uncommitted changes on the fix branch
+        # Reset index and discard all changes (handles unmerged state too)
+        git reset HEAD 2>/dev/null || true
         git checkout -- . 2>/dev/null || true
         git clean -fd agent/ web/ 2>/dev/null || true
         git checkout main 2>/dev/null || true
@@ -40,6 +41,7 @@ cleanup() {
     # Restore any stashed changes (safe pop to prevent conflict marker ghosts)
     if ! git stash pop --quiet 2>/dev/null; then
         if git diff --name-only --diff-filter=U 2>/dev/null | grep -q .; then
+            git reset HEAD 2>/dev/null || true
             git checkout -- . 2>/dev/null || true
             git stash drop --quiet 2>/dev/null || true
         fi
@@ -138,7 +140,9 @@ OUTPUT=$(run_claude "fix-issues" "$FULL_PROMPT")
 
 # ─── Check for changes ──────────────────────────────────────────────────────
 
-CHANGED=$(git diff --name-only 2>/dev/null || echo "")
+# Only track changes in directories we'll actually stage (agent/, web/, *.md)
+# Concurrent cron jobs modify data/ files — those are never staged so ignore them
+CHANGED=$(git diff --name-only -- agent/ web/ *.md 2>/dev/null || echo "")
 UNTRACKED=$(git ls-files --others --exclude-standard -- agent/ web/ 2>/dev/null || echo "")
 
 if [[ -z "$CHANGED" && -z "$UNTRACKED" ]]; then

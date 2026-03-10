@@ -29,15 +29,29 @@ _ANOMALY_DETAILS=()
 
 _anomaly_check() {
     local label="$1" current="$2" avg="$3" stddev="$4"
+    # $5 = direction: "high" (only alert above avg), "both" (default)
+    # $6 = min_threshold: minimum absolute value before alerting (e.g., CPU must be >50)
+    local direction="${5:-both}" min_threshold="${6:-0}"
     local is_anomaly=false deviation="0"
+
+    # Skip if current is below the minimum absolute threshold
+    # e.g., CPU=4% is never concerning regardless of deviation from average
+    if awk -v cur="$current" -v thr="$min_threshold" 'BEGIN{exit (cur < thr) ? 0 : 1}' 2>/dev/null; then
+        return
+    fi
 
     # When stddev is too small (< 1), use absolute percentage deviation instead
     # This prevents masking large deviations on normally-stable metrics (#153)
     if awk -v sd="$stddev" 'BEGIN{exit (sd < 1) ? 0 : 1}' 2>/dev/null; then
         # Fallback: flag if current deviates >20% from mean (and mean is non-trivial)
-        local pct_dev
-        pct_dev=$(awk -v cur="$current" -v mean="$avg" \
-            'BEGIN{if(mean==0){printf "0"}else{d=(cur-mean)/mean; if(d<0)d=-d; printf "%.1f", d*100}}' 2>/dev/null || echo "0")
+        local pct_dev raw_dev
+        raw_dev=$(awk -v cur="$current" -v mean="$avg" \
+            'BEGIN{if(mean==0){printf "0"}else{printf "%.1f", (cur-mean)/mean*100}}' 2>/dev/null || echo "0")
+        pct_dev=$(awk -v d="$raw_dev" 'BEGIN{if(d<0)d=-d; printf "%.1f", d}' 2>/dev/null || echo "0")
+        # Direction filter: skip negative deviations when direction=high
+        if [[ "$direction" == "high" ]] && awk -v d="$raw_dev" 'BEGIN{exit (d < 0) ? 0 : 1}' 2>/dev/null; then
+            return
+        fi
         if awk -v pd="$pct_dev" 'BEGIN{exit (pd > 20.0) ? 0 : 1}' 2>/dev/null; then
             deviation="${pct_dev}%"
             is_anomaly=true
@@ -45,6 +59,10 @@ _anomaly_check() {
     else
         deviation=$(awk -v cur="$current" -v mean="$avg" -v sd="$stddev" \
             'BEGIN{printf "%.1f", (cur - mean) / sd}' 2>/dev/null || echo "0")
+        # Direction filter: skip negative deviations when direction=high
+        if [[ "$direction" == "high" ]] && awk -v d="$deviation" 'BEGIN{exit (d < 0) ? 0 : 1}' 2>/dev/null; then
+            return
+        fi
         local abs_dev
         abs_dev=$(awk -v d="$deviation" 'BEGIN{if(d<0) d=-d; printf "%.1f", d}' 2>/dev/null || echo "0")
         if awk -v ad="$abs_dev" 'BEGIN{exit (ad > 2.0) ? 0 : 1}' 2>/dev/null; then
@@ -87,15 +105,24 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
     _proc_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.process_count.avg // empty' "$f" 2>/dev/null; done)
 
     # Compute mean and stddev, then check current values
+    # Format: label|values|current|direction|min_threshold
+    #   direction: "high" = only alert above average, "both" = alert either way
+    #   min_threshold: minimum absolute value before the metric is worth alerting on
+    _vcpus=$(nproc 2>/dev/null || echo 2)
+    _load_min_threshold=$(( _vcpus * 2 ))  # load < 2x vCPUs is never anomalous
     for pair in \
-        "CPU%|${_cpu_avgs}|$(echo "$metrics" | jq -r '.cpu_percent' 2>/dev/null)" \
-        "Memory MB|${_mem_avgs}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)" \
-        "Load 1m|${_load_avgs}|$(echo "$metrics" | jq -r '.load_average["1min"]' 2>/dev/null)" \
-        "Processes|${_proc_avgs}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)"; do
+        "CPU%|${_cpu_avgs}|$(echo "$metrics" | jq -r '.cpu_percent' 2>/dev/null)|high|40" \
+        "Memory MB|${_mem_avgs}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)|both|0" \
+        "Load 1m|${_load_avgs}|$(echo "$metrics" | jq -r '.load_average["1min"]' 2>/dev/null)|high|${_load_min_threshold}" \
+        "Processes|${_proc_avgs}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)|both|0"; do
         _label="${pair%%|*}"
         _rest="${pair#*|}"
         _vals="${_rest%%|*}"
-        _current="${_rest##*|}"
+        _rest2="${_rest#*|}"
+        _current="${_rest2%%|*}"
+        _rest3="${_rest2#*|}"
+        _direction="${_rest3%%|*}"
+        _min_thr="${_rest3##*|}"
 
         [[ -z "$_current" || "$_current" == "null" ]] && continue
 
@@ -109,7 +136,7 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
         _mean="${_stats%% *}"
         _sd="${_stats##* }"
 
-        _anomaly_check "$_label" "$_current" "$_mean" "$_sd"
+        _anomaly_check "$_label" "$_current" "$_mean" "$_sd" "$_direction" "$_min_thr"
     done
 
     # Write anomaly status for dashboard consumption (includes anomaly details)
