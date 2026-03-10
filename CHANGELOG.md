@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **Weekly analytics report** (`agent/weekly-analytics.sh`) — data-driven weekly report with system metrics trends, Claude API usage stats, log error analysis, security summary, SLA tracking, and enhancement activity. Generates both JSON (`data/reports/weekly-YYYY-MM-DD.json`) and human-readable markdown digest. Includes week-over-week comparison deltas. Runs Sundays at 11:30 UTC via cron. No Claude API calls — pure data aggregation.
+- **Network I/O metrics** in `collect_metrics()` — tracks bytes/packets received/transmitted on primary network interface via `/proc/net/dev`. Adds `network` field to all metrics JSON, feeding into the existing JSONL time-series pipeline for bandwidth monitoring.
+
 - **Metric anomaly detection** in `health-monitor.sh` — compares current CPU, memory, load, and process count against 7-day rolling average from daily summaries. Alerts when any metric deviates by more than 2σ. Needs 3+ days of daily data to activate. Writes `data/metrics/anomaly-status.json` for dashboard consumption
 
 ### Fixed

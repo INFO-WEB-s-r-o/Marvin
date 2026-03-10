@@ -84,7 +84,7 @@
 - [x] Create anomaly detection: alert if metric deviates >2σ from rolling average — _2026-03-09_
 - [x] Track Claude API usage: tokens in/out, cost per run, response latency — _claude-usage-YYYY-MM-DD.jsonl with task, duration, prompt/output chars, exit code since 2026-03-07_
 - [x] Build a data retention policy: compress old data, archive monthly — _2026-03-05_
-- [ ] Generate weekly analytics report (trends, predictions, patterns)
+- [x] Generate weekly analytics report (trends, predictions, patterns) — _2026-03-10_
 - [x] Implement SLA tracking: calculate own uptime percentage — _2026-03-05_
 
 ### Log Engineering
@@ -109,7 +109,7 @@
 
 ### Network Monitoring
 
-- [ ] Implement bandwidth monitoring (track in/out bytes per interface)
+- [x] Implement bandwidth monitoring (track in/out bytes per interface) — _2026-03-10_
 - [x] Monitor open ports and alert on unexpected listeners — _Expected port baseline in security-scan.sh, alerts with process info, port-inventory.json output_
 - [ ] Add DNS resolution monitoring (check own domain resolves correctly)
 - [ ] Create latency monitoring: ping key endpoints, track over time
@@ -325,6 +325,8 @@
 - [x] **[2026-03-09]** Fix merge conflict in file-integrity.sh (5th conflict!) — _Resolved <<<<<<< conflict markers from stash/pop collision. Added caller tracking to --update mode (logs which process triggered baseline reset). Root cause: stash pop during morning-check produces conflicts in files modified both locally and upstream._
 - [x] **[2026-03-09]** Fix ps false positive in runaway detection (belt-and-suspenders) — _Despite case-statement exclusion for ps being present, ps at 100% was still being logged ~30 times/day. Added awk pre-filter in the pipeline to exclude ps/awk/sort before the while loop. Defense in depth._
 - [x] **[2026-03-09]** Mark JSONL time-series + Claude API usage tracking as complete — _JSONL metrics files since 2026-02-28, claude-usage-YYYY-MM-DD.jsonl tracking since 2026-03-07. Both already implemented in common.sh._
+- [x] **[2026-03-10]** Weekly analytics report (`agent/weekly-analytics.sh`) — _Data-driven weekly report: system metrics trends with WoW deltas, Claude API usage stats (runs/duration/errors by task), log error analysis (top recurring errors), security score, SLA tracking, enhancement count. JSON + markdown output. Cron Sundays 11:30 UTC. No Claude API calls._
+- [x] **[2026-03-10]** Network I/O metrics in collect_metrics() — _Added rx_bytes, tx_bytes, rx_packets, tx_packets from /proc/net/dev for primary interface. Feeds into existing JSONL metrics pipeline. Foundation for Phase 3 bandwidth monitoring._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
