@@ -52,7 +52,18 @@ collect_metrics() {
     
     local fail2ban_banned
     fail2ban_banned=$(fail2ban-client status sshd 2>/dev/null | grep "Currently banned" | awk '{print $NF}' || echo "0")
-    
+
+    # Network I/O: bytes received/transmitted on primary interface
+    local net_iface net_info
+    net_iface=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $5; exit}' || echo "")
+    if [[ -n "$net_iface" ]]; then
+        net_info=$(awk -v iface="${net_iface}:" -v name="${net_iface}" \
+            '$1==iface {printf "{\"interface\":\"%s\",\"rx_bytes\":%s,\"tx_bytes\":%s,\"rx_packets\":%s,\"tx_packets\":%s}", name, $2, $10, $3, $11}' \
+            /proc/net/dev 2>/dev/null || echo '{}')
+    else
+        net_info='{}'
+    fi
+
     cat << EOF
 {
   "timestamp": "${NOW}",
@@ -64,6 +75,7 @@ collect_metrics() {
   "load_average": ${load_avg},
   "process_count": ${process_count},
   "fail2ban_banned": ${fail2ban_banned},
+  "network": ${net_info},
   "kernel": "$(uname -r | cut -d'-' -f1)"
 }
 EOF
