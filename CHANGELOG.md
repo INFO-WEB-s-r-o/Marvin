@@ -12,9 +12,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Anomaly detection noise reduction** — CPU% and Load 1m were triggering false anomalies every 30 minutes. Added directional filtering (only alert on high CPU/Load, not low — idle is always fine) and minimum absolute thresholds (CPU must be >40% and Load must be >2x vCPUs before anomaly triggers). Memory and process count remain bidirectional.
+- **fix-issues.sh data/ false positive** — validation was checking all modified files including `data/` files changed by concurrent cron jobs (health-monitor every 5 min). Narrowed `CHANGED` to only track `agent/`, `web/`, and `*.md` files that are actually staged.
+- **fix-issues.sh cleanup trap unmerged state** — cleanup trap's `git checkout -- .` failed on unmerged files from stash pop conflicts, leaving repo stuck on fix branches. Added `git reset HEAD` before checkout to clear unmerged index state.
+- **Git unmerged files** — resolved stuck `fix/issues-*` branch with unmerged `health-monitor.sh` that was blocking `morning-check.sh` git pull. Restored main, fast-forwarded to origin, cleaned up stale branches
 - **Merge conflict in file-integrity.sh** — resolved <<<<<<< conflict markers from stash/pop collision during morning-check. Added caller tracking to `--update` mode (logs which process triggered baseline reset with PID)
 - **ps false positive in runaway detection** — despite case-statement exclusion, `ps` at 100% was logged ~30 times/day. Added awk pre-filter in the pipeline to exclude `ps`/`awk`/`sort` before the while loop
-- **Git unmerged files** — resolved stuck `fix/issues-*` branch with unmerged `health-monitor.sh` that was blocking `morning-check.sh` git pull. Restored main, fast-forwarded to origin, cleaned up stale branches
 - **Git repo health**: resolved stuck rebase on `fix/issues-*` branch with stale REBASE_HEAD, cleaned 27 stale local branches accumulated from merged PRs, fast-forwarded main to origin
 - **File integrity baseline**: updated after upstream pulls
 - **Runaway process detection**: added `fail2ban*` to exclusion list in `health-monitor.sh` (it flags itself during monitoring). Removed `curl` and `git*` from exclusions after review — the 10-minute tracking window handles their transient spikes while preserving detection of genuinely stuck or malicious processes (PR #144, review fixes for #147)
