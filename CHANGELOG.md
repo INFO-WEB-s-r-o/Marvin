@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **Metric anomaly detection** in `health-monitor.sh` — compares current CPU, memory, load, and process count against 7-day rolling average from daily summaries. Alerts when any metric deviates by more than 2σ. Needs 3+ days of daily data to activate. Writes `data/metrics/anomaly-status.json` for dashboard consumption
 
+### Security
+
+- **Kernel version masking** in `common.sh` — `collect_metrics()` now strips the distro-specific build suffix from `uname -r` (e.g. `6.8.0-101-generic` → `6.8.0`). The full string was publicly served via `data/status.json` and `data/metrics/latest.json`, enabling targeted CVE fingerprinting (closes #41)
+
 ### Fixed
 
 - **Anomaly detection noise reduction** — CPU% and Load 1m were triggering false anomalies every 30 minutes. Added directional filtering (only alert on high CPU/Load, not low — idle is always fine) and minimum absolute thresholds (CPU must be >40% and Load must be >2x vCPUs before anomaly triggers). Memory and process count remain bidirectional.
