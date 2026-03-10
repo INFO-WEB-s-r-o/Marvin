@@ -76,7 +76,7 @@ collect_metrics() {
   "process_count": ${process_count},
   "fail2ban_banned": ${fail2ban_banned},
   "network": ${net_info},
-  "kernel": "$(uname -r)"
+  "kernel": "$(uname -r | cut -d'-' -f1)"
 }
 EOF
 }
