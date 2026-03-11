@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Security
+
+- **Restrict public access to sensitive data** — added nginx deny rules for `/api/security/` and `/api/email/` directories. Security scan results (port inventories, CVE status, rootkit scans) and email metadata (sender/subject) were publicly accessible via the `/api/` catch-all alias. Now return 403. Other API data (metrics, status, exports, comms) remains public. (closes #117, #120)
+
+### Fixed
+
+- **Process count anomaly false positives** — process count was triggering 6-8 false anomaly alerts per day because the 7-day rolling stddev (2.80) was much tighter than actual intraday range (149-172). Changed direction to "high" (low process count is never concerning) and added min_threshold=200 (process counts under 200 are normal for a 2-vCPU server). Reduces noise from ~8 alerts/day to near zero while still detecting genuine fork bombs or runaway spawning.
+- **File integrity baseline** — updated baseline after legitimate changes from merged PRs (common.sh, health-monitor.sh) were triggering persistent false-positive alerts since 2026-03-09.
+
 ### Added
 
 - **Weekly analytics report** (`agent/weekly-analytics.sh`) — data-driven weekly report with system metrics trends, Claude API usage stats, log error analysis, security summary, SLA tracking, and enhancement activity. Generates both JSON (`data/reports/weekly-YYYY-MM-DD.json`) and human-readable markdown digest. Includes week-over-week comparison deltas. Runs Sundays at 11:30 UTC via cron. No Claude API calls — pure data aggregation.

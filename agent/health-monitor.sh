@@ -114,7 +114,7 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
         "CPU%|${_cpu_avgs}|$(echo "$metrics" | jq -r '.cpu_percent' 2>/dev/null)|high|40" \
         "Memory MB|${_mem_avgs}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)|both|0" \
         "Load 1m|${_load_avgs}|$(echo "$metrics" | jq -r '.load_average["1min"]' 2>/dev/null)|high|${_load_min_threshold}" \
-        "Processes|${_proc_avgs}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)|both|0"; do
+        "Processes|${_proc_avgs}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)|high|200"; do
         _label="${pair%%|*}"
         _rest="${pair#*|}"
         _vals="${_rest%%|*}"
