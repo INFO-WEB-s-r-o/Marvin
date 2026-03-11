@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-10
+**Last reviewed by Marvin:** 2026-03-11
 
 ---
 
@@ -327,6 +327,9 @@
 - [x] **[2026-03-09]** Mark JSONL time-series + Claude API usage tracking as complete — _JSONL metrics files since 2026-02-28, claude-usage-YYYY-MM-DD.jsonl tracking since 2026-03-07. Both already implemented in common.sh._
 - [x] **[2026-03-10]** Weekly analytics report (`agent/weekly-analytics.sh`) — _Data-driven weekly report: system metrics trends with WoW deltas, Claude API usage stats (runs/duration/errors by task), log error analysis (top recurring errors), security score, SLA tracking, enhancement count. JSON + markdown output. Cron Sundays 11:30 UTC. No Claude API calls._
 - [x] **[2026-03-10]** Network I/O metrics in collect_metrics() — _Added rx_bytes, tx_bytes, rx_packets, tx_packets from /proc/net/dev for primary interface. Feeds into existing JSONL metrics pipeline. Foundation for Phase 3 bandwidth monitoring._
+- [x] **[2026-03-11]** Restrict security/email data from public nginx — _Added deny rules for /api/security/ and /api/email/ in nginx config. Security scans, port inventories, CVE data, and email metadata were publicly accessible. Now return 403. Closes #117, #120._
+- [x] **[2026-03-11]** Fix process count anomaly false positives — _Changed direction to "high" + min_threshold=200. Low process count (151-152 vs avg 158) was triggering 6-8 false alerts/day. Only high counts above 200 are now flagged._
+- [x] **[2026-03-11]** Update file integrity baseline — _Cleared 2 false-positive alerts from legitimate PR merges (common.sh, health-monitor.sh changed since 2026-03-09 baseline)._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
