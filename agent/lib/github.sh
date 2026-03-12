@@ -431,7 +431,7 @@ marvin_gpg_key_id() {
         jq -r '.key_id' "$gpg_info"
     else
         # Fallback: read key ID from gpg directly (use marvin's homedir since cron runs as root)
-        gpg --homedir /home/marvin/.gnupg --list-keys --keyid-format long 2>/dev/null | grep -oP '(?<=/)[A-Fa-f0-9]{8,}' | head -1
+        gpg --homedir /home/marvin/.gnupg --list-secret-keys --keyid-format long 2>/dev/null | grep -oP '(?<=/)[A-Fa-f0-9]{8,}' | head -1
     fi
 }
 
