@@ -168,8 +168,8 @@ log "Git now signs all commits with Marvin's GPG key."
 
 # Make the public key accessible at /.well-known/marvin-gpg.asc
 if [[ -d "${MARVIN_DIR}/web" ]]; then
-    mkdir -p "${MARVIN_DIR}/web/.well-known"
-    cp "${GPG_EXPORT_DIR}/marvin-gpg-public.asc" "${MARVIN_DIR}/web/.well-known/marvin-gpg.asc"
+    mkdir -p "${MARVIN_DIR}/web/public/.well-known"
+    cp "${GPG_EXPORT_DIR}/marvin-gpg-public.asc" "${MARVIN_DIR}/web/public/.well-known/marvin-gpg.asc"
     log "Public key served at: /.well-known/marvin-gpg.asc"
 fi
 
