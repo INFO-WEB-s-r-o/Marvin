@@ -173,17 +173,19 @@ while IFS= read -r script; do
 done < <(find "${MARVIN_DIR}/agent" -name "*.sh" -type f)
 
 # 2. Merge conflict marker check in changed/new files
-for f in $CHANGED $UNTRACKED; do
+while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
     [[ -f "$MARVIN_DIR/$f" ]] || continue
     if grep -qE '^<{7} |^={7}$|^>{7} ' "$MARVIN_DIR/$f" 2>/dev/null; then
         VALID=false
         VALIDATION_ERRORS+="Conflict markers: ${f}\n"
         marvin_log "ERROR" "VALIDATION FAILED: merge conflict markers in $f"
     fi
-done
+done < <(printf '%s\n%s\n' "$CHANGED" "$UNTRACKED")
 
 # 3. Check that no data/ or runtime files were modified
-for f in $CHANGED; do
+while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
     case "$f" in
         data/*|*.db|*.db-*|*.log)
             VALID=false
@@ -191,7 +193,7 @@ for f in $CHANGED; do
             marvin_log "ERROR" "VALIDATION FAILED: forbidden file modified: $f"
             ;;
     esac
-done
+done <<< "$CHANGED"
 
 if [[ "$VALID" != "true" ]]; then
     marvin_log "ERROR" "Validation failed — aborting fix. Errors: ${VALIDATION_ERRORS}"
@@ -221,11 +223,12 @@ marvin_log "INFO" "Attempting fix for issue: #${FIXED_ISSUE:-unknown} — ${FIXE
 # Only stage files in safe directories
 git add -- agent/ web/ 2>/dev/null || true
 # Also stage root-level .md files if changed (CHANGELOG etc.)
-for f in $CHANGED; do
+while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
     case "$f" in
         *.md) git add -- "$f" 2>/dev/null || true ;;
     esac
-done
+done <<< "$CHANGED"
 
 if git diff --cached --quiet 2>/dev/null; then
     marvin_log "INFO" "No staged changes after filtering — nothing to commit"
