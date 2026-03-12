@@ -318,21 +318,30 @@ fi
 if [[ -n "$pr_sha" ]]; then
     marvin_log "INFO" "Waiting for CI checks on ${pr_sha:0:7}..."
     CI_RESOLVED=false
+    no_ci_count=0
     for attempt in $(seq 1 30); do
         sleep 10
         checks_json=$(github_api GET "/repos/${GITHUB_REPO}/commits/${pr_sha}/check-runs" 2>/dev/null || echo "{}")
-        total_checks=$(echo "$checks_json" | jq -r '.total_count // 0' 2>/dev/null || echo "0")
-        # If no checks are registered yet, keep waiting (up to ~2 min)
-        if [[ "$total_checks" -eq 0 && "$attempt" -le 12 ]]; then
+        # Detect API errors (response contains .message instead of .total_count)
+        if echo "$checks_json" | jq -e '.message' &>/dev/null; then
+            marvin_log "WARN" "GitHub API error on attempt ${attempt}: $(echo "$checks_json" | jq -r '.message' 2>/dev/null)"
             continue
         fi
-        # If still no checks after 2 min, proceed (repo may have no CI)
+        total_checks=$(echo "$checks_json" | jq -r '.total_count // 0' 2>/dev/null || echo "0")
+        # If no checks are registered yet, keep waiting (up to ~2 min of no-CI responses)
         if [[ "$total_checks" -eq 0 ]]; then
-            marvin_log "WARN" "No CI checks found after 2 min — proceeding with merge"
+            no_ci_count=$((no_ci_count + 1))
+            if [[ "$no_ci_count" -le 12 ]]; then
+                continue
+            fi
+            # Still no checks after 12 consecutive no-CI responses — repo may have no CI
+            marvin_log "WARN" "No CI checks found after ${no_ci_count} checks — proceeding with merge"
             MERGE_OK=true
             CI_RESOLVED=true
             break
         fi
+        # Reset no-CI counter if we ever see checks (handles transient API blips)
+        no_ci_count=0
         # Check if all runs are completed
         pending=$(echo "$checks_json" | jq '[.check_runs[] | select(.status != "completed")] | length' 2>/dev/null || echo "1")
         if [[ "$pending" -gt 0 ]]; then
