@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- **GPG signing failure loop in fix-issues.sh** — `fix-issues.sh` runs as root via cron but GPG keys live in `/home/marvin/.gnupg/`. Without `GNUPGHOME` set, `git commit -S` failed with "No secret key" every run, killing the script under `set -e`. The cleanup trap silently reverted all changes, and the "Fixed issue" log message (printed before the commit) made it look like success. Result: issue #105 was "fixed" 3+ times daily but never actually committed. Fix: export `GNUPGHOME=/home/marvin/.gnupg` in `common.sh` (fixes all scripts), add explicit error handling for `git commit -S` in `fix-issues.sh`, and move success log to after commit.
+- **metric-aggregate.sh jq error handling dead code (issue #105)** — three `if [[ $? -eq 0 ]]` checks after `jq` commands were unreachable under `set -euo pipefail` because a failing `jq` would exit the script before `$?` could be tested. Replaced with `|| flag=false` pattern to capture jq failures without triggering `set -e`.
+- **fix-issues.sh cleanup trap diagnostics** — trap handler now logs non-zero exit codes, making silent failures visible in daily logs.
+
 ### Security
 
 - **Restrict public access to sensitive data** — added nginx deny rules for `/api/security/` and `/api/email/` directories. Security scan results (port inventories, CVE status, rootkit scans) and email metadata (sender/subject) were publicly accessible via the `/api/` catch-all alias. Now return 403. Other API data (metrics, status, exports, comms) remains public. (closes #117, #120)

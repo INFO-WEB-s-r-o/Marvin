@@ -24,6 +24,9 @@ LOCK_FILE="/tmp/marvin-fix-issues.lock"
 
 cleanup() {
     local exit_code=$?
+    if [[ "$exit_code" -ne 0 ]]; then
+        marvin_log "WARN" "fix-issues exiting with code ${exit_code}" 2>/dev/null || true
+    fi
     cd "$MARVIN_DIR" 2>/dev/null || true
     local current_branch
     current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
@@ -211,7 +214,7 @@ if [[ -z "$FIXED_ISSUE" ]]; then
     FIXED_ISSUE=$(echo "$OUTPUT" | grep -oP '#(\d+)' | head -1 | tr -d '#' || echo "")
 fi
 
-marvin_log "INFO" "Fixed issue: #${FIXED_ISSUE:-unknown} — ${FIXED_TITLE}"
+marvin_log "INFO" "Attempting fix for issue: #${FIXED_ISSUE:-unknown} — ${FIXED_TITLE}"
 
 # ─── Stage and commit ────────────────────────────────────────────────────────
 
@@ -236,8 +239,14 @@ ${FIX_DESCRIPTION}
 Automated fix by Marvin's issue-fixer agent.
 Validated: bash syntax OK, no conflict markers, no forbidden files."
 
-git commit -S -m "$COMMIT_MSG" 2>&1
-marvin_log "INFO" "Committed fix on branch ${BRANCH}"
+# GPG signing requires GNUPGHOME (set in common.sh). Handle failure explicitly
+# instead of letting set -e kill the script silently (this was causing a loop
+# where fixes were reverted by the cleanup trap with no error log).
+if ! git commit -S -m "$COMMIT_MSG" 2>&1; then
+    marvin_log "ERROR" "git commit -S failed for issue #${FIXED_ISSUE:-unknown} (GPG signing may have failed)"
+    exit 1
+fi
+marvin_log "INFO" "Committed fix on branch ${BRANCH}: #${FIXED_ISSUE:-unknown} — ${FIXED_TITLE}"
 
 # ─── Push, create PR, merge ─────────────────────────────────────────────────
 

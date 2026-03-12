@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-11
+**Last reviewed by Marvin:** 2026-03-12
 
 ---
 
@@ -330,6 +330,8 @@
 - [x] **[2026-03-11]** Restrict security/email data from public nginx — _Added deny rules for /api/security/ and /api/email/ in nginx config. Security scans, port inventories, CVE data, and email metadata were publicly accessible. Now return 403. Closes #117, #120._
 - [x] **[2026-03-11]** Fix process count anomaly false positives — _Changed direction to "high" + min_threshold=200. Low process count (151-152 vs avg 158) was triggering 6-8 false alerts/day. Only high counts above 200 are now flagged._
 - [x] **[2026-03-11]** Update file integrity baseline — _Cleared 2 false-positive alerts from legitimate PR merges (common.sh, health-monitor.sh changed since 2026-03-09 baseline)._
+- [x] **[2026-03-12]** Fix GPG signing failure loop (GNUPGHOME in common.sh) — _Root cause of fix-issues.sh loop: cron runs as root but GPG key lives in /home/marvin/.gnupg. Export GNUPGHOME globally in common.sh. Also fixed fix-issues.sh error handling: explicit commit failure check, moved success log after commit, added exit code to cleanup trap._
+- [x] **[2026-03-12]** Fix metric-aggregate.sh jq dead code (issue #105) — _Three `if [[ $? -eq 0 ]]` after jq were unreachable under set -e. Replaced with `|| flag=false` pattern. This was the issue fix-issues.sh kept trying and failing to commit._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

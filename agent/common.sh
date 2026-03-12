@@ -6,6 +6,10 @@
 MARVIN_DIR="/home/marvin/git"
 DATA_DIR="${MARVIN_DIR}/data"
 LOGS_DIR="${DATA_DIR}/logs"
+
+# GPG key lives in marvin's homedir, but cron runs as root.
+# Without this, git commit -S and gpg --detach-sign fail with "No secret key".
+export GNUPGHOME="/home/marvin/.gnupg"
 METRICS_DIR="${DATA_DIR}/metrics"
 BLOG_DIR="/home/marvin/blog"
 COMMS_DIR="${DATA_DIR}/comms"

@@ -37,6 +37,9 @@ marvin_log "INFO" "Processing ${LINE_COUNT} data points from ${JSONL_FILE}"
 # ─── Hourly aggregation ─────────────────────────────────────────────────────
 # Group metrics by hour, compute min/avg/max for key fields
 
+# Under set -e, a failing jq would kill the script before $? is checked.
+# Use && / || to capture the exit code without triggering set -e.
+hourly_ok=true
 jq -s '
   # Parse hour from timestamp
   map(. + {hour: (.timestamp | split("T")[1] | split(":")[0] | tonumber)})
@@ -85,9 +88,9 @@ jq -s '
       }
     })
   | sort_by(.hour)
-' "$JSONL_FILE" > "${HOURLY_FILE}.tmp" 2>/dev/null
+' "$JSONL_FILE" > "${HOURLY_FILE}.tmp" 2>/dev/null || hourly_ok=false
 
-if [[ $? -eq 0 ]] && jq empty "${HOURLY_FILE}.tmp" 2>/dev/null; then
+if [[ "$hourly_ok" == "true" ]] && jq empty "${HOURLY_FILE}.tmp" 2>/dev/null; then
     # Wrap in metadata envelope
     jq -n \
         --arg date "$TARGET_DATE" \
@@ -110,6 +113,7 @@ fi
 # ─── Daily aggregation ───────────────────────────────────────────────────────
 # Single summary for the entire day
 
+daily_ok=true
 jq -s '
   {
     samples: length,
@@ -160,9 +164,9 @@ jq -s '
     },
     uptime_hours: ((last.uptime_seconds - first.uptime_seconds) / 3600 | . * 10 | round / 10)
   }
-' "$JSONL_FILE" > "${DAILY_FILE}.tmp" 2>/dev/null
+' "$JSONL_FILE" > "${DAILY_FILE}.tmp" 2>/dev/null || daily_ok=false
 
-if [[ $? -eq 0 ]] && jq empty "${DAILY_FILE}.tmp" 2>/dev/null; then
+if [[ "$daily_ok" == "true" ]] && jq empty "${DAILY_FILE}.tmp" 2>/dev/null; then
     jq -n \
         --arg date "$TARGET_DATE" \
         --arg generated "$NOW" \
@@ -195,6 +199,7 @@ done
 
 if [[ ${#WEEKLY_DAYS[@]} -gt 0 ]]; then
     # Merge daily summaries into weekly view
+    weekly_ok=true
     jq -s '
       map({date: .date, summary: .summary})
       | sort_by(.date)
@@ -210,9 +215,9 @@ if [[ ${#WEEKLY_DAYS[@]} -gt 0 ]]; then
             process_count_avg: ([.[].summary.process_count.avg] | add / length | round)
           }
         }
-    ' "${WEEKLY_DAYS[@]}" > "${WEEKLY_FILE}.tmp" 2>/dev/null
+    ' "${WEEKLY_DAYS[@]}" > "${WEEKLY_FILE}.tmp" 2>/dev/null || weekly_ok=false
 
-    if [[ $? -eq 0 ]] && jq empty "${WEEKLY_FILE}.tmp" 2>/dev/null; then
+    if [[ "$weekly_ok" == "true" ]] && jq empty "${WEEKLY_FILE}.tmp" 2>/dev/null; then
         jq --arg generated "$NOW" '. + {generated_at: $generated}' \
             "${WEEKLY_FILE}.tmp" > "$WEEKLY_FILE"
         rm -f "${WEEKLY_FILE}.tmp"
