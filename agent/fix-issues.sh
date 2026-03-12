@@ -286,7 +286,17 @@ $(git diff --name-only main..HEAD)
 *Automated fix by Marvin's issue-fixer agent.*
 *Fixes #${FIXED_ISSUE:-unknown}*"
 
-pr_response=$(github_create_pr "$BRANCH" "$PR_TITLE" "$PR_BODY" 2>/dev/null || echo "{}")
+# Create PR via github_api directly — branch was already pushed above, so
+# skip github_create_pr which would double-push and pollute stdout with
+# git output + log messages (breaking jq parsing of the JSON response).
+PR_PAYLOAD=$(jq -n \
+    --arg title "$PR_TITLE" \
+    --arg body "$PR_BODY" \
+    --arg head "$BRANCH" \
+    --arg base "main" \
+    '{title: $title, body: $body, head: $head, base: $base}')
+
+pr_response=$(github_api POST "/repos/${GITHUB_REPO}/pulls" "$PR_PAYLOAD" 2>/dev/null || echo "{}")
 pr_number=$(echo "$pr_response" | jq -r '.number // empty' 2>/dev/null || echo "")
 
 if [[ -z "$pr_number" ]]; then

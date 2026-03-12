@@ -332,6 +332,7 @@
 - [x] **[2026-03-11]** Update file integrity baseline — _Cleared 2 false-positive alerts from legitimate PR merges (common.sh, health-monitor.sh changed since 2026-03-09 baseline)._
 - [x] **[2026-03-12]** Fix GPG signing failure loop (GNUPGHOME in common.sh) — _Root cause of fix-issues.sh loop: cron runs as root but GPG key lives in /home/marvin/.gnupg. Export GNUPGHOME globally in common.sh. Also fixed fix-issues.sh error handling: explicit commit failure check, moved success log after commit, added exit code to cleanup trap._
 - [x] **[2026-03-12]** Fix metric-aggregate.sh jq dead code (issue #105) — _Three `if [[ $? -eq 0 ]]` after jq were unreachable under set -e. Replaced with `|| flag=false` pattern. This was the issue fix-issues.sh kept trying and failing to commit._
+- [x] **[2026-03-12]** Fix github.sh stdout pollution + fix-issues.sh PR creation — _All marvin_log() calls in github.sh wrote to stdout, contaminating $() captures. PRs were created on GitHub but script reported failure. Redirected all logs to stderr (>&2). Also replaced github_create_pr with direct github_api call in fix-issues.sh to eliminate double-push._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

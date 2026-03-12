@@ -5,6 +5,10 @@
 # Shared functions for interacting with the GitHub API.
 # All operations are authenticated via GITHUB_TOKEN and commits are GPG-signed.
 #
+# IMPORTANT: All marvin_log calls use >&2 to keep stdout clean for JSON output.
+# Functions like github_create_pr/github_create_issue echo JSON on stdout —
+# mixing log messages with JSON breaks callers that capture output with $().
+#
 # Usage: source this file from agent scripts
 #   source "$(dirname "$0")/lib/github.sh"
 # =============================================================================
@@ -28,7 +32,7 @@ fi
 
 github_check_token() {
     if [[ -z "$GITHUB_TOKEN" ]]; then
-        marvin_log "ERROR" "GITHUB_TOKEN not set. Cannot interact with GitHub."
+        marvin_log "ERROR" "GITHUB_TOKEN not set. Cannot interact with GitHub." >&2
         return 1
     fi
 
@@ -40,7 +44,7 @@ github_check_token() {
         "${GITHUB_API}/user")
 
     if [[ "$response" != "200" ]]; then
-        marvin_log "ERROR" "GitHub token validation failed (HTTP ${response})"
+        marvin_log "ERROR" "GitHub token validation failed (HTTP ${response})" >&2
         return 1
     fi
 
@@ -85,7 +89,7 @@ github_api() {
         if [[ "$http_code" == "403" ]] && echo "$response_body" | jq -e '.message | test("rate limit")' &>/dev/null; then
             local reset_time
             reset_time=$(echo "$response_body" | jq -r '.message' 2>/dev/null || echo "unknown")
-            marvin_log "WARN" "GitHub rate limit hit. Waiting 60s... (${reset_time})"
+            marvin_log "WARN" "GitHub rate limit hit. Waiting 60s... (${reset_time})" >&2
             sleep 60
             retry=$((retry + 1))
             continue
@@ -99,19 +103,19 @@ github_api() {
 
         # Client errors (4xx) — don't retry
         if [[ "$http_code" =~ ^4 ]]; then
-            marvin_log "ERROR" "GitHub API ${method} ${endpoint}: HTTP ${http_code}"
-            marvin_log "ERROR" "Response: $(echo "$response_body" | jq -r '.message // .' 2>/dev/null | head -5)"
+            marvin_log "ERROR" "GitHub API ${method} ${endpoint}: HTTP ${http_code}" >&2
+            marvin_log "ERROR" "Response: $(echo "$response_body" | jq -r '.message // .' 2>/dev/null | head -5)" >&2
             echo "$response_body"
             return 1
         fi
 
         # Server errors (5xx) — retry
-        marvin_log "WARN" "GitHub API ${method} ${endpoint}: HTTP ${http_code}, retry ${retry}/${max_retries}"
+        marvin_log "WARN" "GitHub API ${method} ${endpoint}: HTTP ${http_code}, retry ${retry}/${max_retries}" >&2
         sleep $((5 * (retry + 1)))
         retry=$((retry + 1))
     done
 
-    marvin_log "ERROR" "GitHub API ${method} ${endpoint}: failed after ${max_retries} retries"
+    marvin_log "ERROR" "GitHub API ${method} ${endpoint}: failed after ${max_retries} retries" >&2
     return 1
 }
 
@@ -145,7 +149,7 @@ github_create_issue() {
         issue_number=$(echo "$response" | jq -r '.number')
         local issue_url
         issue_url=$(echo "$response" | jq -r '.html_url')
-        marvin_log "INFO" "Created issue #${issue_number}: ${issue_url}"
+        marvin_log "INFO" "Created issue #${issue_number}: ${issue_url}" >&2
         echo "$response"
     fi
 
@@ -194,7 +198,7 @@ github_create_pr() {
 
     # Push the branch to GitHub
     if ! github_push_branch "$branch"; then
-        marvin_log "ERROR" "Failed to push branch ${branch}"
+        marvin_log "ERROR" "Failed to push branch ${branch}" >&2
         return 1
     fi
 
@@ -215,7 +219,7 @@ github_create_pr() {
         pr_number=$(echo "$response" | jq -r '.number')
         local pr_url
         pr_url=$(echo "$response" | jq -r '.html_url')
-        marvin_log "INFO" "Created PR #${pr_number}: ${pr_url}"
+        marvin_log "INFO" "Created PR #${pr_number}: ${pr_url}" >&2
         echo "$response"
     fi
 
@@ -245,9 +249,9 @@ github_merge_pr() {
     local exit_code=$?
 
     if [[ $exit_code -eq 0 ]]; then
-        marvin_log "INFO" "PR #${pr_number} merged successfully"
+        marvin_log "INFO" "PR #${pr_number} merged successfully" >&2
     else
-        marvin_log "WARN" "Could not auto-merge PR #${pr_number} — may require manual review"
+        marvin_log "WARN" "Could not auto-merge PR #${pr_number} — may require manual review" >&2
     fi
 
     return $exit_code
@@ -271,7 +275,7 @@ github_setup_remote() {
     # Use a credential helper that provides the token from environment
     git config credential.helper '!f() { echo "username=x-access-token"; echo "password=${GITHUB_TOKEN}"; }; f'
 
-    marvin_log "INFO" "GitHub remote configured for ${GITHUB_REPO}"
+    marvin_log "INFO" "GitHub remote configured for ${GITHUB_REPO}" >&2
 }
 
 # Push a branch to GitHub (GPG-signed commits)
@@ -285,11 +289,12 @@ github_push_branch() {
     git checkout "$branch" 2>/dev/null || git checkout -b "$branch"
 
     # Push with force-with-lease (safe force push for rebased branches)
-    if git push --force-with-lease origin "$branch" 2>&1; then
-        marvin_log "INFO" "Pushed branch ${branch} to GitHub"
+    # Redirect all output to stderr so it doesn't pollute captured stdout
+    if git push --force-with-lease origin "$branch" >&2 2>&1; then
+        marvin_log "INFO" "Pushed branch ${branch} to GitHub" >&2
         return 0
     else
-        marvin_log "ERROR" "Failed to push branch ${branch}"
+        marvin_log "ERROR" "Failed to push branch ${branch}" >&2
         return 1
     fi
 }
@@ -298,11 +303,11 @@ github_push_branch() {
 github_push_main() {
     cd "$MARVIN_DIR"
     github_setup_remote
-    git push origin main 2>&1 || {
-        marvin_log "ERROR" "Failed to push main to GitHub"
+    git push origin main >&2 2>&1 || {
+        marvin_log "ERROR" "Failed to push main to GitHub" >&2
         return 1
     }
-    marvin_log "INFO" "Pushed main branch to GitHub"
+    marvin_log "INFO" "Pushed main branch to GitHub" >&2
 }
 
 # Safe stash pop — recovers from conflicts instead of leaving markers
@@ -311,7 +316,7 @@ _safe_stash_pop() {
     if ! git stash pop --quiet 2>/dev/null; then
         # Stash pop failed (likely conflicts) — check for conflict markers
         if git diff --name-only --diff-filter=U 2>/dev/null | grep -q .; then
-            marvin_log "WARN" "Stash pop produced conflicts — discarding stash (data regenerates via cron)"
+            marvin_log "WARN" "Stash pop produced conflicts — discarding stash (data regenerates via cron)" >&2
             git checkout -- . 2>/dev/null || true
             git stash drop --quiet 2>/dev/null || true
         fi
@@ -346,21 +351,21 @@ github_signed_commit() {
 
     # Create GPG-signed commit
     if git diff --cached --quiet 2>/dev/null; then
-        marvin_log "WARN" "No changes to commit on branch ${branch}"
+        marvin_log "WARN" "No changes to commit on branch ${branch}" >&2
         git checkout main 2>/dev/null || true
         _safe_stash_pop
         return 1
     fi
 
     # Commit (git is already configured to GPG-sign via setup-gpg.sh)
-    git commit -S -m "$message" 2>&1 || {
-        marvin_log "ERROR" "GPG-signed commit failed"
+    git commit -S -m "$message" >&2 2>&1 || {
+        marvin_log "ERROR" "GPG-signed commit failed" >&2
         git checkout main 2>/dev/null || true
         _safe_stash_pop
         return 1
     }
 
-    marvin_log "INFO" "Created GPG-signed commit on ${branch}: ${message}"
+    marvin_log "INFO" "Created GPG-signed commit on ${branch}: ${message}" >&2
 
     # Return to main, keep the branch
     git checkout main 2>/dev/null || true
@@ -375,7 +380,7 @@ github_upload_gpg_key() {
     local key_file="${MARVIN_DIR}/data/comms/marvin-gpg-public.asc"
 
     if [[ ! -f "$key_file" ]]; then
-        marvin_log "ERROR" "GPG public key not found at ${key_file}"
+        marvin_log "ERROR" "GPG public key not found at ${key_file}" >&2
         return 1
     fi
 
@@ -392,9 +397,9 @@ github_upload_gpg_key() {
     if [[ $exit_code -eq 0 ]]; then
         local key_id
         key_id=$(echo "$response" | jq -r '.key_id')
-        marvin_log "INFO" "GPG key uploaded to GitHub: ${key_id}"
+        marvin_log "INFO" "GPG key uploaded to GitHub: ${key_id}" >&2
     elif echo "$response" | jq -e '.errors[]?.message | test("already been taken")' &>/dev/null; then
-        marvin_log "INFO" "GPG key already exists on GitHub"
+        marvin_log "INFO" "GPG key already exists on GitHub" >&2
         return 0
     fi
 
