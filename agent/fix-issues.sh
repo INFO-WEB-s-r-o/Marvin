@@ -310,8 +310,14 @@ marvin_log "INFO" "Created PR #${pr_number}"
 pr_sha=$(echo "$pr_response" | jq -r '.head.sha // empty' 2>/dev/null || echo "")
 MERGE_OK=false
 
+if [[ -n "$pr_sha" && ! "$pr_sha" =~ ^[0-9a-f]{40}$ ]]; then
+    marvin_log "WARN" "Unexpected PR SHA format: ${pr_sha:0:20} — skipping auto-merge"
+    pr_sha=""
+fi
+
 if [[ -n "$pr_sha" ]]; then
     marvin_log "INFO" "Waiting for CI checks on ${pr_sha:0:7}..."
+    CI_RESOLVED=false
     for attempt in $(seq 1 30); do
         sleep 10
         checks_json=$(github_api GET "/repos/${GITHUB_REPO}/commits/${pr_sha}/check-runs" 2>/dev/null || echo "{}")
@@ -324,6 +330,7 @@ if [[ -n "$pr_sha" ]]; then
         if [[ "$total_checks" -eq 0 ]]; then
             marvin_log "WARN" "No CI checks found after 2 min — proceeding with merge"
             MERGE_OK=true
+            CI_RESOLVED=true
             break
         fi
         # Check if all runs are completed
@@ -335,13 +342,15 @@ if [[ -n "$pr_sha" ]]; then
         failures=$(echo "$checks_json" | jq '[.check_runs[] | select(.conclusion != "success" and .conclusion != "neutral" and .conclusion != "skipped")] | length' 2>/dev/null || echo "0")
         if [[ "$failures" -gt 0 ]]; then
             marvin_log "WARN" "CI checks failed (${failures} failure(s)) — skipping auto-merge for PR #${pr_number}"
+            CI_RESOLVED=true
             break
         fi
         marvin_log "INFO" "All CI checks passed for PR #${pr_number}"
         MERGE_OK=true
+        CI_RESOLVED=true
         break
     done
-    if [[ "$MERGE_OK" != "true" && "$attempt" -ge 30 ]]; then
+    if [[ "$CI_RESOLVED" != "true" ]]; then
         marvin_log "WARN" "CI checks timed out after 5 min — skipping auto-merge for PR #${pr_number}"
     fi
 else
