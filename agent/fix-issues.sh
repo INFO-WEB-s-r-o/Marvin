@@ -183,7 +183,7 @@ while IFS= read -r f; do
     fi
 done < <(printf '%s\n%s\n' "$CHANGED" "$UNTRACKED")
 
-# 3. Check that no data/ or runtime files were modified
+# 3. Check that no data/ or runtime files were modified (changed AND untracked)
 while IFS= read -r f; do
     [[ -n "$f" ]] || continue
     case "$f" in
@@ -193,7 +193,7 @@ while IFS= read -r f; do
             marvin_log "ERROR" "VALIDATION FAILED: forbidden file modified: $f"
             ;;
     esac
-done <<< "$CHANGED"
+done < <(printf '%s\n%s\n' "$CHANGED" "$UNTRACKED")
 
 if [[ "$VALID" != "true" ]]; then
     marvin_log "ERROR" "Validation failed — aborting fix. Errors: ${VALIDATION_ERRORS}"
