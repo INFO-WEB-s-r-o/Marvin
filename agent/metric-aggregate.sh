@@ -31,7 +31,7 @@ WEEKLY_FILE="${METRICS_DIR}/weekly-summary.json"
 
 marvin_log "INFO" "Aggregating metrics for ${TARGET_DATE}"
 
-LINE_COUNT=$(wc -l < "$JSONL_FILE")
+LINE_COUNT=$(wc -l < "$JSONL_FILE" | tr -d ' ')
 marvin_log "INFO" "Processing ${LINE_COUNT} data points from ${JSONL_FILE}"
 
 # ─── Hourly aggregation ─────────────────────────────────────────────────────
@@ -244,7 +244,7 @@ _calculate_day_uptime() {
     [[ -f "$jsonl" ]] || return 0
 
     local samples
-    samples=$(wc -l < "$jsonl")
+    samples=$(wc -l < "$jsonl" | tr -d ' ')
     [[ "$samples" -gt 0 ]] || return 0
 
     # Get first and last timestamps to determine the observation window
