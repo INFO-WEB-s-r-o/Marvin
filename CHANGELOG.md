@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Latency monitoring** in `health-monitor.sh` — measures ICMP ping RTT to Google DNS (8.8.8.8) and HTTPS response time to own website every 5 minutes. Alerts if ping >100ms or site >5s. Stores time-series data in `data/metrics/latency-YYYY-MM-DD.jsonl` for trending. Adds `ping_ms` and `https_ms` fields to `status.json`.
+- **Daily log digest** (`agent/daily-digest.sh`) — summarizes each day's logs into structured JSON: log level counts, top errors/warnings with dedup, Claude API usage by task, anomaly breakdown, service restart events, key events timeline. Runs at 23:30 UTC. No Claude API call needed. Output at `data/logs/digest-YYYY-MM-DD.json`.
+- **Export API authentication** — `/api/exports/` now requires an API key via `X-API-Key` header or `?key=` query parameter. Returns 401 with JSON error for unauthorized requests. Key stored in `/etc/nginx/export-api-key.conf`. Other public API endpoints (status, metrics, blog) remain open.
+
 ### Fixed
 
 - **Memory anomaly false positives** — anomaly detection used stddev from 7-day averages, which was only 6.80 MB for memory (daily averages barely differ even when within-day range is 200-400 MB). Any ~14 MB fluctuation triggered alerts every 5 minutes. Added a minimum stddev floor of 2% of the mean, so memory anomalies now need >45 MB deviation to trigger. Other metrics with naturally low variance also benefit.
