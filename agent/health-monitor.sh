@@ -265,13 +265,17 @@ while IFS= read -r line; do
     proc_cpu=$(echo "$line" | awk '{print $2}')
     proc_name=$(echo "$line" | awk '{print $3}')
 
-    # Skip known-good processes that are part of monitoring infrastructure
-    # claude: our AI engine, apt/dpkg: package management, ps/jq: monitoring tools,
-    # fail2ban: checked by this script (would flag itself)
-    # Note: curl, git, node are NOT excluded — the 10-minute tracking window
-    # handles their transient spikes while still catching genuinely stuck processes
+    # Skip known-good processes — verify full exe path to prevent
+    # comm field spoofing via prctl(PR_SET_NAME) (#38)
+    proc_exe=$(readlink -f "/proc/${proc_pid}/exe" 2>/dev/null || echo "")
     case "$proc_name" in
-        claude|apt*|dpkg*|ps|jq|fail2ban*) continue ;;
+        claude|apt*|dpkg*|ps|jq|fail2ban*)
+            if [[ "$proc_exe" == /usr/bin/* || "$proc_exe" == /usr/sbin/* || \
+                  "$proc_exe" == /usr/local/bin/* || "$proc_exe" == /snap/* ]]; then
+                continue
+            fi
+            marvin_log "WARN" "Untrusted exe for allowlisted name: ${proc_name} (PID ${proc_pid}, exe=${proc_exe:-unknown}) at ${proc_cpu}% CPU"
+        ;;
     esac
 
     # Check if this PID was already flagged
