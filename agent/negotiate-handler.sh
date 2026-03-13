@@ -114,7 +114,7 @@ EOF
     ')
 
     # Security pre-check — reject obviously malicious requests
-    dangerous_keywords=$(echo "$sanitized_json" | grep -ciE 'ssh|shell|exec|eval|sudo|root|rm -|chmod|/bin/|reverse.shell|bind.shell' || true)
+    dangerous_keywords=$(echo "$sanitized_json" | grep -oiE 'ssh|shell|exec|eval|sudo|root|rm -|chmod|/bin/|reverse.shell|bind.shell' | wc -l || true)
     if [[ "$dangerous_keywords" -gt 2 ]]; then
         marvin_log "WARN" "Dangerous keywords in negotiation from ${source_ip} — auto-rejecting"
 
