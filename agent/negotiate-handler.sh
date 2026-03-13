@@ -84,7 +84,7 @@ while IFS= read -r request_file; do
     fi
 
     # Extract source IP for rate limiting
-    source_ip=$(echo "$sanitized_json" | jq -r '.source_ip // .ip // .from // "unknown"')
+    source_ip=$(echo "$sanitized_json" | jq -r '.source_ip // .ip // .from // "unknown"' | tr -d '\n\r' | tr -dc '[:print:]' | head -c 45)
 
     # Rate limit check
     ip_count=$(echo "$rate_limits" | jq -r --arg ip "$source_ip" '.[$ip].count // 0')
