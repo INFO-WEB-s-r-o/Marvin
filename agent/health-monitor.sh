@@ -136,6 +136,14 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
         _mean="${_stats%% *}"
         _sd="${_stats##* }"
 
+        # Apply minimum stddev floor of 2% of the mean to prevent false positives
+        # from metrics with naturally low cross-day variance. Daily averages for
+        # memory may differ by only ~10MB while within-day variance is ~200-400MB.
+        # Without this floor, stddev=6.80 triggers alerts on every 14MB fluctuation.
+        _sd=$(awk -v sd="$_sd" -v mean="$_mean" \
+            'BEGIN{floor = mean * 0.02; if(floor < 1) floor = 1; printf "%.2f", (sd > floor ? sd : floor)}' \
+            2>/dev/null || echo "$_sd")
+
         _anomaly_check "$_label" "$_current" "$_mean" "$_sd" "$_direction" "$_min_thr"
     done
 
@@ -440,6 +448,24 @@ _check_cert_expiry "robot-marvin.cz" 443 "HTTPS"
 _check_cert_expiry "robot-marvin.cz" 465 "SMTPS"
 _check_cert_expiry "robot-marvin.cz" 993 "IMAPS"
 
+# ─── DNS resolution monitoring ──────────────────────────────────────────────
+# Verify own domain resolves to the correct IP address
+_expected_ip="80.211.223.26"
+_dns_ok=true
+if command -v dig &>/dev/null; then
+    # Query external DNS (Google) to avoid local resolver entries (127.0.1.1)
+    _resolved_ip=$(dig +short robot-marvin.cz A @8.8.8.8 2>/dev/null | tail -1 || echo "")
+    if [[ -z "$_resolved_ip" ]]; then
+        ISSUES+=("WARNING: DNS resolution failed for robot-marvin.cz")
+        marvin_log "WARN" "DNS resolution failed for robot-marvin.cz"
+        _dns_ok=false
+    elif [[ "$_resolved_ip" != "$_expected_ip" ]]; then
+        ISSUES+=("CRITICAL: DNS mismatch — robot-marvin.cz resolves to ${_resolved_ip}, expected ${_expected_ip}")
+        marvin_log "CRITICAL" "DNS mismatch: ${_resolved_ip} != ${_expected_ip}"
+        _dns_ok=false
+    fi
+fi
+
 # Update status file for the web dashboard
 STATUS="healthy"
 if [[ ${#ISSUES[@]} -gt 0 ]]; then
@@ -470,7 +496,8 @@ cat > "${DATA_DIR}/status.json" << EOF
     "website": "$(if [[ "$SITE_OK" == "true" ]]; then echo "ok"; else echo "failing"; fi)",
     "website_http": "${http_code:-000}",
     "blog_latest": "${latest_blog_date:-unknown}",
-    "ssl_min_days": ${ssl_min_days}
+    "ssl_min_days": ${ssl_min_days},
+    "dns": "$(if [[ "$_dns_ok" == "true" ]]; then echo "ok"; else echo "failing"; fi)"
   }
 }
 EOF
