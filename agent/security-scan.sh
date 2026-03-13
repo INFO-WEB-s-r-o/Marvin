@@ -173,6 +173,7 @@ marvin_log "INFO" "Tracking active network connections..."
 established_output=$(ss -tnp state established 2>/dev/null || echo "")
 established_count=0
 suspicious_conns="[]"
+suspicious_count=0
 
 if [[ -n "$established_output" ]]; then
     established_count=$(echo "$established_output" | tail -n +2 | grep -c '[0-9]' 2>/dev/null || echo 0)
