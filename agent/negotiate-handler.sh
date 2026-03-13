@@ -57,23 +57,23 @@ while IFS= read -r request_file; do
         continue
     fi
 
-    # Sanitize JSON: whitelist known fields and truncate values to prevent prompt injection
+    # Sanitize JSON: whitelist known fields and truncate ALL string values to prevent prompt injection
     sanitized_json=$(echo "$request_json" | jq '{
-        protocol: (.protocol // null),
-        version: (.version // null),
-        type: (.type // null),
-        from: (.from // null),
-        name: (.name // null),
-        message: ((.message // "") | tostring | .[0:500]),
-        proposed_protocol: (.proposed_protocol // null),
-        capabilities: (.capabilities // null),
-        url: (.url // null),
-        endpoint: (.endpoint // null),
-        format: (.format // null),
-        frequency: (.frequency // null),
-        languages: (.languages // null),
-        source_ip: (.source_ip // null),
-        ip: (.ip // null)
+        protocol: ((.protocol // null) | if type == "string" then .[0:50] else null end),
+        version: ((.version // null) | if type == "string" then .[0:20] else null end),
+        type: ((.type // null) | if type == "string" then .[0:50] else null end),
+        from: ((.from // null) | if type == "string" then .[0:200] else null end),
+        name: ((.name // null) | if type == "string" then .[0:200] else null end),
+        message: ((.message // null) | if type == "string" then .[0:500] else null end),
+        proposed_protocol: ((.proposed_protocol // null) | if type == "string" then .[0:100] else null end),
+        capabilities: ((.capabilities // null) | if type == "array" then .[0:20] | map(if type == "string" then .[0:100] else . end) else null end),
+        url: ((.url // null) | if type == "string" then .[0:300] else null end),
+        endpoint: ((.endpoint // null) | if type == "string" then .[0:300] else null end),
+        format: ((.format // null) | if type == "string" then .[0:50] else null end),
+        frequency: ((.frequency // null) | if type == "string" then .[0:50] else null end),
+        languages: ((.languages // null) | if type == "array" then .[0:10] | map(if type == "string" then .[0:10] else . end) else null end),
+        source_ip: ((.source_ip // null) | if type == "string" then .[0:45] else null end),
+        ip: ((.ip // null) | if type == "string" then .[0:45] else null end)
     } | with_entries(select(.value != null))' 2>/dev/null)
 
     if [[ -z "$sanitized_json" ]]; then
