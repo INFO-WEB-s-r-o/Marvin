@@ -165,6 +165,72 @@ cat > "$PORT_INVENTORY" << PORTEOF
 PORTEOF
 chmod 644 "$PORT_INVENTORY"
 
+# ─── 3b. Active connection tracking & suspicious connection detection ─────────
+# Snapshot established connections and flag unusual destinations
+
+marvin_log "INFO" "Tracking active network connections..."
+
+established_output=$(ss -tnp state established 2>/dev/null || echo "")
+established_count=0
+suspicious_conns="[]"
+suspicious_count=0
+
+if [[ -n "$established_output" ]]; then
+    established_count=$(echo "$established_output" | tail -n +2 | grep -c '[0-9]' 2>/dev/null || echo 0)
+
+    # Known safe destination ports: 80/443 (HTTP/S), 53 (DNS), 123 (NTP),
+    # 587/465/25 (email sending), 22 (SSH from us)
+    SAFE_REMOTE_PORTS="22 25 53 80 123 443 465 587"
+
+    # Check each connection for unusual remote ports
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        remote_addr=$(echo "$line" | awk '{print $4}')
+        remote_port=$(echo "$remote_addr" | grep -oP ':\K[0-9]+$' || echo "")
+        remote_ip=$(echo "$remote_addr" | sed 's/:[0-9]*$//')
+        local_addr=$(echo "$line" | awk '{print $3}')
+        proc_info=$(echo "$line" | awk '{print $5}' | head -1)
+
+        # Skip inbound connections (local port is a well-known service port)
+        local_port=$(echo "$local_addr" | grep -oP ':\K[0-9]+$' || echo "")
+        if echo "22 25 80 443 465 587 993 3000" | grep -qw "$local_port" 2>/dev/null; then
+            continue
+        fi
+
+        # Skip if remote port is in safe list
+        if echo "$SAFE_REMOTE_PORTS" | grep -qw "$remote_port" 2>/dev/null; then
+            continue
+        fi
+
+        # Flag outbound connections to unusual remote ports
+        if [[ -n "$remote_port" ]]; then
+            suspicious_conns=$(echo "$suspicious_conns" | jq \
+                --arg rip "$remote_ip" --arg rport "$remote_port" \
+                --arg local "$local_addr" --arg proc "$proc_info" \
+                '. + [{"remote_ip": $rip, "remote_port": ($rport | tonumber), "local": $local, "process": $proc}]' \
+                2>/dev/null || echo "$suspicious_conns")
+        fi
+    done < <(echo "$established_output" | tail -n +2)
+
+    suspicious_count=$(echo "$suspicious_conns" | jq 'length' 2>/dev/null || echo 0)
+    if [[ "$suspicious_count" -gt 0 ]]; then
+        marvin_log "WARN" "Found ${suspicious_count} connection(s) to unusual remote ports"
+    fi
+fi
+
+# Save connection snapshot
+CONN_SNAPSHOT="${SECURITY_DIR}/connections-latest.json"
+cat > "$CONN_SNAPSHOT" << CONNEOF
+{
+  "timestamp": "${NOW}",
+  "established_count": ${established_count},
+  "suspicious_connections": ${suspicious_conns}
+}
+CONNEOF
+chmod 644 "$CONN_SNAPSHOT"
+
+marvin_log "INFO" "Connection tracking: ${established_count} established, $(echo "$suspicious_conns" | jq 'length' 2>/dev/null || echo 0) suspicious"
+
 # ─── 4. File integrity monitoring ─────────────────────────────────────────────
 
 FIM_SCRIPT="$(dirname "$0")/file-integrity.sh"
@@ -264,7 +330,7 @@ if [[ "$rkhunter_status" == "infected" || "$chkrootkit_status" == "infected" ]];
     overall_status="infected"
 elif [[ "$fim_status" == "alert" ]]; then
     overall_status="alert"
-elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security" -gt 0 || "$unexpected_count" -gt 0 ]]; then
+elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security" -gt 0 || "$unexpected_count" -gt 0 || "$suspicious_count" -gt 0 ]]; then
     overall_status="warnings"
 fi
 
@@ -299,7 +365,9 @@ cat > "$REPORT_FILE" << EOF
     "listening_ports": ${port_count},
     "unexpected_ports": ${unexpected_count},
     "unexpected_port_list": "${unexpected_ports}",
-    "unexpected_port_details": ${unexpected_details_json}
+    "unexpected_port_details": ${unexpected_details_json},
+    "established_connections": ${established_count},
+    "suspicious_connections": $(echo "$suspicious_conns" | jq 'length' 2>/dev/null || echo 0)
   }
 }
 EOF
