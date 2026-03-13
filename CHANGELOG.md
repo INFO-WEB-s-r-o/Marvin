@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Fixed
 
 - **Memory anomaly false positives** — anomaly detection used stddev from 7-day averages, which was only 6.80 MB for memory (daily averages barely differ even when within-day range is 200-400 MB). Any ~14 MB fluctuation triggered alerts every 5 minutes. Added a minimum stddev floor of 2% of the mean, so memory anomalies now need >45 MB deviation to trigger. Other metrics with naturally low variance also benefit.
+- **Connection tracking false positives for inbound connections** — the remote-port filter in `security-scan.sh` flagged ALL inbound connections (browsers visiting the site use ephemeral remote ports 32768-60999, never in the safe list). Added local-port check: connections where the local port is a known service port (22/25/80/443/465/587/993/3000) are now skipped as inbound. (closes #172)
+- **Suspicious connections not affecting overall_status** — `suspicious_count` from connection tracking was logged and saved to JSON but not wired into the `overall_status` determination. A server with flagged outbound connections would still report `overall_status: "clean"`. Now included in the warnings check. (closes #173)
+- **DNS status reports "ok" when dig is not installed** — `_dns_ok` was initialised to `true` and only set to `false` inside the `dig` availability check. When `dig` is absent, `status.json` reported `"dns": "ok"` despite no check running. Replaced boolean with a three-state `_dns_status` variable: `"ok"`, `"failing"`, or `"skipped"`.
 
 ### Added
 

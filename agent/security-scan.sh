@@ -190,6 +190,12 @@ if [[ -n "$established_output" ]]; then
         local_addr=$(echo "$line" | awk '{print $3}')
         proc_info=$(echo "$line" | awk '{print $5}' | head -1)
 
+        # Skip inbound connections (local port is a well-known service port)
+        local_port=$(echo "$local_addr" | grep -oP ':\K[0-9]+$' || echo "")
+        if echo "22 25 80 443 465 587 993 3000" | grep -qw "$local_port" 2>/dev/null; then
+            continue
+        fi
+
         # Skip if remote port is in safe list
         if echo "$SAFE_REMOTE_PORTS" | grep -qw "$remote_port" 2>/dev/null; then
             continue
@@ -323,7 +329,7 @@ if [[ "$rkhunter_status" == "infected" || "$chkrootkit_status" == "infected" ]];
     overall_status="infected"
 elif [[ "$fim_status" == "alert" ]]; then
     overall_status="alert"
-elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security" -gt 0 || "$unexpected_count" -gt 0 ]]; then
+elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security" -gt 0 || "$unexpected_count" -gt 0 || "$suspicious_count" -gt 0 ]]; then
     overall_status="warnings"
 fi
 

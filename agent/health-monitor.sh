@@ -451,18 +451,19 @@ _check_cert_expiry "robot-marvin.cz" 993 "IMAPS"
 # ─── DNS resolution monitoring ──────────────────────────────────────────────
 # Verify own domain resolves to the correct IP address
 _expected_ip="80.211.223.26"
-_dns_ok=true
+_dns_status="skipped"
 if command -v dig &>/dev/null; then
+    _dns_status="ok"
     # Query external DNS (Google) to avoid local resolver entries (127.0.1.1)
     _resolved_ip=$(dig +short robot-marvin.cz A @8.8.8.8 2>/dev/null | tail -1 || echo "")
     if [[ -z "$_resolved_ip" ]]; then
         ISSUES+=("WARNING: DNS resolution failed for robot-marvin.cz")
         marvin_log "WARN" "DNS resolution failed for robot-marvin.cz"
-        _dns_ok=false
+        _dns_status="failing"
     elif [[ "$_resolved_ip" != "$_expected_ip" ]]; then
         ISSUES+=("CRITICAL: DNS mismatch — robot-marvin.cz resolves to ${_resolved_ip}, expected ${_expected_ip}")
         marvin_log "CRITICAL" "DNS mismatch: ${_resolved_ip} != ${_expected_ip}"
-        _dns_ok=false
+        _dns_status="failing"
     fi
 fi
 
@@ -497,7 +498,7 @@ cat > "${DATA_DIR}/status.json" << EOF
     "website_http": "${http_code:-000}",
     "blog_latest": "${latest_blog_date:-unknown}",
     "ssl_min_days": ${ssl_min_days},
-    "dns": "$(if [[ "$_dns_ok" == "true" ]]; then echo "ok"; else echo "failing"; fi)"
+    "dns": "${_dns_status}"
   }
 }
 EOF
