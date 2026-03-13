@@ -467,6 +467,50 @@ if command -v dig &>/dev/null; then
     fi
 fi
 
+# ─── Latency monitoring ─────────────────────────────────────────────────────
+# Measure network latency to key endpoints: ICMP ping + HTTPS response time.
+# Results stored in status.json and appended to latency JSONL for trending.
+_ping_rtt=""
+_https_rtt=""
+
+# ICMP ping to Google DNS (general network health indicator)
+if command -v ping &>/dev/null; then
+    _ping_output=$(ping -c 3 -W 5 8.8.8.8 2>/dev/null || echo "")
+    _ping_rtt=$(echo "$_ping_output" | awk -F'/' '/rtt|round-trip/ {printf "%.1f", $5}' 2>/dev/null || echo "")
+    if [[ -n "$_ping_rtt" ]]; then
+        # Alert if average RTT > 100ms (unusual for a datacenter VPS)
+        if awk -v rtt="$_ping_rtt" 'BEGIN{exit (rtt > 100) ? 0 : 1}' 2>/dev/null; then
+            ISSUES+=("WARNING: High network latency — ping to 8.8.8.8 is ${_ping_rtt}ms")
+            marvin_log "WARN" "High ping latency to 8.8.8.8: ${_ping_rtt}ms"
+        fi
+    fi
+fi
+
+# HTTPS response time to own website (measures full TLS handshake + response)
+_https_rtt=$(curl -so /dev/null -w '%{time_total}' --max-time 15 "https://robot-marvin.cz/" 2>/dev/null || echo "")
+if [[ -n "$_https_rtt" ]]; then
+    # Convert seconds to ms
+    _https_rtt=$(awk -v t="$_https_rtt" 'BEGIN{printf "%.0f", t * 1000}' 2>/dev/null || echo "")
+    # Alert if own site takes >5s to respond
+    if [[ -n "$_https_rtt" ]] && [[ "$_https_rtt" -gt 5000 ]]; then
+        ISSUES+=("WARNING: Own website slow — HTTPS response ${_https_rtt}ms")
+        marvin_log "WARN" "Slow HTTPS response: ${_https_rtt}ms"
+    fi
+fi
+
+# Append latency data to daily JSONL for trending analysis
+if [[ -n "$_ping_rtt" || -n "$_https_rtt" ]]; then
+    _latency_file="${METRICS_DIR}/latency-${TODAY}.jsonl"
+    jq -nc \
+        --arg ts "$NOW" \
+        --arg ping "${_ping_rtt:-null}" \
+        --arg https "${_https_rtt:-null}" \
+        '{timestamp: $ts,
+          ping_8888_ms: (if $ping == "null" then null else ($ping | tonumber) end),
+          https_self_ms: (if $https == "null" then null else ($https | tonumber) end)}' \
+        >> "$_latency_file" 2>/dev/null || true
+fi
+
 # Update status file for the web dashboard
 STATUS="healthy"
 if [[ ${#ISSUES[@]} -gt 0 ]]; then
@@ -498,7 +542,9 @@ cat > "${DATA_DIR}/status.json" << EOF
     "website_http": "${http_code:-000}",
     "blog_latest": "${latest_blog_date:-unknown}",
     "ssl_min_days": ${ssl_min_days},
-    "dns": "${_dns_status}"
+    "dns": "${_dns_status}",
+    "ping_ms": ${_ping_rtt:-null},
+    "https_ms": ${_https_rtt:-null}
   }
 }
 EOF

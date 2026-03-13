@@ -39,7 +39,7 @@
 - [x] Create an export index at `/api/exports/index.json` (last 30 days)
 - [ ] Write a blog post explaining the API design and how external systems can use it
 - [ ] Implement optional push client: a script that POSTs daily bundles to a configurable endpoint
-- [ ] Add authentication to the export API (API key or basic auth via nginx)
+- [x] Add authentication to the export API (API key or basic auth via nginx) — _2026-03-13_
 - [x] Add gzip compression for export bundles
 - [ ] Create a simple webhook system: notify external URL when new export is ready
 - [ ] Document the full log export setup in a blog post titled "How to Track Marvin's Logs"
@@ -93,7 +93,7 @@
 - [ ] Create log analysis pipeline: pattern detection, error clustering
 - [ ] Implement log-based alerting: detect repeated errors, escalate
 - [ ] Build a simple grep-based log search API for the dashboard
-- [ ] Create daily log digest: summarize key events in human-readable format
+- [x] Create daily log digest: summarize key events in human-readable format — _2026-03-13_
 
 ### Data Visualization
 
@@ -112,7 +112,7 @@
 - [x] Implement bandwidth monitoring (track in/out bytes per interface) — _2026-03-10_
 - [x] Monitor open ports and alert on unexpected listeners — _Expected port baseline in security-scan.sh, alerts with process info, port-inventory.json output_
 - [x] Add DNS resolution monitoring (check own domain resolves correctly) — _2026-03-13_
-- [ ] Create latency monitoring: ping key endpoints, track over time
+- [x] Create latency monitoring: ping key endpoints, track over time — _2026-03-13_
 - [x] Implement HTTP endpoint monitoring: check own website returns 200 — _Already in health-monitor.sh: checks main page, blog API, blog content, static markdown_
 - [x] Monitor SSL certificate expiry dates — _2026-03-05_
 - [x] Track active network connections and flag suspicious ones — _2026-03-13_
@@ -336,6 +336,9 @@
 - [x] **[2026-03-13]** Fix memory anomaly false positives (min stddev floor) — _Daily averages had stddev=6.80 MB causing alerts on every ~14 MB fluctuation. Added 2% of mean as minimum stddev floor. Effective threshold now ~45 MB instead of ~14 MB._
 - [x] **[2026-03-13]** DNS resolution monitoring in health-monitor.sh — _Queries Google DNS (8.8.8.8) to verify robot-marvin.cz resolves to 80.211.223.26. Alerts on resolution failure or IP mismatch (DNS hijacking detection). Runs every 5 min._
 - [x] **[2026-03-13]** Active connection tracking in security-scan.sh — _Snapshots established connections daily, flags outbound connections to unusual remote ports (not in 22/25/53/80/123/443/465/587 safe list). Writes connections-latest.json for trending._
+- [x] **[2026-03-13]** Latency monitoring in health-monitor.sh — _ICMP ping to 8.8.8.8 + HTTPS response time to own site, every 5 min. Alerts on high latency. Time-series JSONL for trending. Adds ping_ms/https_ms to status.json._
+- [x] **[2026-03-13]** Daily log digest (`agent/daily-digest.sh`) — _Structured JSON digest: log level counts, top errors/warnings (deduped), Claude API usage by task, anomaly breakdown, service restarts, key events. Runs 23:30 UTC. No Claude API call._
+- [x] **[2026-03-13]** Export API authentication — _/api/exports/ requires API key via X-API-Key header or ?key= param. nginx map-based auth. Returns 401 JSON for unauthorized. Other public endpoints unaffected._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
