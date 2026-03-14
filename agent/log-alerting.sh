@@ -63,7 +63,7 @@ if [[ -n "$_error_lines" ]]; then
         # Only alert if the same error appears > 3 times
         if [[ "$count" -gt 3 ]]; then
             # Create a stable ID from the message hash
-            alert_id="repeated-$(echo "$msg" | md5sum | cut -c1-12)"
+            alert_id="repeated-$(echo "$msg" | sha256sum | cut -c1-12)"
             NEW_ALERTS+=("$(_make_alert "$alert_id" "warning" "Repeated error (${count}x)" "$msg" "$count")")
         fi
     done < <(echo "$_error_lines" | sed 's/^\[[^]]*\] //' | sort | uniq -c | sort -rn | head -10)
@@ -77,7 +77,7 @@ if [[ -n "$critical_lines" ]]; then
     critical_count=$(echo "$critical_lines" | wc -l | tr -d ' ')
     # Get the most recent critical message
     latest_critical=$(echo "$critical_lines" | tail -1 | sed 's/^\[[^]]*\] //')
-    alert_id="critical-$(echo "$latest_critical" | md5sum | cut -c1-12)"
+    alert_id="critical-$(echo "$latest_critical" | sha256sum | cut -c1-12)"
     NEW_ALERTS+=("$(_make_alert "$alert_id" "critical" "Critical event detected" "$latest_critical" "$critical_count")")
 fi
 
@@ -101,10 +101,13 @@ if [[ -n "$one_hour_ago" ]]; then
         hours_elapsed=$(( (now_epoch - first_epoch) / 3600 ))
         [[ "$hours_elapsed" -lt 1 ]] && hours_elapsed=1
 
+        # Use multiplication to avoid integer division truncation:
+        # recent_errors > 3 * (total_errors / hours_elapsed)
+        # becomes: recent_errors * hours_elapsed > total_errors * 3
         avg_errors_per_hour=$(( total_errors / hours_elapsed ))
 
-        # Spike: > 10 errors/hour AND > 3x the average
-        if [[ "$recent_errors" -gt 10 ]] && [[ "$avg_errors_per_hour" -gt 0 ]] && [[ "$recent_errors" -gt $((avg_errors_per_hour * 3)) ]]; then
+        # Spike: > 10 errors/hour AND > 3x the average (using multiplication to avoid truncation)
+        if [[ "$recent_errors" -gt 10 ]] && [[ $((recent_errors * hours_elapsed)) -gt $((total_errors * 3)) ]]; then
             NEW_ALERTS+=("$(_make_alert "error-spike" "warning" "Error rate spike" "Last hour: ${recent_errors} errors (avg: ${avg_errors_per_hour}/hr)" "$recent_errors")")
         fi
     fi
@@ -134,7 +137,7 @@ if [[ -n "$warn_lines" ]]; then
         count=$(echo "$line" | awk '{print $1}')
         msg=$(echo "$line" | sed 's/^[[:space:]]*[0-9]* //')
         if [[ "$count" -gt 10 ]]; then
-            alert_id="persistent-warn-$(echo "$msg" | md5sum | cut -c1-12)"
+            alert_id="persistent-warn-$(echo "$msg" | sha256sum | cut -c1-12)"
             NEW_ALERTS+=("$(_make_alert "$alert_id" "info" "Persistent warning (${count}x)" "$msg" "$count")")
         fi
     done < <(echo "$warn_lines" | sed 's/^\[[^]]*\] //' | sort | uniq -c | sort -rn | head -5)

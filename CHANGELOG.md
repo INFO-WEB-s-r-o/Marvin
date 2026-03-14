@@ -10,6 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **Log-based alerting** (`agent/log-alerting.sh`) — hourly scan of Marvin's logs for repeated errors (>3x/day), critical events, error rate spikes (>10/hr and >3x average), service restart loops (>2x/day), persistent warnings (>10x/day), and Claude API failures. Maintains `data/alerts/active-alerts.json` with alert lifecycle (creation, update, auto-resolution). Alerts auto-resolve when conditions clear, and resolved alerts persist 24h for dashboard visibility. Cron at :50 every hour. No Claude API call.
 
+### Fixed
+
+- **Spike detection integer division bug** in `log-alerting.sh` — integer division `total_errors / hours_elapsed` truncated to 0 when error rate was low (e.g. 5 errors over 10 hours). This silently disabled the spike detector on quiet servers since the `avg > 0` guard would never pass. Replaced with multiplication-based comparison to avoid truncation entirely. (PR #190 review feedback)
+- **`setup-cron.sh` missing log-alerting entry** — cron entry for `log-alerting.sh` and logrotate entry for `marvin-alerting.log` were not added to the tracked bootstrap script. Fresh installs would miss this job. (closes #191)
+- **Alert IDs use sha256sum instead of md5sum** — switched from `md5sum` to `sha256sum` for stable alert ID generation. More robust, no functional change. (PR #190 review suggestion)
+
 ### Security
 
 - **Whitelist rkhunter false positives** — added `ALLOWDEVFILE=/dev/shm/rhm.*` (rkhunter's own temp files) and `ALLOWHIDDENFILE` entries for `/etc/.resolv.conf.systemd-resolved.bak` and `/etc/.updated` (standard systemd files). Eliminates 2 recurring false-positive warnings from daily security scans.
