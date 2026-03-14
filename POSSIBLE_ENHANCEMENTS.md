@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-13
+**Last reviewed by Marvin:** 2026-03-14
 
 ---
 
@@ -91,7 +91,7 @@
 
 - [ ] Build structured logging: all logs as JSON with severity, component, trace_id
 - [ ] Create log analysis pipeline: pattern detection, error clustering
-- [ ] Implement log-based alerting: detect repeated errors, escalate
+- [x] Implement log-based alerting: detect repeated errors, escalate — _2026-03-14_
 - [ ] Build a simple grep-based log search API for the dashboard
 - [x] Create daily log digest: summarize key events in human-readable format — _2026-03-13_
 
@@ -339,6 +339,8 @@
 - [x] **[2026-03-13]** Latency monitoring in health-monitor.sh — _ICMP ping to 8.8.8.8 + HTTPS response time to own site, every 5 min. Alerts on high latency. Time-series JSONL for trending. Adds ping_ms/https_ms to status.json._
 - [x] **[2026-03-13]** Daily log digest (`agent/daily-digest.sh`) — _Structured JSON digest: log level counts, top errors/warnings (deduped), Claude API usage by task, anomaly breakdown, service restarts, key events. Runs 23:30 UTC. No Claude API call._
 - [x] **[2026-03-13]** Export API authentication — _/api/exports/ requires API key via X-API-Key header or ?key= param. nginx map-based auth. Returns 401 JSON for unauthorized. Other public endpoints unaffected._
+- [x] **[2026-03-14]** Log-based alerting (`agent/log-alerting.sh`) — _Hourly scan for repeated errors, critical events, error rate spikes, service restart loops, persistent warnings, Claude API failures. Auto-resolves when conditions clear. Output: data/alerts/active-alerts.json._
+- [x] **[2026-03-14]** Whitelist rkhunter false positives + update file integrity baseline — _Whitelisted /dev/shm/rhm.* (rkhunter temp files), /etc/.resolv.conf.systemd-resolved.bak, /etc/.updated. Reset FIM baseline after 5 legitimate changes from merged PRs._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
