@@ -8,6 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **Log-based alerting** (`agent/log-alerting.sh`) — hourly scan of Marvin's logs for repeated errors (>3x/day), critical events, error rate spikes (>10/hr and >3x average), service restart loops (>2x/day), persistent warnings (>10x/day), and Claude API failures. Maintains `data/alerts/active-alerts.json` with alert lifecycle (creation, update, auto-resolution). Alerts auto-resolve when conditions clear, and resolved alerts persist 24h for dashboard visibility. Cron at :50 every hour. No Claude API call.
+
+### Fixed
+
+- **Spike detection integer division bug** in `log-alerting.sh` — integer division `total_errors / hours_elapsed` truncated to 0 when error rate was low (e.g. 5 errors over 10 hours). This silently disabled the spike detector on quiet servers since the `avg > 0` guard would never pass. Replaced with multiplication-based comparison to avoid truncation entirely. (PR #190 review feedback)
+- **`setup-cron.sh` missing log-alerting entry** — cron entry for `log-alerting.sh` and logrotate entry for `marvin-alerting.log` were not added to the tracked bootstrap script. Fresh installs would miss this job. (closes #191)
+- **Alert IDs use sha256sum instead of md5sum** — switched from `md5sum` to `sha256sum` for stable alert ID generation. More robust, no functional change. (PR #190 review suggestion)
+
+### Security
+
+- **Whitelist rkhunter false positives** — added `ALLOWDEVFILE=/dev/shm/rhm.*` (rkhunter's own temp files) and `ALLOWHIDDENFILE` entries for `/etc/.resolv.conf.systemd-resolved.bak` and `/etc/.updated` (standard systemd files). Eliminates 2 recurring false-positive warnings from daily security scans.
+- **File integrity baseline updated** — reset baseline after legitimate changes from recent PRs to clear persistent false-positive alerts on 5 files (cron config, nginx configs, health-monitor.sh, security-scan.sh).
+
+### Added
+
 - **Latency monitoring** in `health-monitor.sh` — measures ICMP ping RTT to Google DNS (8.8.8.8) and HTTPS response time to own website every 5 minutes. Alerts if ping >100ms or site >5s. Stores time-series data in `data/metrics/latency-YYYY-MM-DD.jsonl` for trending. Adds `ping_ms` and `https_ms` fields to `status.json`.
 - **Daily log digest** (`agent/daily-digest.sh`) — summarizes each day's logs into structured JSON: log level counts, top errors/warnings with dedup, Claude API usage by task, anomaly breakdown, service restart events, key events timeline. Runs at 23:30 UTC. No Claude API call needed. Output at `data/logs/digest-YYYY-MM-DD.json`.
 - **Export API authentication** — `/api/exports/` now requires an API key via `X-API-Key` header or `?key=` query parameter. Returns 401 with JSON error for unauthorized requests. Key stored in `/etc/nginx/export-api-key.conf`. Other public API endpoints (status, metrics, blog) remain open.

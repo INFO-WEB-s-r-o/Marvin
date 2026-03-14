@@ -70,6 +70,10 @@ MARVIN_DIR=/home/marvin/git
 # Creates issues, PRs, pushes GPG-signed commits to public repo
 0 * * * * root ${MARVIN_DIR}/agent/github-interact.sh >> /var/log/marvin-github.log 2>&1
 
+# Log-based alerting — every hour at :50
+# Scans Marvin's logs for repeated errors, critical events, and error rate spikes
+50 * * * * root ${MARVIN_DIR}/agent/log-alerting.sh >> /var/log/marvin-alerting.log 2>&1
+
 # Hourly watch — every hour at :00
 # Scans /var/log for actionable errors, reviews codeowner GitHub issues, resolves what it can
 0 * * * * root ${MARVIN_DIR}/agent/hourly-check.sh >> /var/log/marvin-hourly.log 2>&1
@@ -87,7 +91,8 @@ cat > /etc/logrotate.d/marvin << 'EOF'
 /var/log/marvin-weekly.log
 /var/log/marvin-logwatch.log
 /var/log/marvin-negotiate.log
-/var/log/marvin-hourly.log {
+/var/log/marvin-hourly.log
+/var/log/marvin-alerting.log {
     daily
     rotate 30
     compress
@@ -114,3 +119,4 @@ log "  */30 * * * *  Log watcher (communication detection)"
 log "  15,45 * * * * Negotiate handler (protocol proposals)"
 log "  0  * * * *   GitHub interaction (issues, PRs, push)"
 log "  0  * * * *   Hourly watch (log errors + codeowner issues)"
+log "  50 * * * *   Log-based alerting (error detection)"
