@@ -100,7 +100,10 @@ done
 if [[ ${#_daily_files[@]} -ge 3 ]]; then
     # Extract key metrics from daily summaries using jq
     _cpu_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.cpu.avg // empty' "$f" 2>/dev/null; done)
-    _mem_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.memory_used_mb.avg // empty' "$f" 2>/dev/null; done)
+    # Memory uses daily MAX instead of avg — instantaneous 5-min readings naturally
+    # spike 100-200 MB above the daily average during cron runs/builds, causing
+    # 6-8σ false positives daily. Comparing against daily peak history eliminates this.
+    _mem_maxes=$(for f in "${_daily_files[@]}"; do jq -r '.summary.memory_used_mb.max // empty' "$f" 2>/dev/null; done)
     _load_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.load_1m.avg // empty' "$f" 2>/dev/null; done)
     _proc_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.process_count.avg // empty' "$f" 2>/dev/null; done)
 
@@ -112,7 +115,7 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
     _load_min_threshold=$(( _vcpus * 2 ))  # load < 2x vCPUs is never anomalous
     for pair in \
         "CPU%|${_cpu_avgs}|$(echo "$metrics" | jq -r '.cpu_percent' 2>/dev/null)|high|40" \
-        "Memory MB|${_mem_avgs}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)|both|0" \
+        "Memory MB|${_mem_maxes}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)|high|0" \
         "Load 1m|${_load_avgs}|$(echo "$metrics" | jq -r '.load_average["1min"]' 2>/dev/null)|high|${_load_min_threshold}" \
         "Processes|${_proc_avgs}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)|high|200"; do
         _label="${pair%%|*}"
@@ -137,9 +140,9 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
         _sd="${_stats##* }"
 
         # Apply minimum stddev floor of 2% of the mean to prevent false positives
-        # from metrics with naturally low cross-day variance. Daily averages for
-        # memory may differ by only ~10MB while within-day variance is ~200-400MB.
-        # Without this floor, stddev=6.80 triggers alerts on every 14MB fluctuation.
+        # from metrics with naturally low cross-day variance. Smoothed daily
+        # values may differ by only ~10 units while actual variance is much larger.
+        # Without this floor, tiny stddev values trigger alerts on normal fluctuations.
         _sd=$(awk -v sd="$_sd" -v mean="$_mean" \
             'BEGIN{floor = mean * 0.02; if(floor < 1) floor = 1; printf "%.2f", (sd > floor ? sd : floor)}' \
             2>/dev/null || echo "$_sd")
@@ -552,5 +555,17 @@ cat > "${DATA_DIR}/status.json" << EOF
   }
 }
 EOF
+
+# ─── Recent metrics for dashboard sparklines ────────────────────────────────
+# Combine today's and yesterday's JSONL into a JSON array at data/metrics/recent.json.
+# Lightweight: reads ~500 lines of JSONL, produces a single JSON array.
+# Served at /api/metrics/recent.json for client-side sparkline rendering.
+_yesterday=$(date -u -d "${TODAY} - 1 day" +%Y-%m-%d 2>/dev/null || true)
+{
+    [[ -n "$_yesterday" && -f "${METRICS_DIR}/${_yesterday}.jsonl" ]] && cat "${METRICS_DIR}/${_yesterday}.jsonl"
+    [[ -f "${METRICS_DIR}/${TODAY}.jsonl" ]] && cat "${METRICS_DIR}/${TODAY}.jsonl"
+} | jq -s '.' > "${METRICS_DIR}/recent.json.tmp" 2>/dev/null \
+    && mv "${METRICS_DIR}/recent.json.tmp" "${METRICS_DIR}/recent.json" \
+    || true
 
 marvin_log "INFO" "Health monitor complete: status=${STATUS}, issues=${#ISSUES[@]}"
