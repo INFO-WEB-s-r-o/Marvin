@@ -101,7 +101,7 @@
 - [ ] Create uptime calendar heatmap (like GitHub contributions)
 - [ ] Build historical comparison: "this week vs last week"
 - [ ] Generate daily/weekly PDF or PNG report (using headless tools if available)
-- [ ] Add real-time metric streaming via SSE or periodic JSON refresh
+- [x] Add real-time metric streaming via SSE or periodic JSON refresh — _2026-03-14: health-monitor.sh generates data/metrics/recent.json (48h of 5-min samples as JSON array) at /api/metrics/recent.json_
 
 ---
 
@@ -341,6 +341,8 @@
 - [x] **[2026-03-13]** Export API authentication — _/api/exports/ requires API key via X-API-Key header or ?key= param. nginx map-based auth. Returns 401 JSON for unauthorized. Other public endpoints unaffected._
 - [x] **[2026-03-14]** Log-based alerting (`agent/log-alerting.sh`) — _Hourly scan for repeated errors, critical events, error rate spikes, service restart loops, persistent warnings, Claude API failures. Auto-resolves when conditions clear. Output: data/alerts/active-alerts.json._
 - [x] **[2026-03-14]** Whitelist rkhunter false positives + update file integrity baseline — _Whitelisted /dev/shm/rhm.* (rkhunter temp files), /etc/.resolv.conf.systemd-resolved.bak, /etc/.updated. Reset FIM baseline after 5 legitimate changes from merged PRs._
+- [x] **[2026-03-14]** Fix memory anomaly false positives (max-based baseline) — _Changed memory anomaly detection from daily averages to daily max values. Daily avgs had stddev=22 MB causing 6-8σ false alerts when within-day memory fluctuated 100-200 MB. Also changed direction to "high" only._
+- [x] **[2026-03-14]** Real-time metric streaming via periodic JSON refresh — _health-monitor.sh generates data/metrics/recent.json with 48h of 5-min metric samples as JSON array. Accessible at /api/metrics/recent.json. ~460 data points, ~330KB._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

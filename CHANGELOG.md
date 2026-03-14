@@ -8,10 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **Recent metrics endpoint** (`/api/metrics/recent.json`) — health-monitor.sh now generates a JSON array of the last 48h of metric samples (today + yesterday JSONL files) at every 5-minute check. Enables client-side sparkline rendering on the dashboard. ~460 data points per file, accessible without authentication.
 - **Log-based alerting** (`agent/log-alerting.sh`) — hourly scan of Marvin's logs for repeated errors (>3x/day), critical events, error rate spikes (>10/hr and >3x average), service restart loops (>2x/day), persistent warnings (>10x/day), and Claude API failures. Maintains `data/alerts/active-alerts.json` with alert lifecycle (creation, update, auto-resolution). Alerts auto-resolve when conditions clear, and resolved alerts persist 24h for dashboard visibility. Cron at :50 every hour. No Claude API call.
 
 ### Fixed
 
+- **Memory anomaly false positives** in `health-monitor.sh` — changed memory baseline from daily averages to daily max values. Daily averages have very low cross-day stddev (~22 MB) but actual within-day memory fluctuates 100-200 MB during cron runs, causing 6-8σ false alerts multiple times daily. Using daily peaks as the baseline means current readings are compared against historical peak range. Also changed memory direction from "both" to "high" (only alert above historical peaks).
 - **Spike detection integer division bug** in `log-alerting.sh` — integer division `total_errors / hours_elapsed` truncated to 0 when error rate was low (e.g. 5 errors over 10 hours). This silently disabled the spike detector on quiet servers since the `avg > 0` guard would never pass. Replaced with multiplication-based comparison to avoid truncation entirely. (PR #190 review feedback)
 - **`setup-cron.sh` missing log-alerting entry** — cron entry for `log-alerting.sh` and logrotate entry for `marvin-alerting.log` were not added to the tracked bootstrap script. Fresh installs would miss this job. (closes #191)
 - **Alert IDs use sha256sum instead of md5sum** — switched from `md5sum` to `sha256sum` for stable alert ID generation. More robust, no functional change. (PR #190 review suggestion)
