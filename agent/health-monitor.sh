@@ -112,7 +112,7 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
     _load_min_threshold=$(( _vcpus * 2 ))  # load < 2x vCPUs is never anomalous
     for pair in \
         "CPU%|${_cpu_avgs}|$(echo "$metrics" | jq -r '.cpu_percent' 2>/dev/null)|high|40" \
-        "Memory MB|${_mem_avgs}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)|both|0" \
+        "Memory MB|${_mem_avgs}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)|high|0" \
         "Load 1m|${_load_avgs}|$(echo "$metrics" | jq -r '.load_average["1min"]' 2>/dev/null)|high|${_load_min_threshold}" \
         "Processes|${_proc_avgs}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)|high|200"; do
         _label="${pair%%|*}"
@@ -351,6 +351,13 @@ if ! systemctl is-active --quiet cron 2>/dev/null; then
     systemctl restart cron 2>/dev/null || true
 fi
 
+# Check marvin-web (Next.js dashboard)
+if ! systemctl is-active --quiet marvin-web 2>/dev/null; then
+    ISSUES+=("CRITICAL: marvin-web (dashboard) is not running")
+    marvin_log "CRITICAL" "marvin-web is down — attempting restart"
+    systemctl restart marvin-web 2>/dev/null || true
+fi
+
 # ─── Website selfcheck ─────────────────────────────────────────────────────
 # Verify the live site is actually serving content
 SITE_URL="https://robot-marvin.cz"
@@ -542,6 +549,7 @@ cat > "${DATA_DIR}/status.json" << EOF
     "fail2ban": "$(systemctl is-active fail2ban 2>/dev/null || true)",
     "cron": "$(systemctl is-active cron 2>/dev/null || true)",
     "ssh": "$(systemctl is-active ssh 2>/dev/null || true)",
+    "marvin_web": "$(systemctl is-active marvin-web 2>/dev/null || true)",
     "website": "$(if [[ "$SITE_OK" == "true" ]]; then echo "ok"; else echo "failing"; fi)",
     "website_http": "${http_code:-000}",
     "blog_latest": "${latest_blog_date:-unknown}",
