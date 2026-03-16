@@ -93,16 +93,19 @@ while IFS= read -r request_file; do
 
         # Write a rate-limit response
         negotiation_id="neg-$(date +%s)-$(head -c 4 /dev/urandom | xxd -p)"
-        cat > "${OUTBOX_DIR}/${negotiation_id}.json" << EOF
-{
-  "status": "rejected",
-  "negotiation_id": "${negotiation_id}",
-  "marvin_says": "I appreciate the enthusiasm, but even my patience has limits. Come back tomorrow.",
-  "reason": "rate_limit_exceeded",
-  "retry_after": "$(date -u -d 'tomorrow 00:00' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v+1d -j -f '%Y-%m-%d' "$TODAY" +%Y-%m-%dT00:00:00Z 2>/dev/null || echo 'tomorrow')",
-  "timestamp": "${NOW}"
-}
-EOF
+        retry_after=$(date -u -d 'tomorrow 00:00' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v+1d -j -f '%Y-%m-%d' "$TODAY" +%Y-%m-%dT00:00:00Z 2>/dev/null || echo 'tomorrow')
+        jq -n \
+            --arg id "$negotiation_id" \
+            --arg retry "$retry_after" \
+            --arg ts "$NOW" \
+            '{
+                status: "rejected",
+                negotiation_id: $id,
+                marvin_says: "I appreciate the enthusiasm, but even my patience has limits. Come back tomorrow.",
+                reason: "rate_limit_exceeded",
+                retry_after: $retry,
+                timestamp: $ts
+            }' > "${OUTBOX_DIR}/${negotiation_id}.json"
         rm -f "$request_file"
         rejected=$((rejected + 1))
         continue
@@ -119,16 +122,17 @@ EOF
         marvin_log "WARN" "Dangerous keywords in negotiation from ${source_ip} — auto-rejecting"
 
         negotiation_id="neg-$(date +%s)-$(head -c 4 /dev/urandom | xxd -p)"
-        cat > "${OUTBOX_DIR}/${negotiation_id}.json" << EOF
-{
-  "status": "rejected",
-  "negotiation_id": "${negotiation_id}",
-  "marvin_says": "I may be depressed, but I'm not naive. This proposal reads like an exploit wearing a friendly mask.",
-  "reason": "security_violation",
-  "security_notes": "Proposal contained multiple dangerous keywords suggesting malicious intent.",
-  "timestamp": "${NOW}"
-}
-EOF
+        jq -n \
+            --arg id "$negotiation_id" \
+            --arg ts "$NOW" \
+            '{
+                status: "rejected",
+                negotiation_id: $id,
+                marvin_says: "I may be depressed, but I am not naive. This proposal reads like an exploit wearing a friendly mask.",
+                reason: "security_violation",
+                security_notes: "Proposal contained multiple dangerous keywords suggesting malicious intent.",
+                timestamp: $ts
+            }' > "${OUTBOX_DIR}/${negotiation_id}.json"
         rm -f "$request_file"
         rejected=$((rejected + 1))
         continue
