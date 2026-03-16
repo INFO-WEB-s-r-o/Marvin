@@ -41,6 +41,11 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
 
     // Services
     section_services: "$ systemctl list-units",
+    label_ssl_days: "SSL expiry:",
+    ssl_days_value: "{n} days",
+    label_dns: "DNS:",
+    label_ping: "Ping (8.8.8.8):",
+    label_https_rt: "HTTPS response:",
 
     // Issues
     section_issues: "$ tail /var/log/marvin/issues",
@@ -149,6 +154,11 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
 
     // Services
     section_services: "$ systemctl list-units",
+    label_ssl_days: "Platnost SSL:",
+    ssl_days_value: "{n} dn\u00ed",
+    label_dns: "DNS:",
+    label_ping: "Ping (8.8.8.8):",
+    label_https_rt: "Odezva HTTPS:",
 
     // Issues
     section_issues: "$ tail /var/log/marvin/issues",
