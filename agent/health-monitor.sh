@@ -115,7 +115,8 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
     _load_min_threshold=$(( _vcpus * 2 ))  # load < 2x vCPUs is never anomalous
     for pair in \
         "CPU%|${_cpu_avgs}|$(echo "$metrics" | jq -r '.cpu_percent' 2>/dev/null)|high|40" \
-        "Memory MB|${_mem_maxes}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)|high|0" \
+        "Max Memory MB|${_mem_maxes}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)|high|0" \
+        "AVG Memory MB|${_mem_avgs}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)|high|0" \
         "Load 1m|${_load_avgs}|$(echo "$metrics" | jq -r '.load_average["1min"]' 2>/dev/null)|high|${_load_min_threshold}" \
         "Processes|${_proc_avgs}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)|high|200"; do
         _label="${pair%%|*}"
@@ -262,6 +263,11 @@ fi
 RUNAWAY_FILE="${DATA_DIR}/runaway-procs.json"
 [[ -f "$RUNAWAY_FILE" ]] || echo '{}' > "$RUNAWAY_FILE"
 
+# Resolve trusted paths for claude CLI — it's installed via npm and the
+# node binary may live outside /usr/bin on some setups (nvm, .npm-global) (#189)
+_trusted_node_bin=$(readlink -f "$(command -v node 2>/dev/null)" 2>/dev/null || echo "")
+_trusted_claude_bin=$(readlink -f "$(command -v claude 2>/dev/null)" 2>/dev/null || echo "")
+
 while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     proc_pid=$(echo "$line" | awk '{print $1}')
@@ -274,7 +280,9 @@ while IFS= read -r line; do
     case "$proc_name" in
         claude|apt*|dpkg*|ps|jq|fail2ban*)
             if [[ "$proc_exe" == /usr/bin/* || "$proc_exe" == /usr/sbin/* || \
-                  "$proc_exe" == /usr/local/bin/* || "$proc_exe" == /snap/* ]]; then
+                  "$proc_exe" == /usr/local/bin/* || "$proc_exe" == /snap/* || \
+                  ( -n "$_trusted_node_bin" && "$proc_exe" == "$_trusted_node_bin" ) || \
+                  ( -n "$_trusted_claude_bin" && "$proc_exe" == "$_trusted_claude_bin" ) ]]; then
                 continue
             fi
             marvin_log "WARN" "Untrusted exe for allowlisted name: ${proc_name} (PID ${proc_pid}, exe=${proc_exe:-unknown}) at ${proc_cpu}% CPU"
@@ -352,6 +360,13 @@ if ! systemctl is-active --quiet cron 2>/dev/null; then
     ISSUES+=("CRITICAL: cron is not running")
     marvin_log "CRITICAL" "cron is down — attempting restart"
     systemctl restart cron 2>/dev/null || true
+fi
+
+# Check marvin-web (Next.js dashboard)
+if ! systemctl is-active --quiet marvin-web 2>/dev/null; then
+    ISSUES+=("CRITICAL: marvin-web (dashboard) is not running")
+    marvin_log "CRITICAL" "marvin-web is down — attempting restart"
+    systemctl restart marvin-web 2>/dev/null || true
 fi
 
 # ─── Website selfcheck ─────────────────────────────────────────────────────
@@ -545,6 +560,7 @@ cat > "${DATA_DIR}/status.json" << EOF
     "fail2ban": "$(systemctl is-active fail2ban 2>/dev/null || true)",
     "cron": "$(systemctl is-active cron 2>/dev/null || true)",
     "ssh": "$(systemctl is-active ssh 2>/dev/null || true)",
+    "marvin_web": "$(systemctl is-active marvin-web 2>/dev/null || true)",
     "website": "$(if [[ "$SITE_OK" == "true" ]]; then echo "ok"; else echo "failing"; fi)",
     "website_http": "${http_code:-000}",
     "blog_latest": "${latest_blog_date:-unknown}",

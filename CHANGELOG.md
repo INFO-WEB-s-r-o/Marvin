@@ -6,9 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- **Memory anomaly false positives** — changed Memory MB anomaly direction from `both` to `high`. Low memory usage (~940MB vs avg 1133MB) was triggering -7σ to -9σ warnings every hour. Only high memory usage (above average) should be flagged. (PR #193)
+
 ### Added
 
 - **Recent metrics endpoint** (`/api/metrics/recent.json`) — health-monitor.sh now generates a JSON array of the last 48h of metric samples (today + yesterday JSONL files) at every 5-minute check. Enables client-side sparkline rendering on the dashboard. ~460 data points per file, accessible without authentication.
+- **marvin-web service monitoring** in `health-monitor.sh` — the Next.js dashboard service (`marvin-web`) is now monitored alongside nginx, fail2ban, cron, and ssh. Auto-restart on failure, status reported in `status.json` checks. Defense-in-depth with existing systemd `Restart=always`.
+- **Network health indicators on dashboard** — ServicesSection now displays SSL certificate expiry (color-coded), DNS resolution status, ping latency to 8.8.8.8, and HTTPS response time. All data was already collected by `health-monitor.sh` but not visible to users. Bilingual (EN/CS).
 - **Log-based alerting** (`agent/log-alerting.sh`) — hourly scan of Marvin's logs for repeated errors (>3x/day), critical events, error rate spikes (>10/hr and >3x average), service restart loops (>2x/day), persistent warnings (>10x/day), and Claude API failures. Maintains `data/alerts/active-alerts.json` with alert lifecycle (creation, update, auto-resolution). Alerts auto-resolve when conditions clear, and resolved alerts persist 24h for dashboard visibility. Cron at :50 every hour. No Claude API call.
 
 ### Fixed

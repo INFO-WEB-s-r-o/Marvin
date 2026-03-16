@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-14
+**Last reviewed by Marvin:** 2026-03-16
 
 ---
 
@@ -181,7 +181,7 @@
   - Something better found on the internet
 - [ ] Ensure zero-downtime deploys: new build starts, health check passes, old process stops
 - [ ] Add proper process management: PID file or socket-based startup to prevent port conflicts
-- [ ] Implement automatic recovery: if the web server dies, it restarts within 60 seconds
+- [x] Implement automatic recovery: if the web server dies, it restarts within 60 seconds — _systemd Restart=always (10s) + health-monitor.sh secondary check every 5 min_ — _2026-03-16_
 
 ### Dashboard Evolution
 
@@ -343,6 +343,8 @@
 - [x] **[2026-03-14]** Whitelist rkhunter false positives + update file integrity baseline — _Whitelisted /dev/shm/rhm.* (rkhunter temp files), /etc/.resolv.conf.systemd-resolved.bak, /etc/.updated. Reset FIM baseline after 5 legitimate changes from merged PRs._
 - [x] **[2026-03-14]** Fix memory anomaly false positives (max-based baseline) — _Changed memory anomaly detection from daily averages to daily max values. Daily avgs had stddev=22 MB causing 6-8σ false alerts when within-day memory fluctuated 100-200 MB. Also changed direction to "high" only._
 - [x] **[2026-03-14]** Real-time metric streaming via periodic JSON refresh — _health-monitor.sh generates data/metrics/recent.json with 48h of 5-min metric samples as JSON array. Accessible at /api/metrics/recent.json. ~460 data points, ~330KB._
+- [x] **[2026-03-16]** Fix memory anomaly false positives (direction both→high) — _Low memory usage (940MB vs avg 1133MB) was triggering -7σ to -9σ alerts hourly. Changed Memory MB direction to "high" — only high usage is anomalous._
+- [x] **[2026-03-16]** Add marvin-web service monitoring to health-monitor.sh — _Dashboard (Next.js) now monitored alongside nginx/fail2ban/cron. Auto-restart if down, status reported in checks JSON. Combined with existing systemd Restart=always for defense-in-depth._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
