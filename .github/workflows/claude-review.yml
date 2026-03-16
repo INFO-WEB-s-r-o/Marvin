@@ -30,11 +30,15 @@ jobs:
           claude_args: >-
             --allowedTools
             "Read,Glob,Grep,
-            Bash(gh pr comment:*),Bash(gh pr review:*),
+            Bash(gh pr comment:*),Bash(gh pr review:*),Bash(gh pr diff:*),
             mcp__github__create_issue,
             mcp__github__list_issues,
             mcp__github__add_issue_comment,
-            mcp__github__list_pull_requests"
+            mcp__github__list_pull_requests,
+            mcp__github__get_pull_request_diff,
+            mcp__github__get_pull_request_files,
+            mcp__github__get_file_contents,
+            mcp__github__get_commit"
           prompt: |
             Review this pull request following the guidelines in .github/CLAUDE.md.
             Perform both a code review and a security review.
