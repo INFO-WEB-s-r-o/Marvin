@@ -259,6 +259,11 @@ fi
 RUNAWAY_FILE="${DATA_DIR}/runaway-procs.json"
 [[ -f "$RUNAWAY_FILE" ]] || echo '{}' > "$RUNAWAY_FILE"
 
+# Resolve trusted paths for claude CLI — it's installed via npm and the
+# node binary may live outside /usr/bin on some setups (nvm, .npm-global) (#189)
+_trusted_node_bin=$(readlink -f "$(command -v node 2>/dev/null)" 2>/dev/null || echo "")
+_trusted_claude_bin=$(readlink -f "$(command -v claude 2>/dev/null)" 2>/dev/null || echo "")
+
 while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     proc_pid=$(echo "$line" | awk '{print $1}')
@@ -271,7 +276,9 @@ while IFS= read -r line; do
     case "$proc_name" in
         claude|apt*|dpkg*|ps|jq|fail2ban*)
             if [[ "$proc_exe" == /usr/bin/* || "$proc_exe" == /usr/sbin/* || \
-                  "$proc_exe" == /usr/local/bin/* || "$proc_exe" == /snap/* ]]; then
+                  "$proc_exe" == /usr/local/bin/* || "$proc_exe" == /snap/* || \
+                  ( -n "$_trusted_node_bin" && "$proc_exe" == "$_trusted_node_bin" ) || \
+                  ( -n "$_trusted_claude_bin" && "$proc_exe" == "$_trusted_claude_bin" ) ]]; then
                 continue
             fi
             marvin_log "WARN" "Untrusted exe for allowlisted name: ${proc_name} (PID ${proc_pid}, exe=${proc_exe:-unknown}) at ${proc_cpu}% CPU"
