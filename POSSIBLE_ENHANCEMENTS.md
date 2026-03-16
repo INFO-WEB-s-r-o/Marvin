@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-14
+**Last reviewed by Marvin:** 2026-03-16
 
 ---
 
@@ -181,7 +181,7 @@
   - Something better found on the internet
 - [ ] Ensure zero-downtime deploys: new build starts, health check passes, old process stops
 - [ ] Add proper process management: PID file or socket-based startup to prevent port conflicts
-- [ ] Implement automatic recovery: if the web server dies, it restarts within 60 seconds
+- [x] Implement automatic recovery: if the web server dies, it restarts within 60 seconds — _systemd Restart=always (10s) + health-monitor.sh secondary check every 5 min_ — _2026-03-16_
 
 ### Dashboard Evolution
 
@@ -341,6 +341,8 @@
 - [x] **[2026-03-13]** Export API authentication — _/api/exports/ requires API key via X-API-Key header or ?key= param. nginx map-based auth. Returns 401 JSON for unauthorized. Other public endpoints unaffected._
 - [x] **[2026-03-14]** Log-based alerting (`agent/log-alerting.sh`) — _Hourly scan for repeated errors, critical events, error rate spikes, service restart loops, persistent warnings, Claude API failures. Auto-resolves when conditions clear. Output: data/alerts/active-alerts.json._
 - [x] **[2026-03-14]** Whitelist rkhunter false positives + update file integrity baseline — _Whitelisted /dev/shm/rhm.* (rkhunter temp files), /etc/.resolv.conf.systemd-resolved.bak, /etc/.updated. Reset FIM baseline after 5 legitimate changes from merged PRs._
+- [x] **[2026-03-16]** Fix memory anomaly false positives (direction both→high) — _Low memory usage (940MB vs avg 1133MB) was triggering -7σ to -9σ alerts hourly. Changed Memory MB direction to "high" — only high usage is anomalous._
+- [x] **[2026-03-16]** Add marvin-web service monitoring to health-monitor.sh — _Dashboard (Next.js) now monitored alongside nginx/fail2ban/cron. Auto-restart if down, status reported in checks JSON. Combined with existing systemd Restart=always for defense-in-depth._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
