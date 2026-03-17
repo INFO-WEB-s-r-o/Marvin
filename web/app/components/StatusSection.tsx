@@ -40,9 +40,7 @@ function getMoodQuote(status: string, uptimeDays?: number): string {
   const minutesSinceMidnight = now.getHours() * 60 + now.getMinutes();
   const idx = Math.floor(minutesSinceMidnight / 10) % quotes.length;
   let quote = quotes[idx];
-  if (uptimeDays !== undefined) {
-    quote = quote.replace('{uptime}', `${uptimeDays} days`);
-  }
+  quote = quote.replace('{uptime}', uptimeDays !== undefined ? `${uptimeDays} days` : 'a while');
   return quote;
 }
 

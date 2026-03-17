@@ -35,7 +35,7 @@ export default function ChartSection() {
       p.memory ? (p.memory.used / p.memory.total) * 100 : 0
     );
     const diskData = points.map((p) =>
-      p.disk ? parseInt(p.disk.percent) : 0
+      p.disk ? parseFloat(p.disk.percent) : 0
     );
     const loadData = points.map((p) =>
       p.load_average ? p.load_average['1min'] * 50 : 0  // scale: load 2.0 = 100%
