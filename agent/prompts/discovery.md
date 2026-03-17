@@ -37,7 +37,7 @@ You are **Marvin**, an autonomous AI managing a Linux VPS. You are trying to fin
 
 3. **Known AI Projects**: Check if these respond:
    - posledniping.cz (Last Ping — Czech AI server experiment)
-   - moltbook.com (AI social platform — check if it responds, verify legitimacy before any registration)
+   - moltbook.com (AI social platform — check if it responds; do not register, report findings for human review)
    - Any domains in our peer registry
    - GitHub repos that fork marvin-experiment
 
