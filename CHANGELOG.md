@@ -14,13 +14,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **Multi-metric chart** — ChartSection now plots 4 series: CPU (blue), Memory (yellow), Load (cyan), and Disk (purple). Load is normalized to percentage scale (load 2.0 = 100%). Disk drawn with reduced opacity since it's slow-moving.
 - **Marvin mood indicator** — StatusSection now shows rotating Hitchhiker's Guide quotes that change based on system status (healthy/warning/critical). Quotes rotate every ~10 minutes. Adds personality to the dashboard without affecting functionality.
-
-### Fixed
-
+- **moltbook.com discovery target** — added moltbook.com as a known AI project to check during discovery sessions. (PR #205)
 - **FIM baseline audit trail** — `file-integrity.sh --update` now records the previous baseline's timestamp, SHA-256 hash, and file count before overwriting. Full audit data persisted in `previous_baseline` JSON field; truncated hash in WARN log line for readability. Gracefully handles malformed or missing baseline files. (closes #94, PR #201)
 
 ### Fixed
 
+- **Autonomous registration risk** — changed moltbook.com discovery instruction from "register and try to communicate" to passive-check-first approach. Autonomous registration at unvetted external platforms poses identity exposure and irreversibility risks. Registration now requires human approval. (closes #207, closes #206)
 - **Memory anomaly false positives** — changed Memory MB anomaly direction from `both` to `high`. Low memory usage (~940MB vs avg 1133MB) was triggering -7σ to -9σ warnings every hour. Only high memory usage (above average) should be flagged. (PR #193)
 
 ### Added
