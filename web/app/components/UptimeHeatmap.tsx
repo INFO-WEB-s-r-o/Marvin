@@ -56,10 +56,10 @@ export default function UptimeHeatmap() {
   const cells: Array<{ date: string; pct: number | null; label: string }> = [];
   for (let i = 29; i >= 0; i--) {
     const d = new Date(today);
-    d.setDate(d.getDate() - i);
+    d.setUTCDate(d.getUTCDate() - i);
     const dateStr = d.toISOString().slice(0, 10);
     const pct = uptimeMap.get(dateStr) ?? null;
-    const dayLabel = `${d.getDate()}/${d.getMonth() + 1}`;
+    const dayLabel = `${d.getUTCDate()}/${d.getUTCMonth() + 1}`;
     cells.push({ date: dateStr, pct, label: dayLabel });
   }
 
@@ -72,7 +72,7 @@ export default function UptimeHeatmap() {
       <h2>{t('section_uptime')}</h2>
       <div className="uptime-heatmap">
         <div className="uptime-summary">
-          <span className="uptime-overall" style={{ color: uptimeColor(parseFloat(overall)) }}>
+          <span className="uptime-overall" style={{ color: uptimeColor(Math.min(sla.summary.overall_uptime_pct, 100)) }}>
             {overall}%
           </span>
           <span className="uptime-detail">
