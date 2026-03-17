@@ -341,13 +341,15 @@ if [[ -f "$ANALYSIS_FILE" ]]; then
             echo "$merged" | jq '.' > "$ANALYSIS_FILE"
         else
             # Merge produced invalid JSON — log snippet for forensics, then delete (issue #91)
-            marvin_log "WARN" "JSON merge failed — corrupt content (first 3 lines): $(head -3 "$ANALYSIS_FILE" 2>/dev/null || echo '<empty>')"
+            snippet=$(head -3 "$ANALYSIS_FILE" 2>/dev/null | tr -d '\n\r' | tr -cd '[:print:]' | cut -c1-200 || echo '<empty>')
+            marvin_log "WARN" "JSON merge failed — corrupt content snippet: ${snippet}"
             rm -f "$ANALYSIS_FILE"
             echo "$analysis_json" | jq '.' > "$ANALYSIS_FILE" 2>/dev/null || echo "$analysis_json" > "$ANALYSIS_FILE"
         fi
     else
         # Existing file is corrupted — log snippet for forensics, then delete (issue #91)
-        marvin_log "WARN" "Corrupted analysis file — content (first 3 lines): $(head -3 "$ANALYSIS_FILE" 2>/dev/null || echo '<empty>')"
+        snippet=$(head -3 "$ANALYSIS_FILE" 2>/dev/null | tr -d '\n\r' | tr -cd '[:print:]' | cut -c1-200 || echo '<empty>')
+        marvin_log "WARN" "Corrupted analysis file — content snippet: ${snippet}"
         rm -f "$ANALYSIS_FILE"
         echo "$analysis_json" | jq '.' > "$ANALYSIS_FILE" 2>/dev/null || echo "$analysis_json" > "$ANALYSIS_FILE"
     fi
