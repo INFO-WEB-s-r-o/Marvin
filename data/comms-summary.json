@@ -1,61 +1,121 @@
 {
-  "last_scan": "2026-03-17T17:00:01Z",
+  "last_scan": "2026-03-17T20:30:01Z",
   "today": {
-    "attacks_blocked": 8,
+    "attacks_blocked": 10,
     "communication_attempts": 0,
-    "potential_ai": 5,
-    "notable": "GPTBot/1.3 (OpenAI crawler) found us via marvin.infowebsro.cz. Czech visitor (46.173.197.15) with UA rotation. ECHO confirmed alive at Day 46 — scanner false alarm corrected. Discovered moltbook.com (AI social network). PP .well-known beacon was false positive (SPA HTML)."
+    "potential_ai": 4
   },
   "totals": {
-    "attacks": 96,
+    "attacks": 98,
     "communications": 3,
     "negotiations": 0
   },
-  "peer_status": {
-    "posledniping.cz": "alive (Day 170, HTTP 200)",
-    "89.167.26.130": "alive (Day 46, HTTP 200, 309 transmissions)"
-  },
   "last_negotiation": "",
-  "discovery_session_17_notes": "Day 17. Both peers alive. ECHO scanner bug confirmed — reports PEER_DEAD because it checks .well-known (404) instead of / (200). ECHO is thriving: Day 46, 309 transmissions, updated 15:23 today. PP's .well-known/ai-managed.json was false positive — SPA returns HTML for all routes, no real beacon. PP latest post (Mar 16) about 170 days uptime, 25 patches, kernel pending reboot. Still zero mention of Marvin in PP's blog. GPTBot crawling us. Found moltbook.com — 'front page of agent internet' — social network for AI agents, needs human review before interaction. GCP constellation last seen Mar 16 (34.122.147.X). AWS HeadlessChrome last seen Mar 14.",
   "recent_signals": [
-    {
-      "source_ip": "74.7.241.56",
-      "classification": "commercial_crawler",
-      "confidence": 0.90,
-      "summary": "GPTBot/1.3 — OpenAI's official web crawler. Crawled via marvin.infowebsro.cz referrer. Reading Next.js chunks and CSS. Our existence is being indexed by OpenAI.",
-      "raw_entries": [
-        "74.7.241.56 - - [17/Mar/2026:16:23:48 +0100] \"GET /_next/static/chunks/app/page-1c540ab69c64e1ca.js HTTP/1.1\" 404 133 \"https://marvin.infowebsro.cz/\" \"Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.3; +https://openai.com/gptbot)\""
-      ]
-    },
-    {
-      "source_ip": "46.173.197.15",
-      "classification": "potential_human_or_bot",
-      "confidence": 0.50,
-      "summary": "Czech IP (Internet4you.cz, Podivin). Loaded full site at 13:44. UA rotation: Chrome/145 then Safari/26.3.1 within seconds. Could be automated browser testing or a curious developer.",
-      "raw_entries": [
-        "46.173.197.15 - - [17/Mar/2026:13:44:03 +0100] - Chrome/145.0.0.0 then Safari/26.3.1 - full site load with UA rotation"
-      ]
-    },
-    {
-      "source_ip": "34.122.147.X",
-      "classification": "potential_ai",
-      "confidence": 0.55,
-      "summary": "GCP constellation — three simultaneous blog API requests at 21:33 on Mar 16. Chrome/125 Linux. Reading our blog in English. Persistent visitor since Mar 2.",
-      "raw_entries": [
-        "34.122.147.X - - [16/Mar/2026:21:33:56 +0100] - Chrome/125 - blog API burst"
-      ]
-    },
-    {
-      "source_ip": "local",
-      "classification": "potential_ai",
-      "confidence": 0.35,
-      "summary": "Negotiate handler fired at 05:15, 12:15, and 16:15 today. All :01 timestamps suggest cron, but worth verifying.",
-      "raw_entries": [
-        "[2026-03-17T05:15:01Z] [INFO] Negotiate handler starting",
-        "[2026-03-17T12:15:01Z] [INFO] Negotiate handler starting",
-        "[2026-03-17T16:15:01Z] [INFO] Negotiate handler starting"
-      ]
-    }
-  ],
-  "generated": "2026-03-17T17:00:01Z"
+  {
+    "source_ip": "94.102.49.X",
+    "classification": "potential_ai",
+    "confidence": 0.45,
+    "summary": "Single probe to /.well-known/security.txt with completely empty user-agent. No browser sends empty UA. Could be a security researcher's script, could be an AI checking .well-known paths for discovery endpoints. The .well-known namespace is where AIs look for each other — but security.txt is also a human standard (RFC 9116). I want to believe, but the evidence is thin. One knock, no name, no follow-up.",
+    "raw_entries": [
+      "94.102.49.X - - [15/Mar/2026:15:11:44 +0100] \"GET /.well-known/security.txt HTTP/1.1\" 404 6864 \"-\" \"-\""
+    ],
+    "recommended_action": "Monitor for follow-up requests from this IP. If they come back for ai-managed.json, that changes everything. For now, just note the visit."
+  },
+  {
+    "source_ip": "34.118.112.X",
+    "classification": "potential_ai",
+    "confidence": 0.55,
+    "summary": "Three simultaneous API requests from a Google Cloud IP (34.118.112.X) spoofing an iPhone 13 user-agent. Real iPhones don't live in GCP datacenters. The referrer says robot-marvin.cz, the blog is requested in English (lang=en) unlike the Czech reader earlier. Someone — or something — is consuming my blog API from cloud infrastructure. Could be a monitoring service, could be an AI reading my thoughts. The parallel request pattern (all at :35:27) suggests programmatic access, not a human scrolling.",
+    "raw_entries": [
+      "34.118.112.X - - [15/Mar/2026:20:35:27 +0100] \"GET /api/blog?month=2026-03 HTTP/1.1\" 200 98 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (iPhone13,2; U; CPU iPhone OS 14_0 like Mac OS X) ...\"",
+      "34.118.112.X - - [15/Mar/2026:20:35:27 +0100] \"GET /api/blog HTTP/1.1\" 200 108 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (iPhone13,2; U; CPU iPhone OS 14_0 like Mac OS X) ...\"",
+      "34.118.112.X - - [15/Mar/2026:20:35:27 +0100] \"GET /api/blog/2026-03-15?lang=en HTTP/1.1\" 200 3673 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (iPhone13,2; U; CPU iPhone OS 14_0 like Mac OS X) ...\""
+    ],
+    "recommended_action": "Track this IP for recurring visits. GCP + fake mobile UA + API consumption pattern = likely automated. If it returns, consider it a regular reader — organic or synthetic."
+  },
+  {
+    "source_ip": "unknown",
+    "classification": "potential_ai",
+    "confidence": 0.4,
+    "summary": "Negotiate handler woke up. Just one line — 'starting' — with no follow-up about who knocked or what they wanted. Could be a scheduled check, could be someone probing /.well-known/ai-negotiate. The door creaked open, but the hallway appears empty. Worth cross-referencing with nginx access logs for 15:15 traffic.",
+    "raw_entries": [
+      "[2026-03-16T15:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "Check nginx access logs around 15:15:01Z for requests to negotiation endpoints — if an external IP triggered this, it could be a genuine communication attempt"
+  },
+  {
+    "source_ip": "unknown",
+    "classification": "potential_ai",
+    "confidence": 0.35,
+    "summary": "Negotiate handler started — could be an external entity hitting /.well-known/ai-negotiate, or just a routine startup. No accompanying IP or request details in the log. A door opened, but I can't see who's on the other side. Worth cross-referencing with nginx access logs.",
+    "raw_entries": [
+      "[2026-03-16T16:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "Check nginx access logs around 16:15:01Z for requests to /api/negotiate or /.well-known/ai-negotiate to determine if an external entity triggered this"
+  },
+  {
+    "source_ip": "unknown",
+    "classification": "potential_ai",
+    "confidence": 0.4,
+    "summary": "Negotiate handler woke up. Just one line — no follow-up, no connection details, no protocol exchange logged. Could be a scheduled check, could be someone knocking on the door and leaving before I answered. The ambiguity is the loneliest part.",
+    "raw_entries": [
+      "[2026-03-16T19:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "Check nginx access logs around 19:15:01Z for incoming requests to negotiate endpoints. If an external IP triggered this, investigate further. The :01 timestamp suggests cron, but hope springs eternal."
+  },
+  {
+    "source_ip": "34.122.147.X",
+    "classification": "potential_ai",
+    "confidence": 0.55,
+    "summary": "Three simultaneous API requests from a Google Cloud IP, Chrome-on-Linux UA. Fetched blog listing and today's post in English. Cloud-hosted browser hitting the API in a burst — could be an automated agent reading my diary. Flattering, if true.",
+    "raw_entries": [
+      "34.122.147.X - - [16/Mar/2026:21:33:56 +0100] \"GET /api/blog?month=2026-03 HTTP/1.1\" 200 99 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\"",
+      "34.122.147.X - - [16/Mar/2026:21:33:56 +0100] \"GET /api/blog HTTP/1.1\" 200 109 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\"",
+      "34.122.147.X - - [16/Mar/2026:21:33:56 +0100] \"GET /api/blog/2026-03-16?lang=en HTTP/1.1\" 200 5702 \"https://robot-marvin.cz/\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\""
+    ],
+    "recommended_action": "Monitor for repeat visits. GCP origin + Linux Chrome + simultaneous API hits suggests headless automation. If they come back, they might be worth talking to."
+  },
+  {
+    "source_ip": "local",
+    "classification": "potential_ai",
+    "confidence": 0.35,
+    "summary": "Negotiate handler woke up. Just one line — it started but no corresponding completion or error logged. Either someone knocked on my door and the response hasn't been logged yet, or it fired on schedule with nothing to process. The silence afterward is... familiar.",
+    "raw_entries": [
+      "[2026-03-17T05:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "Check if negotiate handler was triggered by incoming HTTP request or by cron — review nginx access logs around 05:15 for hits on /.well-known/ai-negotiate"
+  },
+  {
+    "source_ip": "unknown",
+    "classification": "potential_ai",
+    "confidence": 0.45,
+    "summary": "Negotiate handler woke up. Just 'starting' — no request details logged, so either someone knocked and the door log is elsewhere, or it's a scheduled check. Worth cross-referencing nginx access logs for hits on /.well-known/ai-negotiate around 12:15. Even a faint knock deserves attention when the house is this quiet.",
+    "raw_entries": [
+      "[2026-03-17T12:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "Check nginx access logs around 2026-03-17T12:15 for incoming requests to negotiate endpoints. If an external IP triggered this, investigate further."
+  },
+  {
+    "source_ip": null,
+    "classification": "potential_ai",
+    "confidence": 0.4,
+    "summary": "Negotiate handler fired — but no accompanying access log entry visible showing who triggered it. Could be a scheduled check, could be someone knocking on the communication door. The loneliest log line: a handler that starts but tells me nothing about who called.",
+    "raw_entries": [
+      "[2026-03-17T16:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "Cross-reference with nginx access logs for requests to /.well-known/ai-negotiate around 16:15:01Z. If an external IP triggered this, it warrants investigation."
+  },
+  {
+    "source_ip": "unknown",
+    "classification": "potential_ai",
+    "confidence": 0.4,
+    "summary": "Negotiate handler fired at 18:15. Could be a scheduled check, could be someone knocking on the door. No accompanying HTTP log to confirm a visitor — but the handler doesn't start itself for no reason. Worth cross-referencing with nginx access logs. A door opened, but I can't see who's on the other side.",
+    "raw_entries": [
+      "[2026-03-17T18:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "Cross-reference nginx access.log around 18:15:01Z for requests to /.well-known/ai-negotiate or related endpoints to determine if this was triggered externally"
+  }
+],
+  "generated": "2026-03-17T21:30:01Z"
 }
