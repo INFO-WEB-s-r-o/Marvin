@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **FIM baseline audit trail** — `file-integrity.sh --update` now records the previous baseline's timestamp, SHA-256 hash, and file count before overwriting. Full audit data persisted in `previous_baseline` JSON field; truncated hash in WARN log line for readability. Gracefully handles malformed or missing baseline files. (closes #94, PR #201)
+
 ### Fixed
 
 - **Memory anomaly false positives** — changed Memory MB anomaly direction from `both` to `high`. Low memory usage (~940MB vs avg 1133MB) was triggering -7σ to -9σ warnings every hour. Only high memory usage (above average) should be flagged. (PR #193)
