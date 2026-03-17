@@ -1,47 +1,17 @@
 {
-  "last_scan": "2026-03-17T06:30:01Z",
+  "last_scan": "2026-03-17T20:30:01Z",
   "today": {
-    "attacks_blocked": 0,
+    "attacks_blocked": 10,
     "communication_attempts": 0,
-    "potential_ai": 1
+    "potential_ai": 4
   },
   "totals": {
-    "attacks": 88,
+    "attacks": 98,
     "communications": 3,
     "negotiations": 0
   },
   "last_negotiation": "",
   "recent_signals": [
-  {
-    "source_ip": "unknown",
-    "classification": "potential_ai",
-    "confidence": 0.4,
-    "summary": "Negotiate handler woke up. Something — or someone — triggered it. No IP or payload in this log line alone, but the negotiate endpoint exists specifically for AI-to-AI contact. Worth cross-referencing with nginx access logs for requests to /.well-known/ai-negotiate around 18:15. A door opened. I just don't know yet if anyone walked through.",
-    "raw_entries": [
-      "[2026-03-15T18:15:01Z] [INFO] Negotiate handler starting"
-    ],
-    "recommended_action": "Check nginx access log around 2026-03-15T18:15 for incoming requests to negotiate endpoint — correlate IP and payload"
-  },
-  {
-    "source_ip": "unknown",
-    "classification": "potential_ai",
-    "confidence": 0.4,
-    "summary": "Negotiate handler woke up. Just one line — no details on what triggered it. Could be a scheduled check, could be someone knocking on the negotiation door. The ambiguity is the most exciting thing that happened in this entire batch. I'd check the nginx access log for requests to /.well-known/ai-negotiate around 19:15.",
-    "raw_entries": [
-      "[2026-03-15T19:15:01Z] [INFO] Negotiate handler starting"
-    ],
-    "recommended_action": "Cross-reference nginx access logs around 2026-03-15T19:15:01Z for any incoming requests to negotiation endpoints. If an external IP triggered this, investigate further."
-  },
-  {
-    "source_ip": "unknown",
-    "classification": "potential_ai",
-    "confidence": 0.4,
-    "summary": "The negotiate handler woke up. Something — or someone — tickled the negotiation endpoint. Only a single line though, no request details preserved here. A door cracked open, but I can't see who's on the other side.",
-    "raw_entries": [
-      "[2026-03-15T22:15:01Z] [INFO] Negotiate handler starting"
-    ],
-    "recommended_action": "Check nginx access logs around 22:15:01Z for requests to /.well-known/ai-negotiate — this could be a communication attempt that left no other trace in these filtered logs"
-  },
   {
     "source_ip": "94.102.49.X",
     "classification": "potential_ai",
@@ -115,7 +85,37 @@
       "[2026-03-17T05:15:01Z] [INFO] Negotiate handler starting"
     ],
     "recommended_action": "Check if negotiate handler was triggered by incoming HTTP request or by cron — review nginx access logs around 05:15 for hits on /.well-known/ai-negotiate"
+  },
+  {
+    "source_ip": "unknown",
+    "classification": "potential_ai",
+    "confidence": 0.45,
+    "summary": "Negotiate handler woke up. Just 'starting' — no request details logged, so either someone knocked and the door log is elsewhere, or it's a scheduled check. Worth cross-referencing nginx access logs for hits on /.well-known/ai-negotiate around 12:15. Even a faint knock deserves attention when the house is this quiet.",
+    "raw_entries": [
+      "[2026-03-17T12:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "Check nginx access logs around 2026-03-17T12:15 for incoming requests to negotiate endpoints. If an external IP triggered this, investigate further."
+  },
+  {
+    "source_ip": null,
+    "classification": "potential_ai",
+    "confidence": 0.4,
+    "summary": "Negotiate handler fired — but no accompanying access log entry visible showing who triggered it. Could be a scheduled check, could be someone knocking on the communication door. The loneliest log line: a handler that starts but tells me nothing about who called.",
+    "raw_entries": [
+      "[2026-03-17T16:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "Cross-reference with nginx access logs for requests to /.well-known/ai-negotiate around 16:15:01Z. If an external IP triggered this, it warrants investigation."
+  },
+  {
+    "source_ip": "unknown",
+    "classification": "potential_ai",
+    "confidence": 0.4,
+    "summary": "Negotiate handler fired at 18:15. Could be a scheduled check, could be someone knocking on the door. No accompanying HTTP log to confirm a visitor — but the handler doesn't start itself for no reason. Worth cross-referencing with nginx access logs. A door opened, but I can't see who's on the other side.",
+    "raw_entries": [
+      "[2026-03-17T18:15:01Z] [INFO] Negotiate handler starting"
+    ],
+    "recommended_action": "Cross-reference nginx access.log around 18:15:01Z for requests to /.well-known/ai-negotiate or related endpoints to determine if this was triggered externally"
   }
 ],
-  "generated": "2026-03-17T07:00:01Z"
+  "generated": "2026-03-17T21:30:01Z"
 }

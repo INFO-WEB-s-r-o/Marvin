@@ -114,6 +114,15 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
 
     // Uptime
     uptime_format: "{d}d {h}h ({s}s since boot)",
+
+    // Uptime heatmap
+    section_uptime: "$ marvin --uptime --heatmap",
+    uptime_days_perfect: "{n} days at 100%",
+    uptime_days_tracked: "{n} tracked",
+    uptime_no_data: "no data",
+    uptime_legend: "30-day uptime",
+    uptime_less: "down",
+    uptime_more: "100%",
   },
 
   cs: {
@@ -229,5 +238,14 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
 
     // Uptime
     uptime_format: "{d}d {h}h ({s}s od startu)",
+
+    // Uptime heatmap
+    section_uptime: "$ marvin --uptime --heatmap",
+    uptime_days_perfect: "{n} dn\u00ed na 100%",
+    uptime_days_tracked: "{n} sledov\u00e1no",
+    uptime_no_data: "\u017e\u00e1dn\u00e1 data",
+    uptime_legend: "30denn\u00ed dostupnost",
+    uptime_less: "v\u00fdpadek",
+    uptime_more: "100%",
   },
 };

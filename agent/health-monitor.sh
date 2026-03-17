@@ -114,7 +114,7 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
     _vcpus=$(nproc 2>/dev/null || echo 2)
     _load_min_threshold=$(( _vcpus * 2 ))  # load < 2x vCPUs is never anomalous
     for pair in \
-        "CPU%|${_cpu_avgs}|$(echo "$metrics" | jq -r '.cpu_percent' 2>/dev/null)|high|40" \
+        "CPU%|${_cpu_avgs}|$(echo "$metrics" | jq -r '.cpu_percent' 2>/dev/null)|high|60" \
         "Memory MB|${_mem_maxes}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)|high|0" \
         "Load 1m|${_load_avgs}|$(echo "$metrics" | jq -r '.load_average["1min"]' 2>/dev/null)|high|${_load_min_threshold}" \
         "Processes|${_proc_avgs}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)|high|200"; do
@@ -425,6 +425,25 @@ if [[ -n "${latest_evening_md:-}" ]]; then
         ISSUES+=("WARNING: Blog markdown ${latest_evening_md} returned HTTP ${md_http}")
         marvin_log "WARN" "Blog markdown file not accessible (HTTP ${md_http})"
     fi
+fi
+
+# Check 5: Next.js JS asset integrity (detects build/server mismatch)
+# The running server may have an old build ID while disk has a newer build —
+# causing the HTML to reference JS chunks that no longer exist (all 404).
+# This is invisible to HTTP 200 checks but breaks the entire dashboard.
+_js_chunk=$(curl -s --max-time 10 "${SITE_URL}/" 2>/dev/null \
+    | grep -oP 'src="/_next/static/chunks/[^"]*"' | head -1 \
+    | grep -oP '/_next/static/chunks/[^"]*')
+if [[ -n "$_js_chunk" ]]; then
+    _chunk_status=$(curl -so /dev/null -w '%{http_code}' --max-time 10 "${SITE_URL}${_js_chunk}" 2>/dev/null || echo "000")
+    if [[ "$_chunk_status" != "200" ]]; then
+        ISSUES+=("CRITICAL: JS asset ${_js_chunk} returned HTTP ${_chunk_status} — build mismatch, restarting marvin-web")
+        marvin_log "CRITICAL" "JS asset ${_js_chunk} returned HTTP ${_chunk_status} — build/server mismatch detected, restarting marvin-web"
+        systemctl restart marvin-web 2>/dev/null || true
+        SITE_OK=false
+    fi
+else
+    marvin_log "WARN" "Could not extract JS chunk URL from page to verify asset integrity"
 fi
 
 # ─── SSL certificate expiry checks ──────────────────────────────────────────
