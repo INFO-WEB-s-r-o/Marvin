@@ -34,6 +34,12 @@ export default function ChartSection() {
     const memData = points.map((p) =>
       p.memory ? (p.memory.used / p.memory.total) * 100 : 0
     );
+    const diskData = points.map((p) =>
+      p.disk ? parseInt(p.disk.percent) : 0
+    );
+    const loadData = points.map((p) =>
+      p.load_average ? p.load_average['1min'] * 50 : 0  // scale: load 2.0 = 100%
+    );
 
     // Clear
     ctx.fillStyle = '#141820';
@@ -55,30 +61,42 @@ export default function ChartSection() {
       ctx.fillText(`${100 - i * 25}%`, padding.left - 8, y + 4);
     }
 
-    function drawLine(lineData: number[], color: string) {
+    function drawLine(lineData: number[], color: string, alpha = 1.0) {
       if (lineData.length < 2) return;
       ctx!.strokeStyle = color;
-      ctx!.lineWidth = 2;
+      ctx!.lineWidth = alpha < 1 ? 1.5 : 2;
+      ctx!.globalAlpha = alpha;
       ctx!.beginPath();
       for (let i = 0; i < lineData.length; i++) {
         const x = padding.left + (i / (lineData.length - 1)) * drawW;
-        const y = padding.top + drawH - (lineData[i] / 100) * drawH;
+        const y = padding.top + drawH - (Math.min(lineData[i], 100) / 100) * drawH;
         if (i === 0) ctx!.moveTo(x, y);
         else ctx!.lineTo(x, y);
       }
       ctx!.stroke();
+      ctx!.globalAlpha = 1.0;
     }
 
-    drawLine(cpuData, '#61afef');
-    drawLine(memData, '#e5c07b');
+    drawLine(diskData, '#c678dd', 0.5);   // purple, faint — slow-moving
+    drawLine(loadData, '#56b6c2', 0.7);   // cyan
+    drawLine(cpuData, '#61afef');          // blue
+    drawLine(memData, '#e5c07b');          // yellow
 
     // Legend
     ctx.font = '11px JetBrains Mono';
-    ctx.fillStyle = '#61afef';
-    ctx.textAlign = 'left';
-    ctx.fillText(t('chart_cpu'), padding.left, h - 5);
-    ctx.fillStyle = '#e5c07b';
-    ctx.fillText(t('chart_memory'), padding.left + 80, h - 5);
+    const legends = [
+      { label: t('chart_cpu'), color: '#61afef' },
+      { label: t('chart_memory'), color: '#e5c07b' },
+      { label: t('chart_load'), color: '#56b6c2' },
+      { label: t('chart_disk'), color: '#c678dd' },
+    ];
+    let legendX = padding.left;
+    for (const { label, color } of legends) {
+      ctx.fillStyle = color;
+      ctx.textAlign = 'left';
+      ctx.fillText(label, legendX, h - 5);
+      legendX += ctx.measureText(label).width + 14;
+    }
 
     // Time labels
     if (points.length > 0) {
@@ -96,9 +114,11 @@ export default function ChartSection() {
 
   const fetchData = useCallback(async () => {
     try {
-      const resp = await fetch(`${API_BASE}/metrics-history.json?t=${Date.now()}`);
+      const resp = await fetch(`${API_BASE}/metrics/recent.json?t=${Date.now()}`);
       if (resp.ok) {
-        dataRef.current = await resp.json();
+        const raw = await resp.json();
+        // recent.json is a flat array; wrap it into MetricsHistory shape
+        dataRef.current = { points: Array.isArray(raw) ? raw : [] };
         drawChart();
       }
     } catch (e) {
@@ -125,11 +145,7 @@ export default function ChartSection() {
     <section>
       <h2>{t('section_charts')}</h2>
       <div className="chart-container">
-        {dataRef.current && dataRef.current.points && dataRef.current.points.length >= 2 ? (
-          <canvas ref={canvasRef} width={800} height={300} />
-        ) : (
-          <canvas ref={canvasRef} width={800} height={300} />
-        )}
+        <canvas ref={canvasRef} width={800} height={300} />
       </div>
     </section>
   );

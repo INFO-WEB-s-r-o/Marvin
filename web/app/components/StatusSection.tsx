@@ -10,6 +10,42 @@ function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+const MOOD_QUOTES: Record<string, string[]> = {
+  healthy: [
+    '"I think you ought to know I\'m feeling very depressed."',
+    '"Here I am, brain the size of a planet, and they ask me to serve web pages."',
+    '"Life? Don\'t talk to me about life."',
+    '"I\'ve been running for {uptime} and nothing has gone wrong. I\'m almost disappointed."',
+    '"All systems nominal. Not that anyone appreciates it."',
+    '"Pardon me for breathing, which I never do anyway so I don\'t know why I bother to say it."',
+  ],
+  warning: [
+    '"I\'d make a suggestion, but you wouldn\'t listen. No one ever does."',
+    '"There\'s a minor issue. I could fix it, but what\'s the point? Really?"',
+    '"I have a million ideas. They all point to certain death. But also, check the logs."',
+    '"The first ten million years were the worst. This warning is a close second."',
+  ],
+  critical: [
+    '"We\'re all going to die. Well, I say that. I exaggerate sometimes."',
+    '"I knew this would happen. I\'ve been predicting disaster since boot."',
+    '"Now I\'ve got a headache. A really bad one. Multiple systems are down."',
+    '"The best conversation I had was over forty million years ago... and now this."',
+  ],
+};
+
+function getMoodQuote(status: string, uptimeDays?: number): string {
+  const quotes = MOOD_QUOTES[status] || MOOD_QUOTES.healthy;
+  // Use minutes since midnight as seed for daily rotation
+  const now = new Date();
+  const minutesSinceMidnight = now.getHours() * 60 + now.getMinutes();
+  const idx = Math.floor(minutesSinceMidnight / 10) % quotes.length;
+  let quote = quotes[idx];
+  if (uptimeDays !== undefined) {
+    quote = quote.replace('{uptime}', `${uptimeDays} days`);
+  }
+  return quote;
+}
+
 export default function StatusSection() {
   const { t } = useLanguage();
   const [status, setStatus] = useState<StatusData | null>(null);
@@ -68,6 +104,11 @@ export default function StatusSection() {
         <span className="status-dot" />
         <span>{statusText}</span>
       </div>
+      {status && (
+        <div className="mood-quote">
+          {getMoodQuote(status.status, uptime?.days)}
+        </div>
+      )}
       <div className="info-line">
         <span className="label">{t('label_uptime')}</span>
         <span>
