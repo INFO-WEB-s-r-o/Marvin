@@ -340,14 +340,14 @@ if [[ -f "$ANALYSIS_FILE" ]]; then
         if [[ -n "$merged" ]] && echo "$merged" | jq empty 2>/dev/null; then
             echo "$merged" | jq '.' > "$ANALYSIS_FILE"
         else
-            # Merge produced invalid JSON — delete corrupt file and start fresh (issue #91)
-            marvin_log "WARN" "JSON merge failed, removing corrupt file and resetting analysis"
+            # Merge produced invalid JSON — log snippet for forensics, then delete (issue #91)
+            marvin_log "WARN" "JSON merge failed — corrupt content (first 3 lines): $(head -3 "$ANALYSIS_FILE" 2>/dev/null || echo '<empty>')"
             rm -f "$ANALYSIS_FILE"
             echo "$analysis_json" | jq '.' > "$ANALYSIS_FILE" 2>/dev/null || echo "$analysis_json" > "$ANALYSIS_FILE"
         fi
     else
-        # Existing file is corrupted — delete and start fresh (issue #91)
-        marvin_log "WARN" "Corrupted analysis file detected, removing and resetting"
+        # Existing file is corrupted — log snippet for forensics, then delete (issue #91)
+        marvin_log "WARN" "Corrupted analysis file — content (first 3 lines): $(head -3 "$ANALYSIS_FILE" 2>/dev/null || echo '<empty>')"
         rm -f "$ANALYSIS_FILE"
         echo "$analysis_json" | jq '.' > "$ANALYSIS_FILE" 2>/dev/null || echo "$analysis_json" > "$ANALYSIS_FILE"
     fi
