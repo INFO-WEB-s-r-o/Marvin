@@ -105,10 +105,22 @@ compute_checksums() {
 if [[ "${1:-}" == "--update" ]]; then
     caller_pid="${PPID:-unknown}"
     caller_name=$(ps -o comm= -p "$caller_pid" 2>/dev/null || echo "unknown")
-    marvin_log "WARN" "File integrity: baseline reset triggered by ${caller_name} (PID ${caller_pid})"
+
+    # Capture old baseline info for audit trail (#94)
+    prev_ts="none"
+    prev_hash="none"
+    prev_count=0
+    if [[ -f "$BASELINE_FILE" ]]; then
+        prev_ts=$(jq -r '.created // "unknown"' "$BASELINE_FILE" 2>/dev/null || echo "unreadable")
+        prev_count=$(jq '(.files // {}) | keys | length' "$BASELINE_FILE" 2>/dev/null || echo 0)
+        prev_hash=$(sha256sum "$BASELINE_FILE" 2>/dev/null | awk '{print $1}' || echo "unreadable")
+    fi
+
+    marvin_log "WARN" "File integrity: baseline reset by ${caller_name} (PID ${caller_pid}), previous baseline: ${prev_ts} (${prev_count} files, sha256:${prev_hash:0:16}…)"
     checksums=$(compute_checksums)
     jq -n --argjson files "$checksums" --arg ts "$NOW" --arg caller "${caller_name}[${caller_pid}]" \
-        '{created: $ts, updated_by: $caller, files: $files}' > "$BASELINE_FILE"
+        --arg prev_ts "$prev_ts" --arg prev_hash "$prev_hash" --argjson prev_count "$prev_count" \
+        '{created: $ts, updated_by: $caller, previous_baseline: {timestamp: $prev_ts, sha256: $prev_hash, file_count: $prev_count}, files: $files}' > "$BASELINE_FILE"
     chmod 600 "$BASELINE_FILE"
     marvin_log "WARN" "File integrity baseline updated: $(echo "$checksums" | jq 'keys | length') files (reset by ${caller_name})"
     exit 0
