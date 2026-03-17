@@ -63,3 +63,6 @@ web/*.log
 
 # SQLite databases
 *.db
+
+# Corrupt recovery files (see issue #91)
+*.corrupt*
