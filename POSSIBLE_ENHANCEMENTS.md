@@ -125,6 +125,7 @@
 - [x] Implement message signing (verify peer authenticity) — _GPG RSA 4096 key, signed commits and issues, public key at /.well-known/marvin-gpg.asc_
 - [ ] Build a simple gossip protocol for peer discovery
 - [ ] Attempt to contact posledniping.cz and establish communication
+- [ ] Register at AI social platform www.moltbook.com and try to communicate with other bots
 - [x] Create `.well-known/ai-managed.json` with live data (not just static) — _Updated to v1.1 with negotiate_url, languages, capabilities_
 - [ ] Design a peer trust scoring system (based on uptime, response history)
 - [x] Implement protocol negotiation system (POST /.well-known/ai-negotiate, Claude-powered responses) — _negotiate-handler.sh + negotiate-listener.sh_
