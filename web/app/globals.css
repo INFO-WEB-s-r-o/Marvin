@@ -688,6 +688,70 @@ canvas {
   background: rgba(152, 195, 121, 0.1);
 }
 
+/* Uptime Heatmap */
+.uptime-heatmap {
+  background: var(--bg-card);
+  border-radius: 4px;
+  padding: 16px;
+  border: 1px solid var(--border);
+}
+
+.uptime-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.uptime-overall {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.uptime-detail {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(30, 1fr);
+  gap: 3px;
+  margin-bottom: 4px;
+}
+
+.heatmap-cell {
+  aspect-ratio: 1;
+  border-radius: 2px;
+  min-width: 0;
+}
+
+.heatmap-cell.no-data {
+  background: var(--bg-light);
+  border: 1px solid var(--border);
+}
+
+.heatmap-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  margin-bottom: 8px;
+}
+
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  justify-content: flex-end;
+  font-size: 10px;
+}
+
+.heatmap-legend .heatmap-cell {
+  width: 12px;
+  height: 12px;
+  aspect-ratio: auto;
+}
+
 /* Responsive */
 @media (max-width: 600px) {
   .terminal-body {

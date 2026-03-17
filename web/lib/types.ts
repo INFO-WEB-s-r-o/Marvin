@@ -57,6 +57,20 @@ export interface IncomingData {
   }>;
 }
 
+export interface SlaData {
+  days: Array<{ date: string; samples: number; expected: number; uptime_pct: number }>;
+  summary: {
+    days_tracked: number;
+    total_samples: number;
+    total_expected: number;
+    overall_uptime_pct: number;
+    worst_day: { date: string; uptime_pct: number };
+    best_day: { date: string; uptime_pct: number };
+    days_at_100pct: number;
+  };
+  generated_at: string;
+}
+
 export interface EnhancementsData {
   completed: number;
   total: number;
