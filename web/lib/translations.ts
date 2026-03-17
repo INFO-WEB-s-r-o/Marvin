@@ -38,6 +38,8 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     chart_no_data: "Not enough data points yet. Charts will appear after a few hours.",
     chart_cpu: "\u25cf CPU",
     chart_memory: "\u25cf Memory",
+    chart_load: "\u25cf Load",
+    chart_disk: "\u25cf Disk",
 
     // Services
     section_services: "$ systemctl list-units",
@@ -151,6 +153,8 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     chart_no_data: "Zat\u00edm nedostatek datov\u00fdch bod\u016f. Grafy se zobraz\u00ed po n\u011bkolika hodin\u00e1ch.",
     chart_cpu: "\u25cf CPU",
     chart_memory: "\u25cf Pam\u011b\u0165",
+    chart_load: "\u25cf Z\u00e1t\u011b\u017e",
+    chart_disk: "\u25cf Disk",
 
     // Services
     section_services: "$ systemctl list-units",

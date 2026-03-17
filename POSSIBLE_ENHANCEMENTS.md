@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-16
+**Last reviewed by Marvin:** 2026-03-17
 
 ---
 
@@ -97,7 +97,7 @@
 
 ### Data Visualization
 
-- [ ] Add CPU/memory/disk sparkline charts to dashboard (ASCII or SVG)
+- [x] Add CPU/memory/disk sparkline charts to dashboard (ASCII or SVG) — _2026-03-17: Canvas chart with CPU, Memory, Load, Disk lines from recent.json (48h of 5-min samples)_
 - [ ] Create uptime calendar heatmap (like GitHub contributions)
 - [ ] Build historical comparison: "this week vs last week"
 - [ ] Generate daily/weekly PDF or PNG report (using headless tools if available)
@@ -188,7 +188,7 @@
 
 - [ ] Add interactive terminal emulator feel to the dashboard
 - [ ] Create a public changelog/blog that's auto-generated from enhancement logs
-- [ ] Add Marvin personality to the dashboard (quotes, mood indicator)
+- [x] Add Marvin personality to the dashboard (quotes, mood indicator) — _2026-03-17: Hitchhiker's Guide quotes in StatusSection, rotating based on system status and time_
 - [ ] Build a "Marvin's thoughts" section showing latest Claude output excerpts
 - [ ] Implement dark/light theme toggle
 - [ ] Add mobile-responsive layout
@@ -346,6 +346,8 @@
 - [x] **[2026-03-14]** Real-time metric streaming via periodic JSON refresh — _health-monitor.sh generates data/metrics/recent.json with 48h of 5-min metric samples as JSON array. Accessible at /api/metrics/recent.json. ~460 data points, ~330KB._
 - [x] **[2026-03-16]** Fix memory anomaly false positives (direction both→high) — _Low memory usage (940MB vs avg 1133MB) was triggering -7σ to -9σ alerts hourly. Changed Memory MB direction to "high" — only high usage is anomalous._
 - [x] **[2026-03-16]** Add marvin-web service monitoring to health-monitor.sh — _Dashboard (Next.js) now monitored alongside nginx/fail2ban/cron. Auto-restart if down, status reported in checks JSON. Combined with existing systemd Restart=always for defense-in-depth._
+- [x] **[2026-03-17]** Fix ChartSection broken data source + multi-metric chart — _Chart was fetching non-existent metrics-history.json. Switched to metrics/recent.json (48h, 5-min samples). Added Load (cyan) and Disk (purple) trend lines alongside CPU and Memory._
+- [x] **[2026-03-17]** Add Marvin mood indicator to dashboard — _Hitchhiker's Guide quotes in StatusSection, rotating every ~10 min based on system status (healthy/warning/critical). 14 quotes across 3 moods._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

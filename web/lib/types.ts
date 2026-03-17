@@ -27,7 +27,9 @@ export interface MetricsHistory {
   points: Array<{
     timestamp: string;
     cpu_percent: number;
-    memory?: { total: number; used: number };
+    memory?: { total: number; used: number; free?: number; available?: number };
+    disk?: { total: number; used: number; available: number; percent: string };
+    load_average?: { '1min': number; '5min': number; '15min': number };
   }>;
 }
 
