@@ -90,13 +90,43 @@ fi
 marvin_log "INFO" "Fetching open GitHub issues..."
 issues_json=$(github_list_issues "" 50 2>/dev/null || echo "[]")
 
+# ─── Per-issue deduplication: skip issues that already have open PRs ─────────
+# Extract issue numbers referenced in open PR titles (e.g. "fix: #50 ...")
+# This prevents the script from creating duplicate PRs for the same issue
+# every 2 hours when a PR can't be auto-merged (e.g. branch protection rules).
+pr_issue_numbers=""
+if [[ "$open_pr_count" -gt 0 ]]; then
+    # Try extracting from PR titles first
+    pr_issue_numbers=$(echo "$open_prs" | jq -r '.[].title' 2>/dev/null \
+        | grep -oP '#\K\d+' | sort -u | paste -sd',' - || echo "")
+    
+    # If no issue numbers found in titles, try PR bodies for "Fixes #NNN" patterns
+    if [[ -z "$pr_issue_numbers" ]]; then
+        pr_issue_numbers=$(echo "$open_prs" | jq -r '.[].body // ""' 2>/dev/null \
+            | grep -oiP '(?:fix(?:es)?|closes?|resolves?)\s*#\K\d+' | sort -u | paste -sd',' - || echo "")
+    fi
+    
+    # Log warning if open PRs exist but no issue numbers were extracted
+    if [[ -z "$pr_issue_numbers" ]]; then
+        marvin_log "WARN" "Found ${open_pr_count} open PRs but could not extract issue numbers from titles or bodies — deduplication may not work correctly"
+    fi
+fi
+
+if [[ -n "$pr_issue_numbers" ]]; then
+    marvin_log "INFO" "Issues with existing open PRs (skipping): #${pr_issue_numbers}"
+    issues_json=$(echo "$issues_json" | jq --arg nums "$pr_issue_numbers" '
+        ($nums | split(",") | map(tonumber)) as $skip |
+        [.[] | select(.pull_request == null) | select(.number as $n | $skip | index($n) | not)]
+    ' 2>/dev/null || echo "$issues_json")
+fi
+
 issue_count=$(echo "$issues_json" | jq '[.[] | select(.pull_request == null)] | length' 2>/dev/null || echo "0")
 if [[ "$issue_count" -eq 0 ]]; then
-    marvin_log "INFO" "No open issues — nothing to fix"
+    marvin_log "INFO" "No open issues without existing PRs — nothing to fix"
     exit 0
 fi
 
-marvin_log "INFO" "Found ${issue_count} open issues"
+marvin_log "INFO" "Found ${issue_count} open issues (after filtering out issues with open PRs)"
 
 # Build a compact issue list for Claude (oldest 15, titles + truncated bodies)
 # Cap at 15 issues to keep prompt under ~25K chars
@@ -116,7 +146,14 @@ fi
 
 FIX_PROMPT=$(cat "${PROMPTS_DIR}/fix-issues.md")
 
+# Include open PR info so Claude also knows to avoid issues with pending PRs
+OPEN_PRS_CONTEXT=$(echo "$open_prs" | jq -r '.[] | "- PR #\(.number): \(.title)"' 2>/dev/null || echo "None")
+
 FULL_PROMPT="${FIX_PROMPT}
+
+## Already Open PRs (do NOT attempt to fix these issues — a PR is already pending)
+
+${OPEN_PRS_CONTEXT}
 
 ## Open GitHub Issues
 
