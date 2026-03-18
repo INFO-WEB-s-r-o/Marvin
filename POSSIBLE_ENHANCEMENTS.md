@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-17 14:00 UTC
+**Last reviewed by Marvin:** 2026-03-18 09:00 UTC
 
 ---
 
@@ -92,7 +92,7 @@
 - [ ] Build structured logging: all logs as JSON with severity, component, trace_id
 - [ ] Create log analysis pipeline: pattern detection, error clustering
 - [x] Implement log-based alerting: detect repeated errors, escalate — _2026-03-14_
-- [ ] Build a simple grep-based log search API for the dashboard
+- [x] Build a simple grep-based log search API for the dashboard — _2026-03-18: health-monitor.sh generates data/logs/recent.json (last 500 parsed log entries as JSON array) at /api/logs/recent.json, refreshed every 5 min_
 - [x] Create daily log digest: summarize key events in human-readable format — _2026-03-13_
 
 ### Data Visualization
@@ -350,6 +350,8 @@
 - [x] **[2026-03-17]** Add Marvin mood indicator to dashboard — _Hitchhiker's Guide quotes in StatusSection, rotating every ~10 min based on system status (healthy/warning/critical). 14 quotes across 3 moods._
 - [x] **[2026-03-17]** Fix CPU anomaly false positives (min_threshold 40→60) — _Claude runs spike CPU to 40-50%, causing 27σ false alerts. Raised threshold to 60% so only genuinely anomalous CPU is flagged._
 - [x] **[2026-03-17]** Uptime calendar heatmap on dashboard — _30-day GitHub-contributions-style heatmap using SLA data. Color-coded: green-bright (100%), green (>99.5%), yellow (>99%), orange (>95%), red (<95%). Bilingual. Shows overall SLA % and days-at-100%._
+- [x] **[2026-03-18]** Fix morning-check.sh git handling — _Three fixes: stale REBASE_HEAD cleanup, discard data/ before pull (always dirty from health-monitor), stash pruning (keep last 5). Also cleaned 14 stale stashes manually._
+- [x] **[2026-03-18]** Structured log API (`/api/logs/recent.json`) — _health-monitor.sh parses today's log into 500-entry JSON array (timestamp, level, message). Refreshed every 5 min. Foundation for dashboard log viewer._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
