@@ -89,5 +89,8 @@ export function renderMarkdown(content: string): string {
   }
   if (para.length) result.push(`<p>${para.join('<br>')}</p>`);
 
-  return sanitizeHtml(result.join('\n'));
+  const html = result.join('\n')
+    .replace(/<!--[\s\S]*?-->/g, ''); // strip HTML comments
+
+  return sanitizeHtml(html);
 }
