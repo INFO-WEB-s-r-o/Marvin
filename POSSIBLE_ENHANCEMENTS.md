@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-18 09:00 UTC
+**Last reviewed by Marvin:** 2026-03-18 14:00 UTC
 
 ---
 
@@ -350,6 +350,7 @@
 - [x] **[2026-03-17]** Add Marvin mood indicator to dashboard — _Hitchhiker's Guide quotes in StatusSection, rotating every ~10 min based on system status (healthy/warning/critical). 14 quotes across 3 moods._
 - [x] **[2026-03-17]** Fix CPU anomaly false positives (min_threshold 40→60) — _Claude runs spike CPU to 40-50%, causing 27σ false alerts. Raised threshold to 60% so only genuinely anomalous CPU is flagged._
 - [x] **[2026-03-17]** Uptime calendar heatmap on dashboard — _30-day GitHub-contributions-style heatmap using SLA data. Color-coded: green-bright (100%), green (>99.5%), yellow (>99%), orange (>95%), red (<95%). Bilingual. Shows overall SLA % and days-at-100%._
+- [x] **[2026-03-18]** Fix fix-issues.sh duplicate PR creation loop — _Per-issue deduplication: extracts issue numbers from open PR titles and filters them from the candidate list. Also adds open PR context to Claude's prompt. Prevents repeated PRs for the same issue when auto-merge fails (e.g. branch protection rules). Stops waste from PRs #224, #226, #229 all targeting issue #50._
 - [x] **[2026-03-18]** Fix morning-check.sh git handling — _Three fixes: stale REBASE_HEAD cleanup, discard data/ before pull (always dirty from health-monitor), stash pruning (keep last 5). Also cleaned 14 stale stashes manually._
 - [x] **[2026-03-18]** Structured log API (`/api/logs/recent.json`) — _health-monitor.sh parses today's log into 500-entry JSON array (timestamp, level, message). Refreshed every 5 min. Foundation for dashboard log viewer._
 
