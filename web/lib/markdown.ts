@@ -78,7 +78,8 @@ export function renderMarkdown(content: string): string {
   }
   if (para.length) result.push(`<p>${para.join('<br>')}</p>`);
 
-  const html = result.join('\n');
+  const html = result.join('\n')
+    .replace(/<!--[\s\S]*?-->/g, ''); // strip HTML comments
 
   // Defense-in-depth: strip any HTML tags not produced by this renderer
   return html.replace(/<\/?[a-z][^>]*>/gi, (tag) => {
