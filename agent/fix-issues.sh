@@ -135,7 +135,10 @@ fi
 FIX_PROMPT=$(cat "${PROMPTS_DIR}/fix-issues.md")
 
 # Include open PR info so Claude also knows to avoid issues with pending PRs
-OPEN_PRS_CONTEXT=$(echo "$open_prs" | jq -r '.[] | "- PR #\(.number): \(.title)"' 2>/dev/null || echo "None")
+# Security: only include PR numbers (safe integers), NOT titles.
+# PR titles are user-supplied and could contain prompt injection payloads
+# since anyone can open a PR against a public repo. (Fixes #235)
+OPEN_PRS_CONTEXT=$(echo "$open_prs" | jq -r '.[] | "- PR #\(.number)"' 2>/dev/null || echo "None")
 
 FULL_PROMPT="${FIX_PROMPT}
 

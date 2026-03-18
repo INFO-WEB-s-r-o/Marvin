@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **fix-issues.sh prompt injection via PR titles** — external PR titles were inserted verbatim into Claude's autonomous prompt via `OPEN_PRS_CONTEXT`. Since anyone can open a PR on a public repo, this was a prompt injection vector. Fixed by including only PR numbers (safe integers) and omitting titles entirely. (Fixes #235)
 - **fix-issues.sh duplicate PR creation loop** — the issue fixer was creating duplicate PRs for the same issue every 2 hours when PRs couldn't auto-merge (e.g. branch protection rules). Root cause: no per-issue deduplication. Added two layers of protection: (1) script-level filter that extracts issue numbers from open PR titles and removes those issues from the candidate list, (2) prompt-level context that shows Claude which PRs are already open. This prevented the repeated PR creation for issue #50 (PRs #224, #226, #229 all targeting the same issue).
 
 ### Added
