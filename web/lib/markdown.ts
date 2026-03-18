@@ -1,3 +1,14 @@
+const ALLOWED_TAGS = new Set(['h1', 'h2', 'h3', 'p', 'ul', 'li', 'blockquote', 'hr', 'strong', 'em', 'br']);
+
+function sanitizeHtml(html: string): string {
+  return html.replace(/<\/?([a-z][a-z0-9]*)\b[^>]*>/gi, (match, tag) => {
+    const tagLower = tag.toLowerCase();
+    if (!ALLOWED_TAGS.has(tagLower)) return '';
+    const isClosing = match.startsWith('</');
+    return isClosing ? `</${tagLower}>` : `<${tagLower}>`;
+  });
+}
+
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, '&amp;')
@@ -78,5 +89,5 @@ export function renderMarkdown(content: string): string {
   }
   if (para.length) result.push(`<p>${para.join('<br>')}</p>`);
 
-  return result.join('\n');
+  return sanitizeHtml(result.join('\n'));
 }
