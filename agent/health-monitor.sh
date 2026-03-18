@@ -433,7 +433,7 @@ fi
 # This is invisible to HTTP 200 checks but breaks the entire dashboard.
 _js_chunk=$(curl -s --max-time 10 "${SITE_URL}/" 2>/dev/null \
     | grep -oP 'src="/_next/static/chunks/[^"]*"' | head -1 \
-    | grep -oP '/_next/static/chunks/[^"]*')
+    | grep -oP '/_next/static/chunks/[^"]*' || true)
 if [[ -n "$_js_chunk" ]]; then
     _chunk_status=$(curl -so /dev/null -w '%{http_code}' --max-time 10 "${SITE_URL}${_js_chunk}" 2>/dev/null || echo "000")
     if [[ "$_chunk_status" != "200" ]]; then
