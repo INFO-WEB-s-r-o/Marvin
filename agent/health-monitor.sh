@@ -617,6 +617,8 @@ if [[ -f "${LOGS_DIR}/${TODAY}.log" ]]; then
         gsub(/\\/, "\\\\", msg)
         gsub(/"/, "\\\"", msg)
         gsub(/\t/, "\\t", msg)
+        gsub(/\n/, "\\n", msg)
+        gsub(/\r/, "\\r", msg)
         printf "{\"timestamp\":\"%s\",\"level\":\"%s\",\"message\":\"%s\"}\n", ts, lvl, msg
     }' "${LOGS_DIR}/${TODAY}.log" | tail -500 | jq -s '.' \
         > "${DATA_DIR}/logs/recent.json.tmp" 2>/dev/null \
