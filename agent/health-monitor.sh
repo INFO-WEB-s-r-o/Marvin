@@ -602,4 +602,26 @@ _yesterday=$(date -u -d "${TODAY} - 1 day" +%Y-%m-%d 2>/dev/null || true)
     && mv "${METRICS_DIR}/recent.json.tmp" "${METRICS_DIR}/recent.json" \
     || true
 
+# ─── Recent structured logs for dashboard ────────────────────────────────────
+# Parse today's log into a JSON array at data/logs/recent.json.
+# Format: [{timestamp, level, message}, ...] — last 500 entries.
+# Served at /api/logs/recent.json for dashboard log viewer / search.
+mkdir -p "${DATA_DIR}/logs"
+if [[ -f "${LOGS_DIR}/${TODAY}.log" ]]; then
+    awk -F'[][]' '
+    /^\[.*\] \[.*\]/ {
+        ts = $2
+        lvl = $4
+        # Everything after the second ] + space is the message
+        msg = substr($0, index($0, "] [" lvl "]") + length(lvl) + 5)
+        gsub(/\\/, "\\\\", msg)
+        gsub(/"/, "\\\"", msg)
+        gsub(/\t/, "\\t", msg)
+        printf "{\"timestamp\":\"%s\",\"level\":\"%s\",\"message\":\"%s\"}\n", ts, lvl, msg
+    }' "${LOGS_DIR}/${TODAY}.log" | tail -500 | jq -s '.' \
+        > "${DATA_DIR}/logs/recent.json.tmp" 2>/dev/null \
+        && mv "${DATA_DIR}/logs/recent.json.tmp" "${DATA_DIR}/logs/recent.json" \
+        || true
+fi
+
 marvin_log "INFO" "Health monitor complete: status=${STATUS}, issues=${#ISSUES[@]}"
