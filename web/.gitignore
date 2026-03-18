@@ -2,3 +2,5 @@ node_modules/
 .next/
 marvin-blog.db
 .env.local
+
+*.tsbuildinfo
