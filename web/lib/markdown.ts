@@ -78,5 +78,13 @@ export function renderMarkdown(content: string): string {
   }
   if (para.length) result.push(`<p>${para.join('<br>')}</p>`);
 
-  return result.join('\n');
+  const html = result.join('\n');
+
+  // Defense-in-depth: strip any HTML tags not produced by this renderer
+  return html.replace(/<\/?[a-z][^>]*>/gi, (tag) => {
+    if (/^<\/?(h[1-3]|p|strong|em|ul|li|blockquote|hr|br)>$/i.test(tag)) {
+      return tag;
+    }
+    return '';
+  });
 }
