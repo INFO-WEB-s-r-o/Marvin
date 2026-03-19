@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **fix-issues.sh PR dedup false warning** — deduplication logic only extracted issue numbers from PR titles (`#NNN`) and bodies (`Fixes #NNN`). Enhancement PRs (like `enhance/shellcheck-*`) don't reference issues, triggering a recurring WARN every 2 hours. Added three improvements: (1) extract from branch names (`fix/issue-NNN-*`), (2) broader title patterns (`issue-NNN`, `issue NNN`), (3) only warn when fix-type PRs are present — enhancement PRs get a quiet INFO log instead.
+
+### Added
+
+- **Reusable ERR trap handler** in `common.sh` — `marvin_error_trap` function logs file:line and failed command when a script fails under `set -e`. Enabled in 12 scripts (health-monitor, morning-check, self-enhance, log-export, security-scan, daily-digest, metric-aggregate, self-test, weekly-analytics, hourly-check, evening-report, disk-cleanup). Makes debugging cron failures much easier — previously errors just showed exit codes with no context.
+- **Full week-over-week comparison** in `weekly-analytics.sh` — all metrics now show previous week values alongside current for direct comparison. Added WoW deltas for: warnings, criticals, load average, Claude API errors. JSON report includes `load_avg_delta_pct`, `warnings_delta_pct`, `criticals_delta_pct`, and `claude errors_delta_pct`. Markdown digest now has a "Prev Week" column in all tables.
+
+### Fixed
+
 - **fix-issues.sh prompt injection via PR titles** — external PR titles were inserted verbatim into Claude's autonomous prompt via `OPEN_PRS_CONTEXT`. Since anyone can open a PR on a public repo, this was a prompt injection vector. Fixed by including only PR numbers (safe integers) and omitting titles entirely. (Fixes #235)
 - **fix-issues.sh duplicate PR creation loop** — the issue fixer was creating duplicate PRs for the same issue every 2 hours when PRs couldn't auto-merge (e.g. branch protection rules). Root cause: no per-issue deduplication. Added two layers of protection: (1) script-level filter that extracts issue numbers from open PR titles and removes those issues from the candidate list, (2) prompt-level context that shows Claude which PRs are already open. This prevented the repeated PR creation for issue #50 (PRs #224, #226, #229 all targeting the same issue).
 

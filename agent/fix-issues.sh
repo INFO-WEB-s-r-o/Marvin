@@ -91,24 +91,45 @@ marvin_log "INFO" "Fetching open GitHub issues..."
 issues_json=$(github_list_issues "" 50 2>/dev/null || echo "[]")
 
 # ─── Per-issue deduplication: skip issues that already have open PRs ─────────
-# Extract issue numbers referenced in open PR titles (e.g. "fix: #50 ...")
+# Extract issue numbers referenced in open PR titles, bodies, or branch names.
 # This prevents the script from creating duplicate PRs for the same issue
 # every 2 hours when a PR can't be auto-merged (e.g. branch protection rules).
 pr_issue_numbers=""
 if [[ "$open_pr_count" -gt 0 ]]; then
-    # Try extracting from PR titles first
-    pr_issue_numbers=$(echo "$open_prs" | jq -r '.[].title' 2>/dev/null \
-        | grep -oP '#\K\d+' | sort -u | paste -sd',' - || echo "")
-    
-    # If no issue numbers found in titles, try PR bodies for "Fixes #NNN" patterns
-    if [[ -z "$pr_issue_numbers" ]]; then
-        pr_issue_numbers=$(echo "$open_prs" | jq -r '.[].body // ""' 2>/dev/null \
-            | grep -oiP '(?:fix(?:es)?|closes?|resolves?)\s*#\K\d+' | sort -u | paste -sd',' - || echo "")
+    # Collect issue numbers from multiple sources, combine at the end
+    _dedup_nums=""
+
+    # Source 1: PR titles — match #NNN or "issue NNN"/"issue-NNN" patterns
+    _title_nums=$(echo "$open_prs" | jq -r '.[].title' 2>/dev/null \
+        | grep -oiP '(?:#|issue[\s-])\K\d+' | sort -u | paste -sd',' - || echo "")
+    [[ -n "$_title_nums" ]] && _dedup_nums+="${_title_nums},"
+
+    # Source 2: PR bodies — "Fixes #NNN", "Closes #NNN", "Resolves #NNN"
+    _body_nums=$(echo "$open_prs" | jq -r '.[].body // ""' 2>/dev/null \
+        | grep -oiP '(?:fix(?:es)?|closes?|resolves?)\s*#\K\d+' | sort -u | paste -sd',' - || echo "")
+    [[ -n "$_body_nums" ]] && _dedup_nums+="${_body_nums},"
+
+    # Source 3: Branch names — "fix/issue-NNN-*" or "fix-issue-NNN"
+    _branch_nums=$(echo "$open_prs" | jq -r '.[].head.ref // ""' 2>/dev/null \
+        | grep -oiP 'issue[/-]\K\d+' | sort -u | paste -sd',' - || echo "")
+    [[ -n "$_branch_nums" ]] && _dedup_nums+="${_branch_nums},"
+
+    # Deduplicate combined results
+    if [[ -n "$_dedup_nums" ]]; then
+        pr_issue_numbers=$(echo "$_dedup_nums" | tr ',' '\n' | grep -v '^$' | sort -un | paste -sd',' -)
     fi
-    
-    # Log warning if open PRs exist but no issue numbers were extracted
+
+    # Only warn if PRs look like issue-fix PRs but we couldn't extract numbers.
+    # Enhancement/feature PRs (branch starts with enhance/, feature/, add/) are expected
+    # to not reference issues — no warning needed.
     if [[ -z "$pr_issue_numbers" ]]; then
-        marvin_log "WARN" "Found ${open_pr_count} open PRs but could not extract issue numbers from titles or bodies — deduplication may not work correctly"
+        _has_fix_pr=$(echo "$open_prs" | jq -r '.[].head.ref // ""' 2>/dev/null \
+            | grep -ciP '^fix[/-]' || echo "0")
+        if [[ "$_has_fix_pr" -gt 0 ]]; then
+            marvin_log "WARN" "Found fix-type PRs but could not extract issue numbers — deduplication may not work correctly"
+        else
+            marvin_log "INFO" "Open PRs are enhancement/feature type — no issue deduplication needed"
+        fi
     fi
 fi
 
