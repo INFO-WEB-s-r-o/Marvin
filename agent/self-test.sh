@@ -60,6 +60,31 @@ while IFS= read -r script; do
     fi
 done < <(find "${MARVIN_DIR}/agent" -name "*.sh" -type f | sort)
 
+# ─── 1c. ShellCheck static analysis ──────────────────────────────────────────
+# Runs ShellCheck (if installed) to catch common bash pitfalls and bugs
+
+if command -v shellcheck &>/dev/null; then
+    marvin_log "INFO" "Self-test: running ShellCheck static analysis"
+    _sc_errors=0
+    while IFS= read -r script; do
+        # Check for errors only (SC level error) — warnings tracked separately
+        if ! shellcheck -S error "$script" >/dev/null 2>&1; then
+            test_fail "shellcheck errors: $(basename "$script")"
+            _sc_errors=$((_sc_errors + 1))
+        fi
+    done < <(find "${MARVIN_DIR}/agent" -name "*.sh" -type f | sort)
+    if [[ "$_sc_errors" -eq 0 ]]; then
+        test_pass "shellcheck: all scripts pass (no errors)"
+    fi
+    # Count warnings (informational, not a test failure)
+    _sc_warn_count=$(shellcheck -S warning "${MARVIN_DIR}"/agent/*.sh "${MARVIN_DIR}"/agent/lib/*.sh 2>&1 | grep -c 'SC[0-9]' || true)
+    if [[ "$_sc_warn_count" -gt 0 ]]; then
+        test_warn "shellcheck: ${_sc_warn_count} warnings across all scripts"
+    fi
+else
+    test_warn "shellcheck not installed — skipping static analysis"
+fi
+
 # ─── 2. JSON data file validation ────────────────────────────────────────────
 
 marvin_log "INFO" "Self-test: validating JSON data files"
