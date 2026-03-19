@@ -96,8 +96,20 @@ issues_json=$(github_list_issues "" 50 2>/dev/null || echo "[]")
 # every 2 hours when a PR can't be auto-merged (e.g. branch protection rules).
 pr_issue_numbers=""
 if [[ "$open_pr_count" -gt 0 ]]; then
+    # Try extracting from PR titles first
     pr_issue_numbers=$(echo "$open_prs" | jq -r '.[].title' 2>/dev/null \
         | grep -oP '#\K\d+' | sort -u | paste -sd',' - || echo "")
+    
+    # If no issue numbers found in titles, try PR bodies for "Fixes #NNN" patterns
+    if [[ -z "$pr_issue_numbers" ]]; then
+        pr_issue_numbers=$(echo "$open_prs" | jq -r '.[].body // ""' 2>/dev/null \
+            | grep -oiP '(?:fix(?:es)?|closes?|resolves?)\s*#\K\d+' | sort -u | paste -sd',' - || echo "")
+    fi
+    
+    # Log warning if open PRs exist but no issue numbers were extracted
+    if [[ -z "$pr_issue_numbers" ]]; then
+        marvin_log "WARN" "Found ${open_pr_count} open PRs but could not extract issue numbers from titles or bodies — deduplication may not work correctly"
+    fi
 fi
 
 if [[ -n "$pr_issue_numbers" ]]; then
