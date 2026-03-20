@@ -107,6 +107,9 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
     _mem_maxes=$(for f in "${_daily_files[@]}"; do jq -r '.summary.memory_used_mb.max // empty' "$f" 2>/dev/null; done)
     _load_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.load_1m.avg // empty' "$f" 2>/dev/null; done)
     _proc_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.process_count.avg // empty' "$f" 2>/dev/null; done)
+    # Network daily totals (MB transferred per day) — detects traffic spikes (DDoS, exfiltration)
+    _net_rx_mbs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.network.rx_mb // empty' "$f" 2>/dev/null; done)
+    _net_tx_mbs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.network.tx_mb // empty' "$f" 2>/dev/null; done)
 
     # Compute mean and stddev, then check current values
     # Format: label|values|current|direction|min_threshold
@@ -114,11 +117,29 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
     #   min_threshold: minimum absolute value before the metric is worth alerting on
     _vcpus=$(nproc 2>/dev/null || echo 2)
     _load_min_threshold=$(( _vcpus * 2 ))  # load < 2x vCPUs is never anomalous
+    # Compute today's running network totals (current rx_bytes - first sample's rx_bytes)
+    _today_jsonl="${METRICS_DIR}/${TODAY}.jsonl"
+    _net_rx_today="" _net_tx_today=""
+    if [[ -f "$_today_jsonl" ]]; then
+        _first_rx=$(head -1 "$_today_jsonl" | jq -r '.network.rx_bytes // empty' 2>/dev/null)
+        _first_tx=$(head -1 "$_today_jsonl" | jq -r '.network.tx_bytes // empty' 2>/dev/null)
+        _curr_rx=$(echo "$metrics" | jq -r '.network.rx_bytes // empty' 2>/dev/null)
+        _curr_tx=$(echo "$metrics" | jq -r '.network.tx_bytes // empty' 2>/dev/null)
+        if [[ -n "$_first_rx" && -n "$_curr_rx" && "$_curr_rx" -ge "$_first_rx" ]]; then
+            _net_rx_today=$(( (_curr_rx - _first_rx) / 1048576 ))
+        fi
+        if [[ -n "$_first_tx" && -n "$_curr_tx" && "$_curr_tx" -ge "$_first_tx" ]]; then
+            _net_tx_today=$(( (_curr_tx - _first_tx) / 1048576 ))
+        fi
+    fi
+
     for pair in \
         "CPU%|${_cpu_avgs}|$(echo "$metrics" | jq -r '.cpu_percent' 2>/dev/null)|high|60" \
         "Memory MB|${_mem_maxes}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)|high|0" \
         "Load 1m|${_load_avgs}|$(echo "$metrics" | jq -r '.load_average["1min"]' 2>/dev/null)|high|${_load_min_threshold}" \
-        "Processes|${_proc_avgs}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)|high|200"; do
+        "Processes|${_proc_avgs}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)|high|200" \
+        "Net RX MB|${_net_rx_mbs}|${_net_rx_today:-}|high|100" \
+        "Net TX MB|${_net_tx_mbs}|${_net_tx_today:-}|high|100"; do
         _label="${pair%%|*}"
         _rest="${pair#*|}"
         _vals="${_rest%%|*}"
