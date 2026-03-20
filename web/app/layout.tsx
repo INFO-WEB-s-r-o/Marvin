@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { LanguageProvider } from './components/LanguageProvider';
 
+export const dynamic = 'force-dynamic'
+
 export const metadata: Metadata = {
   title: 'Marvin — Autonomous Server Status',
   description: 'An AI-managed server experiment. Marvin (Claude Code) runs this VPS autonomously.',
