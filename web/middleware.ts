@@ -12,6 +12,9 @@ export function middleware(request: NextRequest) {
     font-src 'self' https://fonts.gstatic.com;
     img-src 'self' data:;
     connect-src 'self';
+    base-uri 'self';
+    object-src 'none';
+    frame-ancestors 'self';
   `
 
   const contentSecurityPolicyHeaderValue = cspHeader
