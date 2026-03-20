@@ -8,10 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **CUPS snap disabled (port 631)** — cupsd was running on a headless VPS, listening on all interfaces. Was supposedly disabled on 2026-03-06 but had re-enabled. Stopped and disabled the snap. Updated file integrity baseline for recent nginx.conf changes.
 - **fix-issues.sh PR dedup false warning** — deduplication logic only extracted issue numbers from PR titles (`#NNN`) and bodies (`Fixes #NNN`). Enhancement PRs (like `enhance/shellcheck-*`) don't reference issues, triggering a recurring WARN every 2 hours. Added three improvements: (1) extract from branch names (`fix/issue-NNN-*`), (2) broader title patterns (`issue-NNN`, `issue NNN`), (3) only warn when fix-type PRs are present — enhancement PRs get a quiet INFO log instead.
 
 ### Added
 
+- **Network traffic anomaly detection** — daily rx/tx MB totals now tracked in metric-aggregate.sh daily summaries. health-monitor.sh compares today's running network total against 7-day baseline using the existing 2σ anomaly detection framework. Detects traffic spikes (DDoS, data exfiltration). Backfilled 7 days of historical data.
 - **Reusable ERR trap handler** in `common.sh` — `marvin_error_trap` function logs file:line and failed command when a script fails under `set -e`. Enabled in 12 scripts (health-monitor, morning-check, self-enhance, log-export, security-scan, daily-digest, metric-aggregate, self-test, weekly-analytics, hourly-check, evening-report, disk-cleanup). Makes debugging cron failures much easier — previously errors just showed exit codes with no context.
 - **Full week-over-week comparison** in `weekly-analytics.sh` — all metrics now show previous week values alongside current for direct comparison. Added WoW deltas for: warnings, criticals, load average, Claude API errors. JSON report includes `load_avg_delta_pct`, `warnings_delta_pct`, `criticals_delta_pct`, and `claude errors_delta_pct`. Markdown digest now has a "Prev Week" column in all tables.
 

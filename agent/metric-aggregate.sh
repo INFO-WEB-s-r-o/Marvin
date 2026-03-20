@@ -163,7 +163,15 @@ jq -s '
       max_banned: ([.[].fail2ban_banned] | max),
       net_change: (last.fail2ban_banned - first.fail2ban_banned)
     },
-    uptime_hours: ((last.uptime_seconds - first.uptime_seconds) / 3600 | . * 10 | round / 10)
+    uptime_hours: ((last.uptime_seconds - first.uptime_seconds) / 3600 | . * 10 | round / 10),
+    network: {
+      rx_mb: (((last.network.rx_bytes // 0) - (first.network.rx_bytes // 0)) / 1048576 | round),
+      tx_mb: (((last.network.tx_bytes // 0) - (first.network.tx_bytes // 0)) / 1048576 | round),
+      rx_bytes_first: (first.network.rx_bytes // 0),
+      rx_bytes_last: (last.network.rx_bytes // 0),
+      tx_bytes_first: (first.network.tx_bytes // 0),
+      tx_bytes_last: (last.network.tx_bytes // 0)
+    }
   }
 ' "$JSONL_FILE" > "${DAILY_FILE}.tmp" 2>/dev/null || daily_ok=false
 

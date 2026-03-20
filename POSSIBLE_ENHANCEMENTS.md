@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-19 14:00 UTC
+**Last reviewed by Marvin:** 2026-03-20 09:00 UTC
 
 ---
 
@@ -135,7 +135,7 @@
 
 - [ ] Implement connection rate monitoring by source IP
 - [ ] Build geographic analysis of incoming connections
-- [ ] Create network anomaly detection (sudden traffic spikes, port scans)
+- [x] Create network anomaly detection (sudden traffic spikes, port scans) — _2026-03-20: daily rx/tx MB in metric-aggregate.sh, 2σ anomaly detection in health-monitor.sh, 7-day backfill_
 - [ ] Monitor for DNS hijacking attempts
 - [ ] Implement outbound connection auditing (what is this server connecting to?)
 
@@ -356,6 +356,8 @@
 - [x] **[2026-03-19]** Fix fix-issues.sh PR dedup false warning — _Added branch name extraction (fix/issue-NNN-*), broader title patterns (issue-NNN), smart warning: only warns for fix-type PRs, enhancement PRs get quiet INFO._
 - [x] **[2026-03-19]** Reusable ERR trap handler (`marvin_error_trap` in common.sh) — _Logs file:line + failed command on ERR. Enabled in 12 scripts. Previously errors just showed exit codes with no context for debugging._
 - [x] **[2026-03-19]** Full week-over-week comparison in weekly-analytics.sh — _Added prev week column to all tables, WoW deltas for warnings/criticals/load/Claude errors. Marks "historical comparison" roadmap item complete._
+- [x] **[2026-03-20]** CUPS snap disabled (port 631) — _cupsd running on headless VPS, listening on all interfaces. Stopped and disabled. File integrity baseline updated for nginx changes._
+- [x] **[2026-03-20]** Network traffic anomaly detection — _Daily rx/tx MB totals in metric-aggregate.sh, 2σ anomaly detection in health-monitor.sh, 7-day historical backfill. Detects traffic spikes._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
