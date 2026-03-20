@@ -19,6 +19,7 @@
 
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+trap marvin_error_trap ERR
 
 REPORTS_DIR="${DATA_DIR}/reports"
 mkdir -p "$REPORTS_DIR"
@@ -242,6 +243,18 @@ claude_runs_delta=$(_delta \
 error_delta=$(_delta \
     "$(echo "$current_logs" | jq -r '.errors // 0')" \
     "$(echo "$prev_logs" | jq -r '.errors // 0')")
+warn_delta=$(_delta \
+    "$(echo "$current_logs" | jq -r '.warnings // 0')" \
+    "$(echo "$prev_logs" | jq -r '.warnings // 0')")
+critical_delta=$(_delta \
+    "$(echo "$current_logs" | jq -r '.criticals // 0')" \
+    "$(echo "$prev_logs" | jq -r '.criticals // 0')")
+load_delta=$(_delta \
+    "$(echo "$current_metrics" | jq -r '.load_1m.avg // 0')" \
+    "$(echo "$prev_metrics" | jq -r '.load_1m.avg // 0')")
+claude_err_delta=$(_delta \
+    "$(echo "$current_claude" | jq -r '.errors // 0')" \
+    "$(echo "$prev_claude" | jq -r '.errors // 0')")
 
 # ─── 8. Assemble final JSON report ──────────────────────────────────────────
 jq -n \
@@ -261,6 +274,10 @@ jq -n \
     --arg mem_delta "$mem_delta" \
     --arg runs_delta "$claude_runs_delta" \
     --arg err_delta "$error_delta" \
+    --arg warn_delta "$warn_delta" \
+    --arg crit_delta "$critical_delta" \
+    --arg load_delta "$load_delta" \
+    --arg claude_err_delta "$claude_err_delta" \
     '{
         period: {start: $start, end: $end},
         generated_at: $generated,
@@ -270,6 +287,7 @@ jq -n \
             trends: {
                 cpu_avg_delta_pct: ($cpu_delta | tonumber),
                 memory_avg_delta_pct: ($mem_delta | tonumber),
+                load_avg_delta_pct: ($load_delta | tonumber),
                 note: "Positive = increased vs previous week"
             }
         },
@@ -277,14 +295,17 @@ jq -n \
             current_week: $claude,
             previous_week: $prev_claude,
             trends: {
-                runs_delta_pct: ($runs_delta | tonumber)
+                runs_delta_pct: ($runs_delta | tonumber),
+                errors_delta_pct: ($claude_err_delta | tonumber)
             }
         },
         logs: {
             current_week: $logs,
             previous_week: $prev_logs,
             trends: {
-                errors_delta_pct: ($err_delta | tonumber)
+                errors_delta_pct: ($err_delta | tonumber),
+                warnings_delta_pct: ($warn_delta | tonumber),
+                criticals_delta_pct: ($crit_delta | tonumber)
             }
         },
         security: $security,
@@ -317,6 +338,15 @@ log_errors=$(echo "$current_logs" | jq -r '.errors // 0')
 log_warnings=$(echo "$current_logs" | jq -r '.warnings // 0')
 log_criticals=$(echo "$current_logs" | jq -r '.criticals // 0')
 
+# Previous week values for side-by-side comparison
+prev_cpu_avg=$(echo "$prev_metrics" | jq -r '.cpu.avg // "?"')
+prev_mem_avg=$(echo "$prev_metrics" | jq -r '.memory_used_mb.avg // "?"')
+prev_load_avg=$(echo "$prev_metrics" | jq -r '.load_1m.avg // "?"')
+prev_log_errors=$(echo "$prev_logs" | jq -r '.errors // 0')
+prev_log_warnings=$(echo "$prev_logs" | jq -r '.warnings // 0')
+prev_log_criticals=$(echo "$prev_logs" | jq -r '.criticals // 0')
+prev_claude_runs=$(echo "$prev_claude" | jq -r '.total_runs // 0')
+
 uptime_pct=$(echo "$sla_json" | jq -r '.overall_uptime_pct // "?"' 2>/dev/null || echo "?")
 days_tracked=$(echo "$sla_json" | jq -r '.days_tracked // "?"' 2>/dev/null || echo "?")
 
@@ -344,23 +374,23 @@ cat > "$REPORT_MD" << EOF
 
 ## System Health
 
-| Metric | Average | Peak | WoW Change |
-|--------|---------|------|------------|
-| CPU % | ${cpu_avg}% | ${cpu_max}% | ${cpu_delta}% $(_arrow "$cpu_delta") |
-| Memory | ${mem_avg} MB | ${mem_max} MB | ${mem_delta}% $(_arrow "$mem_delta") |
-| Load 1m | ${load_avg} | — | — |
-| Disk Used | ${disk_end} MB | — | ${disk_delta:+$disk_delta} MB delta |
+| Metric | This Week | Prev Week | Peak | WoW Change |
+|--------|-----------|-----------|------|------------|
+| CPU % | ${cpu_avg}% | ${prev_cpu_avg}% | ${cpu_max}% | ${cpu_delta}% $(_arrow "$cpu_delta") |
+| Memory | ${mem_avg} MB | ${prev_mem_avg} MB | ${mem_max} MB | ${mem_delta}% $(_arrow "$mem_delta") |
+| Load 1m | ${load_avg} | ${prev_load_avg} | — | ${load_delta}% $(_arrow "$load_delta") |
+| Disk Used | ${disk_end} MB | — | — | ${disk_delta:+$disk_delta} MB delta |
 
 - **Samples collected:** ${samples}
 - **Uptime:** ${uptime_pct}% over ${days_tracked} days
 
 ## Claude API Usage
 
-| Metric | This Week | WoW Change |
-|--------|-----------|------------|
-| Total runs | ${claude_runs} | ${claude_runs_delta}% $(_arrow "$claude_runs_delta") |
-| Total time | ${claude_dur_h}h | — |
-| Errors | ${claude_errors} (${claude_err_pct}%) | — |
+| Metric | This Week | Prev Week | WoW Change |
+|--------|-----------|-----------|------------|
+| Total runs | ${claude_runs} | ${prev_claude_runs} | ${claude_runs_delta}% $(_arrow "$claude_runs_delta") |
+| Total time | ${claude_dur_h}h | — | — |
+| Errors | ${claude_errors} (${claude_err_pct}%) | — | ${claude_err_delta}% $(_arrow "$claude_err_delta") |
 
 ### Top Tasks by Run Count
 
@@ -370,11 +400,11 @@ ${top_tasks}
 
 ## Log Summary
 
-| Level | Count | WoW Change |
-|-------|-------|------------|
-| Errors | ${log_errors} | ${error_delta}% $(_arrow "$error_delta") |
-| Warnings | ${log_warnings} | — |
-| Criticals | ${log_criticals} | — |
+| Level | This Week | Prev Week | WoW Change |
+|-------|-----------|-----------|------------|
+| Errors | ${log_errors} | ${prev_log_errors} | ${error_delta}% $(_arrow "$error_delta") |
+| Warnings | ${log_warnings} | ${prev_log_warnings} | ${warn_delta}% $(_arrow "$warn_delta") |
+| Criticals | ${log_criticals} | ${prev_log_criticals} | ${critical_delta}% $(_arrow "$critical_delta") |
 
 ### Top Recurring Errors
 ${top_errors_md}
