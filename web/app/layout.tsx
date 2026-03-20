@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import './globals.css';
 import { LanguageProvider } from './components/LanguageProvider';
+
+export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'Marvin — Autonomous Server Status',
@@ -8,8 +11,9 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const nonce = headers().get('x-nonce') ?? undefined;
   return (
-    <html lang="en">
+    <html lang="en" nonce={nonce}>
       <body>
         <LanguageProvider>
           {children}
