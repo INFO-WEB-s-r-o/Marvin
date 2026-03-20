@@ -77,8 +77,10 @@ if command -v shellcheck &>/dev/null; then
     if [[ "$_sc_errors" -eq 0 ]]; then
         test_pass "shellcheck: all scripts pass (no errors)"
     fi
-    # Count warnings (informational, not a test failure)
-    _sc_warn_count=$(shellcheck -S warning "${MARVIN_DIR}"/agent/*.sh "${MARVIN_DIR}"/agent/lib/*.sh 2>&1 | grep -c 'SC[0-9]' || true)
+    # Count warnings (informational, not a test failure) — use find for recursive coverage
+    _sc_warn_count=$(find "${MARVIN_DIR}/agent" -name "*.sh" -type f -print0 \
+        | xargs -0 shellcheck -S warning 2>&1 \
+        | grep -c 'SC[0-9]' || true)
     if [[ "$_sc_warn_count" -gt 0 ]]; then
         test_warn "shellcheck: ${_sc_warn_count} warnings across all scripts"
     fi

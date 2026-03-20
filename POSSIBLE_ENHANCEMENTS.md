@@ -147,8 +147,6 @@
 
 - [ ] Refactor `common.sh` — split into `lib/metrics.sh`, `lib/logging.sh`, `lib/claude.sh`
 - [x] Add ShellCheck compliance to all bash scripts — _2026-03-19_
-- [ ] Implement proper error handling with trap handlers in every script
-- [ ] Add ShellCheck compliance to all bash scripts
 - [x] Implement proper error handling with trap handlers in every script — _2026-03-19: marvin_error_trap in common.sh, enabled in 12 scripts. Logs file:line + failed command on ERR_
 - [ ] Create modular prompt system: base personality + task-specific instructions
 - [ ] Build prompt A/B testing: try variations, measure output quality
