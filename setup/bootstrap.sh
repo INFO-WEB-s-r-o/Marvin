@@ -329,6 +329,7 @@ server {
     location /api/exports/ {
         alias ${MARVIN_DIR}/data/exports/;
         default_type application/json;
+        add_header Content-Type "application/json" always;
         include /etc/nginx/export-api-key.conf;
         if (\$http_x_api_key != \$export_api_key) {
             return 401 '{"error":"Unauthorized"}';
