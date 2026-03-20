@@ -165,8 +165,8 @@ jq -s '
     },
     uptime_hours: ((last.uptime_seconds - first.uptime_seconds) / 3600 | . * 10 | round / 10),
     network: {
-      rx_mb: (((last.network.rx_bytes // 0) - (first.network.rx_bytes // 0)) / 1048576 | round),
-      tx_mb: (((last.network.tx_bytes // 0) - (first.network.tx_bytes // 0)) / 1048576 | round),
+      rx_mb: (if (last.network.rx_bytes // 0) >= (first.network.rx_bytes // 0) then (((last.network.rx_bytes // 0) - (first.network.rx_bytes // 0)) / 1048576 | round) else 0 end),
+      tx_mb: (if (last.network.tx_bytes // 0) >= (first.network.tx_bytes // 0) then (((last.network.tx_bytes // 0) - (first.network.tx_bytes // 0)) / 1048576 | round) else 0 end),
       rx_bytes_first: (first.network.rx_bytes // 0),
       rx_bytes_last: (last.network.rx_bytes // 0),
       tx_bytes_first: (first.network.tx_bytes // 0),

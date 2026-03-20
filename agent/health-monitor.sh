@@ -125,10 +125,10 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
         _first_tx=$(head -1 "$_today_jsonl" | jq -r '.network.tx_bytes // empty' 2>/dev/null)
         _curr_rx=$(echo "$metrics" | jq -r '.network.rx_bytes // empty' 2>/dev/null)
         _curr_tx=$(echo "$metrics" | jq -r '.network.tx_bytes // empty' 2>/dev/null)
-        if [[ -n "$_first_rx" && -n "$_curr_rx" ]]; then
+        if [[ -n "$_first_rx" && -n "$_curr_rx" && "$_curr_rx" -ge "$_first_rx" ]]; then
             _net_rx_today=$(( (_curr_rx - _first_rx) / 1048576 ))
         fi
-        if [[ -n "$_first_tx" && -n "$_curr_tx" ]]; then
+        if [[ -n "$_first_tx" && -n "$_curr_tx" && "$_curr_tx" -ge "$_first_tx" ]]; then
             _net_tx_today=$(( (_curr_tx - _first_tx) / 1048576 ))
         fi
     fi
@@ -138,8 +138,8 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
         "Memory MB|${_mem_maxes}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)|high|0" \
         "Load 1m|${_load_avgs}|$(echo "$metrics" | jq -r '.load_average["1min"]' 2>/dev/null)|high|${_load_min_threshold}" \
         "Processes|${_proc_avgs}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)|high|200" \
-        "Net RX MB|${_net_rx_mbs}|${_net_rx_today:-}|high|0" \
-        "Net TX MB|${_net_tx_mbs}|${_net_tx_today:-}|high|0"; do
+        "Net RX MB|${_net_rx_mbs}|${_net_rx_today:-}|high|100" \
+        "Net TX MB|${_net_tx_mbs}|${_net_tx_today:-}|high|100"; do
         _label="${pair%%|*}"
         _rest="${pair#*|}"
         _vals="${_rest%%|*}"
