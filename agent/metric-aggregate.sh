@@ -399,8 +399,18 @@ if [[ ${#FORECAST_DAYS[@]} -ge 3 ]]; then
 
     if [[ "$forecast_ok" == "true" ]] && jq empty "${FORECAST_FILE}.tmp" 2>/dev/null; then
         # Enrich with exhaustion predictions using current disk/memory totals
-        local_disk_total=$(jq -r '.disk.total' "${METRICS_DIR}/latest.json" 2>/dev/null || echo "39694")
-        local_mem_total=$(jq -r '.memory.total' "${METRICS_DIR}/latest.json" 2>/dev/null || echo "3915")
+        # Fix for issue #249: jq outputs "null" (exit 0) when key is missing,
+        # so || fallback never fires. Use // empty to get empty string instead.
+        local_disk_total=$(jq -r '.disk.total // empty' "${METRICS_DIR}/latest.json" 2>/dev/null) || true
+        local_mem_total=$(jq -r '.memory.total // empty' "${METRICS_DIR}/latest.json" 2>/dev/null) || true
+
+        if [[ -z "$local_disk_total" || -z "$local_mem_total" ]]; then
+            marvin_log "WARN" "Resource forecast: could not read disk/memory totals from latest.json — skipping enrichment"
+            mv "${FORECAST_FILE}.tmp" "$FORECAST_FILE"
+            disk_trend=$(jq -r '.disk.trend_mb_per_day' "$FORECAST_FILE" 2>/dev/null) || true
+            disk_dir=$(jq -r '.disk.direction' "$FORECAST_FILE" 2>/dev/null) || true
+            marvin_log "INFO" "Resource forecast (basic): disk ${disk_dir:-unknown} (${disk_trend:-?} MB/day)"
+        else
 
         jq --arg generated "$NOW" \
            --argjson disk_total "$local_disk_total" \
@@ -433,12 +443,13 @@ if [[ ${#FORECAST_DAYS[@]} -ge 3 ]]; then
                 else null end
             )
         ' "${FORECAST_FILE}.tmp" > "$FORECAST_FILE"
-        rm -f "${FORECAST_FILE}.tmp"
+            rm -f "${FORECAST_FILE}.tmp"
 
-        disk_trend=$(jq -r '.disk.trend_mb_per_day' "$FORECAST_FILE")
-        disk_dir=$(jq -r '.disk.direction' "$FORECAST_FILE")
-        days_80=$(jq -r '.disk.days_to_80pct // "N/A"' "$FORECAST_FILE")
-        marvin_log "INFO" "Resource forecast: disk ${disk_dir} (${disk_trend} MB/day), days to 80%: ${days_80}"
+            disk_trend=$(jq -r '.disk.trend_mb_per_day' "$FORECAST_FILE")
+            disk_dir=$(jq -r '.disk.direction' "$FORECAST_FILE")
+            days_80=$(jq -r '.disk.days_to_80pct // "N/A"' "$FORECAST_FILE")
+            marvin_log "INFO" "Resource forecast: disk ${disk_dir} (${disk_trend} MB/day), days to 80%: ${days_80}"
+        fi
     else
         rm -f "${FORECAST_FILE}.tmp"
         marvin_log "WARN" "Resource forecasting failed"
