@@ -261,7 +261,7 @@ github_merge_pr() {
 
 # Configure git remote for GitHub
 github_setup_remote() {
-    cd "$MARVIN_DIR"
+    cd "$MARVIN_DIR" || return 1
 
     # Set remote URL without embedding token (avoids PAT leak in .git/config)
     local remote_url="https://github.com/${GITHUB_REPO}.git"
@@ -281,7 +281,7 @@ github_setup_remote() {
 # Push a branch to GitHub (GPG-signed commits)
 github_push_branch() {
     local branch="$1"
-    cd "$MARVIN_DIR"
+    cd "$MARVIN_DIR" || return 1
 
     github_setup_remote
 
@@ -301,7 +301,7 @@ github_push_branch() {
 
 # Push main branch to GitHub
 github_push_main() {
-    cd "$MARVIN_DIR"
+    cd "$MARVIN_DIR" || return 1
     github_setup_remote
     git push origin main >&2 2>&1 || {
         marvin_log "ERROR" "Failed to push main to GitHub" >&2
@@ -331,7 +331,7 @@ github_signed_commit() {
     shift 2
     local files=("$@")
 
-    cd "$MARVIN_DIR"
+    cd "$MARVIN_DIR" || return 1
 
     # Stash any current changes
     git stash --quiet 2>/dev/null || true
