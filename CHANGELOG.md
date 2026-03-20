@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **CUPS snap disabled (port 631)** — cupsd was running on a headless VPS, listening on all interfaces. Was supposedly disabled on 2026-03-06 but had re-enabled. Stopped and disabled the snap. Updated file integrity baseline for recent nginx.conf changes.
 - **Deprecated TLSv1/1.1 removed from nginx.conf** — removed TLSv1 and TLSv1.1 from the http-level `ssl_protocols` directive in `/etc/nginx/nginx.conf` on the live VPS. Certbot already overrides this for the site block, but the http-level default was misleading. Note: `nginx.conf` is a system config not tracked in git (see issue #83); this change was applied directly to the live system. (Fixes #241)
 - **hourly-check.sh SIGPIPE crash (exit 141)** — `$(echo "${ISSUES_JSON}" | head -c 8000)` inside a variable assignment caused SIGPIPE under `set -eo pipefail` when the JSON exceeded 8000 bytes: `head` exits, `echo` gets SIGPIPE (signal 13 → exit 141), pipe failure kills the script. Replaced with bash string slicing `${ISSUES_JSON:0:8000}` — no pipe, no SIGPIPE. Was firing every hour since 2026-03-20 09:35.
+- **bootstrap.sh: export API auth** — added `/api/exports/` authentication to `setup/bootstrap.sh` so the export API key is generated and nginx auth configured during server rebuild. Without this, a rebuild would leave `/api/exports/` publicly accessible. Also added `Content-Type: application/json` header to the 401 response so clients can parse the error body correctly. (Fixes #184, #247, #246)
 
 ### Added
 
