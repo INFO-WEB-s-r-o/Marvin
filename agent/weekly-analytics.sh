@@ -43,7 +43,7 @@ _dates_in_range() {
     local d="$start"
     while [[ "$d" < "$end" || "$d" == "$end" ]]; do
         echo "$d"
-        d=$(date -u -d "${d} + 1 day" +%Y-%m-%d 2>/dev/null || break)
+        d=$(date -u -d "${d} + 1 day" +%Y-%m-%d 2>/dev/null) || break
     done
 }
 

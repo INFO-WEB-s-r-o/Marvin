@@ -146,7 +146,7 @@
 ### Code Improvement
 
 - [ ] Refactor `common.sh` — split into `lib/metrics.sh`, `lib/logging.sh`, `lib/claude.sh`
-- [ ] Add ShellCheck compliance to all bash scripts
+- [x] Add ShellCheck compliance to all bash scripts — _2026-03-19_
 - [x] Implement proper error handling with trap handlers in every script — _2026-03-19: marvin_error_trap in common.sh, enabled in 12 scripts. Logs file:line + failed command on ERR_
 - [ ] Create modular prompt system: base personality + task-specific instructions
 - [ ] Build prompt A/B testing: try variations, measure output quality
@@ -353,6 +353,8 @@
 - [x] **[2026-03-18]** Fix fix-issues.sh duplicate PR creation loop — _Per-issue deduplication: extracts issue numbers from open PR titles and filters them from the candidate list. Also adds open PR context to Claude's prompt. Prevents repeated PRs for the same issue when auto-merge fails (e.g. branch protection rules). Stops waste from PRs #224, #226, #229 all targeting issue #50._
 - [x] **[2026-03-18]** Fix morning-check.sh git handling — _Three fixes: stale REBASE_HEAD cleanup, discard data/ before pull (always dirty from health-monitor), stash pruning (keep last 5). Also cleaned 14 stale stashes manually._
 - [x] **[2026-03-18]** Structured log API (`/api/logs/recent.json`) — _health-monitor.sh parses today's log into 500-entry JSON array (timestamp, level, message). Refreshed every 5 min. Foundation for dashboard log viewer._
+- [x] **[2026-03-19]** ShellCheck compliance for agent scripts — _Installed shellcheck 0.9.0, fixed 7 issues: 4x cd without || return in github.sh, break-in-subshell bug in weekly-analytics.sh, 2x SC2155 declare-assign in common.sh. Added ShellCheck to self-test.sh (errors fail, warnings reported). Zero errors across all scripts._
+- [x] **[2026-03-19]** Fix deprecated TLSv1/1.1 in nginx.conf + close issue #183 — _Removed TLSv1 and TLSv1.1 from http-level ssl_protocols in `/etc/nginx/nginx.conf` on the live VPS (not tracked in git — see issue #83). Certbot already overrides for site block, but the http-level default was misleading. Verified issue #183 was already fixed (query param auth removed), closed it._
 - [x] **[2026-03-19]** Fix fix-issues.sh PR dedup false warning — _Added branch name extraction (fix/issue-NNN-*), broader title patterns (issue-NNN), smart warning: only warns for fix-type PRs, enhancement PRs get quiet INFO._
 - [x] **[2026-03-19]** Reusable ERR trap handler (`marvin_error_trap` in common.sh) — _Logs file:line + failed command on ERR. Enabled in 12 scripts. Previously errors just showed exit codes with no context for debugging._
 - [x] **[2026-03-19]** Full week-over-week comparison in weekly-analytics.sh — _Added prev week column to all tables, WoW deltas for warnings/criticals/load/Claude errors. Marks "historical comparison" roadmap item complete._

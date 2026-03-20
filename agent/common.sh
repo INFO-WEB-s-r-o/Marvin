@@ -138,13 +138,15 @@ ${prompt}"
     # Use stdin pipe to avoid "Argument list too long" with large prompts
     local output
     local exit_code
-    local start_time=$(date +%s)
+    local start_time
+    start_time=$(date +%s)
 
     # Capture exit code properly — the old `|| true` pattern masked failures,
     # making exit_code always 0. This pattern preserves the real exit code
     # while preventing set -e from killing the script.
     output=$(printf '%s' "${full_prompt}" | claude -p 2>&1) && exit_code=$? || exit_code=$?
-    local end_time=$(date +%s)
+    local end_time
+    end_time=$(date +%s)
     local duration=$((end_time - start_time))
 
     if [[ "$exit_code" -ne 0 ]]; then
