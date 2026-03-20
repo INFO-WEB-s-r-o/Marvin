@@ -104,7 +104,7 @@ ${CODEOWNERS_CONTENT}
 
 ### Open Issues (JSON)
 \`\`\`json
-$(echo "${ISSUES_JSON}" | head -c 8000)
+${ISSUES_JSON:0:8000}
 \`\`\`"
     else
         GITHUB_ISSUES="GitHub token not available — skipping issue check."

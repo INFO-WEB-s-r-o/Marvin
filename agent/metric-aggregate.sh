@@ -333,4 +333,118 @@ else
     marvin_log "WARN" "No metric data found for SLA calculation"
 fi
 
+# ─── Resource Forecasting ─────────────────────────────────────────────────
+# Linear regression on daily disk/memory data to predict exhaustion.
+# Uses the last 14 daily summaries for trend estimation.
+# Output: data/metrics/resource-forecast.json
+
+FORECAST_FILE="${METRICS_DIR}/resource-forecast.json"
+
+# Collect the last 14 daily summaries (most recent first)
+FORECAST_DAYS=()
+for i in $(seq 0 13); do
+    d=$(date -u -d "${TARGET_DATE} - ${i} days" +%Y-%m-%d 2>/dev/null || \
+        date -u -v-${i}d -j -f "%Y-%m-%d" "$TARGET_DATE" +%Y-%m-%d 2>/dev/null)
+    daily="${METRICS_DIR}/${d}-daily.json"
+    if [[ -f "$daily" ]]; then
+        FORECAST_DAYS+=("$daily")
+    fi
+done
+
+if [[ ${#FORECAST_DAYS[@]} -ge 3 ]]; then
+    # jq linear regression: index days as x=0..n, y=metric value
+    # slope = (n*Σxy - Σx*Σy) / (n*Σx² - (Σx)²)
+    forecast_ok=true
+    jq -s '
+        map({date: .date, disk_used: .summary.disk_used_mb.last, mem_used: .summary.memory_used_mb.avg})
+        | sort_by(.date)
+        | to_entries
+        | {
+            data_points: length,
+            period_start: first.value.date,
+            period_end: last.value.date,
+            disk: (
+                [.[] | {x: .key, y: .value.disk_used}] as $pts |
+                ($pts | length) as $n |
+                ($pts | map(.x) | add) as $sx |
+                ($pts | map(.y) | add) as $sy |
+                ($pts | map(.x * .y) | add) as $sxy |
+                ($pts | map(.x * .x) | add) as $sx2 |
+                (($n * $sxy - $sx * $sy) / ($n * $sx2 - $sx * $sx)) as $slope |
+                ($sy / $n - $slope * $sx / $n) as $intercept |
+                last.value.disk_used as $current |
+                {
+                    current_mb: $current,
+                    trend_mb_per_day: ($slope | . * 10 | round / 10),
+                    direction: (if $slope > 1 then "growing" elif $slope < -1 then "shrinking" else "stable" end)
+                }
+            ),
+            memory: (
+                [.[] | {x: .key, y: .value.mem_used}] as $pts |
+                ($pts | length) as $n |
+                ($pts | map(.x) | add) as $sx |
+                ($pts | map(.y) | add) as $sy |
+                ($pts | map(.x * .y) | add) as $sxy |
+                ($pts | map(.x * .x) | add) as $sx2 |
+                (($n * $sxy - $sx * $sy) / ($n * $sx2 - $sx * $sx)) as $slope |
+                last.value.mem_used as $current |
+                {
+                    current_mb: $current,
+                    trend_mb_per_day: ($slope | . * 10 | round / 10),
+                    direction: (if $slope > 5 then "growing" elif $slope < -5 then "shrinking" else "stable" end)
+                }
+            )
+        }
+    ' "${FORECAST_DAYS[@]}" > "${FORECAST_FILE}.tmp" 2>/dev/null || forecast_ok=false
+
+    if [[ "$forecast_ok" == "true" ]] && jq empty "${FORECAST_FILE}.tmp" 2>/dev/null; then
+        # Enrich with exhaustion predictions using current disk/memory totals
+        local_disk_total=$(jq -r '.disk.total' "${METRICS_DIR}/latest.json" 2>/dev/null || echo "39694")
+        local_mem_total=$(jq -r '.memory.total' "${METRICS_DIR}/latest.json" 2>/dev/null || echo "3915")
+
+        jq --arg generated "$NOW" \
+           --argjson disk_total "$local_disk_total" \
+           --argjson mem_total "$local_mem_total" '
+            .generated_at = $generated |
+            .disk.total_mb = $disk_total |
+            .disk.available_mb = ($disk_total - .disk.current_mb) |
+            .disk.used_pct = (.disk.current_mb / $disk_total * 100 | . * 10 | round / 10) |
+            .disk.days_to_80pct = (
+                if .disk.trend_mb_per_day > 0 then
+                    (($disk_total * 0.8 - .disk.current_mb) / .disk.trend_mb_per_day | floor)
+                else null end
+            ) |
+            .disk.days_to_90pct = (
+                if .disk.trend_mb_per_day > 0 then
+                    (($disk_total * 0.9 - .disk.current_mb) / .disk.trend_mb_per_day | floor)
+                else null end
+            ) |
+            .memory.total_mb = $mem_total |
+            .memory.available_mb = ($mem_total - .memory.current_mb) |
+            .memory.used_pct = (.memory.current_mb / $mem_total * 100 | . * 10 | round / 10) |
+            .memory.days_to_80pct = (
+                if .memory.trend_mb_per_day > 0 then
+                    (($mem_total * 0.8 - .memory.current_mb) / .memory.trend_mb_per_day | floor)
+                else null end
+            ) |
+            .memory.days_to_90pct = (
+                if .memory.trend_mb_per_day > 0 then
+                    (($mem_total * 0.9 - .memory.current_mb) / .memory.trend_mb_per_day | floor)
+                else null end
+            )
+        ' "${FORECAST_FILE}.tmp" > "$FORECAST_FILE"
+        rm -f "${FORECAST_FILE}.tmp"
+
+        disk_trend=$(jq -r '.disk.trend_mb_per_day' "$FORECAST_FILE")
+        disk_dir=$(jq -r '.disk.direction' "$FORECAST_FILE")
+        days_80=$(jq -r '.disk.days_to_80pct // "N/A"' "$FORECAST_FILE")
+        marvin_log "INFO" "Resource forecast: disk ${disk_dir} (${disk_trend} MB/day), days to 80%: ${days_80}"
+    else
+        rm -f "${FORECAST_FILE}.tmp"
+        marvin_log "WARN" "Resource forecasting failed"
+    fi
+else
+    marvin_log "WARN" "Not enough daily data for resource forecast (need 3+, have ${#FORECAST_DAYS[@]})"
+fi
+
 marvin_log "INFO" "Metric aggregation complete for ${TARGET_DATE}"

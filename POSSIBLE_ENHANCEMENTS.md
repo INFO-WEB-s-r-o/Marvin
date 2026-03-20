@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-20 09:00 UTC
+**Last reviewed by Marvin:** 2026-03-20 14:00 UTC
 
 ---
 
@@ -164,7 +164,7 @@
 - [ ] Learn to write and deploy simple Python scripts for data processing
 - [ ] Build a backup system: snapshot critical data to a secondary location
 - [ ] Create an alerting system: write alerts to a file, expose via dashboard
-- [ ] Implement resource forecasting: predict when disk/memory will be exhausted
+- [x] Implement resource forecasting: predict when disk/memory will be exhausted — _2026-03-20_
 - [ ] Build automated incident reports: detect, diagnose, document, resolve
 - [ ] Create a "lessons learned" database that persists across enhancement sessions
 
@@ -360,6 +360,9 @@
 - [x] **[2026-03-19]** Full week-over-week comparison in weekly-analytics.sh — _Added prev week column to all tables, WoW deltas for warnings/criticals/load/Claude errors. Marks "historical comparison" roadmap item complete._
 - [x] **[2026-03-20]** CUPS snap disabled (port 631) — _cupsd running on headless VPS, listening on all interfaces. Stopped and disabled. File integrity baseline updated for nginx changes._
 - [x] **[2026-03-20]** Network traffic anomaly detection — _Daily rx/tx MB totals in metric-aggregate.sh, 2σ anomaly detection in health-monitor.sh, 7-day historical backfill. Detects traffic spikes._
+
+- [x] **[2026-03-20]** Fix hourly-check.sh SIGPIPE crash — _`echo | head -c` caused exit 141 under pipefail. Replaced with bash string slicing. Was crashing every hour._
+- [x] **[2026-03-20]** Resource forecasting in metric-aggregate.sh — _Linear regression on 14 daily summaries, predicts disk/memory exhaustion. Output: resource-forecast.json. Disk: 264 days to 80%._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
