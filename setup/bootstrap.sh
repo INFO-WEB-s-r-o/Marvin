@@ -216,6 +216,7 @@ mkdir -p "${MARVIN_DIR}/data/logs"
 mkdir -p "${MARVIN_DIR}/data/metrics"
 mkdir -p "${MARVIN_DIR}/data/blog"
 mkdir -p "${MARVIN_DIR}/data/enhancements"
+mkdir -p "${MARVIN_DIR}/data/exports"
 mkdir -p "${MARVIN_DIR}/data/comms"
 mkdir -p "${MARVIN_DIR}/data/comms/negotiate-inbox"
 mkdir -p "${MARVIN_DIR}/data/comms/negotiate-outbox"
@@ -290,6 +291,16 @@ log "Data directories created."
 # =============================================================================
 
 log "Configuring Nginx..."
+
+# Generate export API key for /api/exports/ authentication
+log "Generating export API key..."
+EXPORT_API_KEY=$(openssl rand -hex 32)
+cat > /etc/nginx/export-api-key.conf << APIEOF
+set \$export_api_key "${EXPORT_API_KEY}";
+APIEOF
+chmod 600 /etc/nginx/export-api-key.conf
+log "Export API key written to /etc/nginx/export-api-key.conf"
+
 cat > /etc/nginx/sites-available/marvin << EOF
 server {
     listen 80 default_server;
@@ -313,7 +324,17 @@ server {
         add_header Access-Control-Allow-Origin "*";
         add_header Cache-Control "no-cache";
     }
-    
+
+    # Export API (authenticated — requires X-API-Key header)
+    location /api/exports/ {
+        alias ${MARVIN_DIR}/data/exports/;
+        default_type application/json;
+        include /etc/nginx/export-api-key.conf;
+        if (\$http_x_api_key != \$export_api_key) {
+            return 401 '{"error":"Unauthorized"}';
+        }
+    }
+
     # AI discovery endpoint
     location /.well-known/ai-managed.json {
         alias ${MARVIN_DIR}/data/comms/identity.json;
