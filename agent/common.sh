@@ -31,6 +31,20 @@ marvin_log() {
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] [${level}] ${message}" | tee -a "${LOGS_DIR}/${TODAY}.log"
 }
 
+# ─── Reusable trap error handler ─────────────────────────────────────────────
+# Logs file:line and failed command when a command fails under `set -e`.
+# Scripts can enable it alongside their existing EXIT traps:
+#   trap marvin_error_trap ERR
+# The ERR trap fires first, logs the error, then the EXIT trap runs for cleanup.
+marvin_error_trap() {
+    local exit_code=$?
+    local line_no="${BASH_LINENO[0]:-?}"
+    local script_name
+    script_name=$(basename "${BASH_SOURCE[1]:-unknown}" 2>/dev/null || echo "unknown")
+    local failed_cmd="${BASH_COMMAND:-unknown}"
+    marvin_log "ERROR" "${script_name}:${line_no} — command failed (exit ${exit_code}): ${failed_cmd}" 2>/dev/null || true
+}
+
 # Collect current system metrics as JSON
 collect_metrics() {
     local cpu_usage
