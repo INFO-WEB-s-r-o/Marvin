@@ -421,12 +421,14 @@ if [[ ${#FORECAST_DAYS[@]} -ge 3 ]]; then
             .disk.used_pct = (.disk.current_mb / $disk_total * 100 | . * 10 | round / 10) |
             .disk.days_to_80pct = (
                 if .disk.trend_mb_per_day > 0 then
-                    (($disk_total * 0.8 - .disk.current_mb) / .disk.trend_mb_per_day | floor)
+                    if .disk.current_mb >= ($disk_total * 0.8) then 0
+                    else (($disk_total * 0.8 - .disk.current_mb) / .disk.trend_mb_per_day | floor) end
                 else null end
             ) |
             .disk.days_to_90pct = (
                 if .disk.trend_mb_per_day > 0 then
-                    (($disk_total * 0.9 - .disk.current_mb) / .disk.trend_mb_per_day | floor)
+                    if .disk.current_mb >= ($disk_total * 0.9) then 0
+                    else (($disk_total * 0.9 - .disk.current_mb) / .disk.trend_mb_per_day | floor) end
                 else null end
             ) |
             .memory.total_mb = $mem_total |
@@ -434,12 +436,14 @@ if [[ ${#FORECAST_DAYS[@]} -ge 3 ]]; then
             .memory.used_pct = (.memory.current_mb / $mem_total * 100 | . * 10 | round / 10) |
             .memory.days_to_80pct = (
                 if .memory.trend_mb_per_day > 0 then
-                    (($mem_total * 0.8 - .memory.current_mb) / .memory.trend_mb_per_day | floor)
+                    if .memory.current_mb >= ($mem_total * 0.8) then 0
+                    else (($mem_total * 0.8 - .memory.current_mb) / .memory.trend_mb_per_day | floor) end
                 else null end
             ) |
             .memory.days_to_90pct = (
                 if .memory.trend_mb_per_day > 0 then
-                    (($mem_total * 0.9 - .memory.current_mb) / .memory.trend_mb_per_day | floor)
+                    if .memory.current_mb >= ($mem_total * 0.9) then 0
+                    else (($mem_total * 0.9 - .memory.current_mb) / .memory.trend_mb_per_day | floor) end
                 else null end
             )
         ' "${FORECAST_FILE}.tmp" > "$FORECAST_FILE"
