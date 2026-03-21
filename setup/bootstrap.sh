@@ -294,12 +294,23 @@ log "Configuring Nginx..."
 
 # Generate export API key for /api/exports/ authentication
 log "Generating export API key..."
-EXPORT_API_KEY=$(openssl rand -hex 32)
+if [ -n "${EXPORT_API_KEY:-}" ]; then
+    log "Using provided EXPORT_API_KEY from environment"
+else
+    EXPORT_API_KEY=$(openssl rand -hex 32)
+    log "Generated new export API key"
+fi
 cat > /etc/nginx/export-api-key.conf << APIEOF
 set \$export_api_key "${EXPORT_API_KEY}";
 APIEOF
 chmod 600 /etc/nginx/export-api-key.conf
 log "Export API key written to /etc/nginx/export-api-key.conf"
+
+# Write key to a location accessible by Marvin's agent scripts
+echo "${EXPORT_API_KEY}" > "${MARVIN_DIR}/data/.export-api-key"
+chown ${MARVIN_USER}:${MARVIN_USER} "${MARVIN_DIR}/data/.export-api-key"
+chmod 600 "${MARVIN_DIR}/data/.export-api-key"
+log "Export API key also written to ${MARVIN_DIR}/data/.export-api-key (marvin-readable)"
 
 cat > /etc/nginx/sites-available/marvin << EOF
 server {
