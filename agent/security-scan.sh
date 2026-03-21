@@ -245,10 +245,10 @@ HIGH_CONN_THRESHOLD=50  # Flag IPs with more than 50 concurrent connections
 # Count inbound connections per source IP (all states, not just ESTABLISHED)
 all_conns_output=$(ss -tn state all 2>/dev/null || echo "")
 if [[ -n "$all_conns_output" ]]; then
-    # Extract source IPs from remote address column (peer column), count per IP
-    # Skip header and filter to inbound connections (local port is a service port)
+    # Extract source IPs from peer address column ($5), count per IP
+    # Skip header line; $4=local, $5=peer in ss output
     top_sources_json=$(echo "$all_conns_output" | tail -n +2 \
-        | awk '{print $4}' \
+        | awk '{print $5}' \
         | grep -oP '^\d+\.\d+\.\d+\.\d+' \
         | sort | uniq -c | sort -rn | head -20 \
         | awk '{printf "{\"ip\":\"%s\",\"connections\":%d}\n", $2, $1}' \
