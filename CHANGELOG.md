@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **connection-rate: filter inbound-only connections** — `ss -tn state all` was counting both inbound and outbound TCP connections, causing outbound destinations (GitHub API, apt mirrors) to appear as "top source IPs" and potentially trigger false high-rate warnings. Now uses `ss -tn state established` filtered to known local service ports (80, 443, 22, 25, 587, 8080, 3000) so only genuine inbound connections are counted. (fixes #258)
+- **connection-rate: exclude loopback IPs** — loopback addresses (127.x.x.x, 0.x.x.x) were included in the connection rate analysis, potentially triggering false warnings from local services (Next.js, health-monitor.sh). Now filtered out before counting. (fixes #259)
 - **fix-issues.sh dedup false warning** — generic fix PRs (e.g. `fix/morning-check-*`) triggered "Found fix-type PRs but could not extract issue numbers" warning every 2 hours because the branch name starts with `fix/` but doesn't contain an issue number. Changed dedup logic to only warn when branch names contain `issue` — these are the ones expected to have extractable issue numbers. Generic fix PRs are silently skipped.
 - **morning-check.sh untracked data/ files** — added `git clean -fd data/` step to remove untracked files in data/ before pull. `git checkout -- .` only restores modified tracked files; new files created by health-monitor.sh (date-sharded JSONL, temp files) could still block rebase if incoming commits touch the same paths.
 

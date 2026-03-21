@@ -242,14 +242,18 @@ top_sources_json="[]"
 high_rate_count=0
 HIGH_CONN_THRESHOLD=50  # Flag IPs with more than 50 concurrent connections
 
-# Count inbound connections per source IP (all states, not just ESTABLISHED)
-all_conns_output=$(ss -tn state all 2>/dev/null || echo "")
+# Count inbound connections per source IP (filter to service ports only)
+# Use established state; match only connections to known local service ports
+# to exclude outbound connections (fixes #258). Exclude loopback IPs (fixes #259).
+all_conns_output=$(ss -tn state established 2>/dev/null || echo "")
 if [[ -n "$all_conns_output" ]]; then
-    # Extract source IPs from peer address column ($5), count per IP
-    # Skip header line; $4=local, $5=peer in ss output
+    # Extract peer IPs only where local side is a known service port
+    # $4=Local Address:Port, $5=Peer Address:Port
     top_sources_json=$(echo "$all_conns_output" | tail -n +2 \
-        | awk '{print $5}' \
+        | awk '$4 ~ /:(80|443|22|25|587|8080|3000)$/ {print $5}' \
         | grep -oP '^\d+\.\d+\.\d+\.\d+' \
+        | grep -v '^127\.' \
+        | grep -v '^0\.' \
         | sort | uniq -c | sort -rn | head -20 \
         | awk '{printf "{\"ip\":\"%s\",\"connections\":%d}\n", $2, $1}' \
         | jq -s '.' 2>/dev/null || echo "[]")
