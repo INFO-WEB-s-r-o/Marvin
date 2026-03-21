@@ -53,16 +53,18 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         # rebases. None of this local state is worth preserving — it's
         # all either auto-generated or will be recreated by the next run.
         if ! git diff --quiet 2>/dev/null; then
+            dirty_count=$(git diff --name-only 2>/dev/null | wc -l)
             dirty_files=$(git diff --name-only 2>/dev/null | head -10)
-            marvin_log "INFO" "Discarding unstaged changes before pull: ${dirty_files}"
-            git checkout -- . 2>/dev/null || true
+            [[ "$dirty_count" -gt 10 ]] && dirty_files="${dirty_files} (and $((dirty_count - 10)) more)"
+            marvin_log "INFO" "Discarding ${dirty_count} unstaged changes before pull: ${dirty_files}"
+            git checkout -- . 2>/dev/null || marvin_log "WARN" "git checkout -- . failed, pull may fail"
         fi
 
         # Clear any staged changes left by broken rebases or interrupted scripts
         if ! git diff --cached --quiet 2>/dev/null; then
             marvin_log "INFO" "Resetting staged changes before pull"
-            git reset HEAD --quiet 2>/dev/null || true
-            git checkout -- . 2>/dev/null || true
+            git reset HEAD --quiet 2>/dev/null || marvin_log "WARN" "git reset HEAD failed, pull may fail"
+            git checkout -- . 2>/dev/null || marvin_log "WARN" "git checkout -- . failed after reset"
         fi
 
         # Record the current HEAD before pulling
@@ -101,8 +103,8 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
             marvin_log "WARN" "Git pull --rebase failed, attempting merge..."
             git rebase --abort 2>/dev/null || true
             # Force-clean tree before retry — rebase failure may leave dirty state
-            git checkout -- . 2>/dev/null || true
-            git reset HEAD --quiet 2>/dev/null || true
+            git checkout -- . 2>/dev/null || marvin_log "WARN" "git checkout -- . failed during merge fallback"
+            git reset HEAD --quiet 2>/dev/null || marvin_log "WARN" "git reset failed during merge fallback"
             git pull origin main 2>&1 || {
                 marvin_log "ERROR" "Git pull failed entirely"
             }
