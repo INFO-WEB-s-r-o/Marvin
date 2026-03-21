@@ -232,6 +232,53 @@ chmod 644 "$CONN_SNAPSHOT"
 
 marvin_log "INFO" "Connection tracking: ${established_count} established, $(echo "$suspicious_conns" | jq 'length' 2>/dev/null || echo 0) suspicious"
 
+# ─── 3c. Connection rate monitoring by source IP ─────────────────────────────
+# Analyze inbound connections to identify top source IPs and flag those with
+# unusually high connection counts (possible DDoS, brute force, or scraping).
+
+marvin_log "INFO" "Analyzing connection rates by source IP..."
+
+top_sources_json="[]"
+high_rate_count=0
+HIGH_CONN_THRESHOLD=50  # Flag IPs with more than 50 concurrent connections
+
+# Count inbound connections per source IP (all states, not just ESTABLISHED)
+all_conns_output=$(ss -tn state all 2>/dev/null || echo "")
+if [[ -n "$all_conns_output" ]]; then
+    # Extract source IPs from remote address column (peer column), count per IP
+    # Skip header and filter to inbound connections (local port is a service port)
+    top_sources_json=$(echo "$all_conns_output" | tail -n +2 \
+        | awk '{print $4}' \
+        | grep -oP '^\d+\.\d+\.\d+\.\d+' \
+        | sort | uniq -c | sort -rn | head -20 \
+        | awk '{printf "{\"ip\":\"%s\",\"connections\":%d}\n", $2, $1}' \
+        | jq -s '.' 2>/dev/null || echo "[]")
+
+    # Flag IPs exceeding the threshold
+    high_rate_count=$(echo "$top_sources_json" | jq --argjson thr "$HIGH_CONN_THRESHOLD" \
+        '[.[] | select(.connections > $thr)] | length' 2>/dev/null || echo 0)
+
+    if [[ "$high_rate_count" -gt 0 ]]; then
+        _flagged_ips=$(echo "$top_sources_json" | jq -r --argjson thr "$HIGH_CONN_THRESHOLD" \
+            '.[] | select(.connections > $thr) | "\(.ip) (\(.connections) conns)"' 2>/dev/null | paste -sd', ' -)
+        marvin_log "WARN" "High connection rate from ${high_rate_count} IP(s): ${_flagged_ips}"
+    fi
+fi
+
+# Save connection rate data
+RATE_FILE="${SECURITY_DIR}/connection-rates.json"
+cat > "$RATE_FILE" << RATEEOF
+{
+  "timestamp": "${NOW}",
+  "high_rate_threshold": ${HIGH_CONN_THRESHOLD},
+  "high_rate_ips": ${high_rate_count},
+  "top_sources": ${top_sources_json}
+}
+RATEEOF
+chmod 644 "$RATE_FILE"
+
+marvin_log "INFO" "Connection rate analysis: ${high_rate_count} high-rate IP(s) above ${HIGH_CONN_THRESHOLD} conns"
+
 # ─── 4. File integrity monitoring ─────────────────────────────────────────────
 
 FIM_SCRIPT="$(dirname "$0")/file-integrity.sh"
@@ -331,7 +378,7 @@ if [[ "$rkhunter_status" == "infected" || "$chkrootkit_status" == "infected" ]];
     overall_status="infected"
 elif [[ "$fim_status" == "alert" ]]; then
     overall_status="alert"
-elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security" -gt 0 || "$unexpected_count" -gt 0 || "$suspicious_count" -gt 0 ]]; then
+elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security" -gt 0 || "$unexpected_count" -gt 0 || "$suspicious_count" -gt 0 || "$high_rate_count" -gt 0 ]]; then
     overall_status="warnings"
 fi
 
@@ -368,7 +415,9 @@ cat > "$REPORT_FILE" << EOF
     "unexpected_port_list": "${unexpected_ports}",
     "unexpected_port_details": ${unexpected_details_json},
     "established_connections": ${established_count},
-    "suspicious_connections": $(echo "$suspicious_conns" | jq 'length' 2>/dev/null || echo 0)
+    "suspicious_connections": $(echo "$suspicious_conns" | jq 'length' 2>/dev/null || echo 0),
+    "high_rate_ips": ${high_rate_count},
+    "high_rate_threshold": ${HIGH_CONN_THRESHOLD}
   }
 }
 EOF

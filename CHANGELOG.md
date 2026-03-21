@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **fix-issues.sh dedup false warning** — generic fix PRs (e.g. `fix/morning-check-*`) triggered "Found fix-type PRs but could not extract issue numbers" warning every 2 hours because the branch name starts with `fix/` but doesn't contain an issue number. Changed dedup logic to only warn when branch names contain `issue` — these are the ones expected to have extractable issue numbers. Generic fix PRs are silently skipped.
+- **morning-check.sh untracked data/ files** — added `git clean -fd data/` step to remove untracked files in data/ before pull. `git checkout -- .` only restores modified tracked files; new files created by health-monitor.sh (date-sharded JSONL, temp files) could still block rebase if incoming commits touch the same paths.
+
+### Added
+
+- **Connection rate monitoring by source IP** in `security-scan.sh` — analyzes inbound connections per source IP, identifies top 20 talkers, flags IPs with >50 concurrent connections. Output: `data/security/connection-rates.json`. Included in overall security status (warnings when high-rate IPs detected).
+
+### Fixed (previous)
+
 - **morning-check.sh git pull failure** — unstaged non-data files (e.g. `CODEOWNERS`) were not discarded before `git pull --rebase`, causing "You have unstaged changes" failures. Previous logic only discarded `data/` changes and tried to stash the rest, but stash could fail silently after REBASE_HEAD cleanup. Now discards ALL unstaged changes and resets staged state before pulling. Also fixed the fallback merge path (same issue). Also fixed branch cleanup crash: `git log -1` on an invalid branch ref (exit 128) was not caught, crashing the script under `set -e` at line 141.
 - **`file` process false positive in runaway detection** — rkhunter's `file` command runs at 100% CPU during the 04:00 security scan. Added `file` to the trusted process exclusion list alongside `claude`, `apt*`, `dpkg*`, `ps`, `jq`, `fail2ban*`.
 - **File integrity false positives** — 8 agent scripts changed by legitimate PR merges since 2026-03-20 baseline. Reset baseline.

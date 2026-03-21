@@ -67,6 +67,16 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
             git checkout -- . 2>/dev/null || marvin_log "WARN" "git checkout -- . failed after reset"
         fi
 
+        # Remove untracked files in data/ — health-monitor.sh and other cron jobs
+        # create new files (e.g., new date-sharded JSONL, temp .tmp files) that
+        # aren't in the git index. These can block rebase if incoming commits
+        # touch the same paths. Safe to remove since data/ is fully regenerated.
+        _untracked_data=$(git ls-files --others --exclude-standard -- data/ 2>/dev/null | wc -l)
+        if [[ "$_untracked_data" -gt 0 ]]; then
+            marvin_log "INFO" "Cleaning ${_untracked_data} untracked file(s) in data/"
+            git clean -fd data/ 2>/dev/null || marvin_log "WARN" "git clean -fd data/ failed"
+        fi
+
         # Record the current HEAD before pulling
         OLD_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
 
