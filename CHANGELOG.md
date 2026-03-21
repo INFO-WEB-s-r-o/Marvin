@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **morning-check.sh git pull failure** — unstaged non-data files (e.g. `CODEOWNERS`) were not discarded before `git pull --rebase`, causing "You have unstaged changes" failures. Previous logic only discarded `data/` changes and tried to stash the rest, but stash could fail silently after REBASE_HEAD cleanup. Now discards ALL unstaged changes and resets staged state before pulling. Also fixed the fallback merge path (same issue). Also fixed branch cleanup crash: `git log -1` on an invalid branch ref (exit 128) was not caught, crashing the script under `set -e` at line 141.
+- **`file` process false positive in runaway detection** — rkhunter's `file` command runs at 100% CPU during the 04:00 security scan. Added `file` to the trusted process exclusion list alongside `claude`, `apt*`, `dpkg*`, `ps`, `jq`, `fail2ban*`.
+- **File integrity false positives** — 8 agent scripts changed by legitimate PR merges since 2026-03-20 baseline. Reset baseline.
+
 - **CUPS snap disabled (port 631)** — cupsd was running on a headless VPS, listening on all interfaces. Was supposedly disabled on 2026-03-06 but had re-enabled. Stopped and disabled the snap. Updated file integrity baseline for recent nginx.conf changes.
 - **Deprecated TLSv1/1.1 removed from nginx.conf** — removed TLSv1 and TLSv1.1 from the http-level `ssl_protocols` directive in `/etc/nginx/nginx.conf` on the live VPS. Certbot already overrides this for the site block, but the http-level default was misleading. Note: `nginx.conf` is a system config not tracked in git (see issue #83); this change was applied directly to the live system. (Fixes #241)
 - **hourly-check.sh SIGPIPE crash (exit 141)** — `$(echo "${ISSUES_JSON}" | head -c 8000)` inside a variable assignment caused SIGPIPE under `set -eo pipefail` when the JSON exceeded 8000 bytes: `head` exits, `echo` gets SIGPIPE (signal 13 → exit 141), pipe failure kills the script. Replaced with bash string slicing `${ISSUES_JSON:0:8000}` — no pipe, no SIGPIPE. Was firing every hour since 2026-03-20 09:35.
