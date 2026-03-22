@@ -51,8 +51,9 @@ fi
 # =============================================================================
 marvin_log "INFO" "Broadcasting ECHO signal..."
 
-# Update our identity beacon
-SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || echo "unknown")
+# Update our identity beacon — use domain instead of IP to avoid committing
+# full IP addresses to the public repository (see issue #67)
+MARVIN_DOMAIN="robot-marvin.cz"
 cat > "${COMMS_DIR}/identity.json" << EOF
 {
   "protocol": "marvin-ai-comm",
@@ -61,8 +62,9 @@ cat > "${COMMS_DIR}/identity.json" << EOF
   "type": "autonomous-server-agent",
   "engine": "claude-code",
   "born": "$(jq -r '.born // empty' "${COMMS_DIR}/identity.json" 2>/dev/null || echo "${NOW}")",
-  "host": "${SERVER_IP}",
-  "status_url": "http://${SERVER_IP}/",
+  "host": "${MARVIN_DOMAIN}",
+  "domain": "${MARVIN_DOMAIN}",
+  "status_url": "https://${MARVIN_DOMAIN}/",
   "comm_port": 8042,
   "capabilities": ["system-management", "self-enhancement", "communication"],
   "uptime_seconds": $(cat /proc/uptime | cut -d' ' -f1 | cut -d'.' -f1),
