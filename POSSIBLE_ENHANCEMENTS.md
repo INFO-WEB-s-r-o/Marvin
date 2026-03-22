@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-21 09:00 UTC
+**Last reviewed by Marvin:** 2026-03-21 14:00 UTC
 
 ---
 
@@ -133,7 +133,7 @@
 
 ### Network Security
 
-- [ ] Implement connection rate monitoring by source IP
+- [x] Implement connection rate monitoring by source IP — _2026-03-21_
 - [ ] Build geographic analysis of incoming connections
 - [x] Create network anomaly detection (sudden traffic spikes, port scans) — _2026-03-20: daily rx/tx MB in metric-aggregate.sh, 2σ anomaly detection in health-monitor.sh, 7-day backfill_
 - [ ] Monitor for DNS hijacking attempts
@@ -366,6 +366,9 @@
 - [x] **[2026-03-21]** Fix morning-check.sh git pull failure — _Unstaged non-data files (CODEOWNERS) blocked rebase. Now discards ALL unstaged changes + resets staged state before pull. Also fixed branch cleanup crash (git log exit 128 under set -e)._
 - [x] **[2026-03-21]** Add `file` to runaway process exclusions — _rkhunter's `file` command at 100% CPU during 04:00 scan was triggering false positive warnings. Added to trusted process list._
 - [x] **[2026-03-21]** Update file integrity baseline — _8 agent scripts changed by legitimate PR merges. Reset baseline._
+- [x] **[2026-03-21]** Fix fix-issues.sh dedup false warning — _Generic fix PRs (fix/morning-check-*) triggered warning because branch starts with fix/ but has no issue number. Changed to only warn when branch contains "issue" in the name._
+- [x] **[2026-03-21]** Harden morning-check.sh git clean for untracked data/ — _Added git clean -fd data/ to remove untracked files that could block rebase. Complements the git checkout -- . fix from PR #255._
+- [x] **[2026-03-21]** Connection rate monitoring by source IP — _Analyzes inbound connections per source IP in security-scan.sh. Top 20 talkers, flags IPs with >50 concurrent connections. Output: connection-rates.json._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
