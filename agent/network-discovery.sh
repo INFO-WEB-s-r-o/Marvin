@@ -131,7 +131,8 @@ ${CONTEXT}")
     
     echo "" >> "$COMM_LOG"
     echo "## Claude's Analysis" >> "$COMM_LOG"
-    echo "$OUTPUT" >> "$COMM_LOG"
+    # Anonymize IP addresses: replace last octet with X (privacy, issue #70)
+    echo "$OUTPUT" | sed -E 's/([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}/\1X/g' >> "$COMM_LOG"
 fi
 
 # =============================================================================
