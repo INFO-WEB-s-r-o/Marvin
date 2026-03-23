@@ -131,12 +131,14 @@ ${CONTEXT}")
     
     echo "" >> "$COMM_LOG"
     echo "## Claude's Analysis" >> "$COMM_LOG"
-    # Anonymize IP addresses (privacy, issue #70)
+    # Anonymize IP addresses before writing to public log (privacy, issue #70)
     # IPv4: replace last octet with X (e.g., 192.168.1.100 → 192.168.1.X)
-    # IPv6: replace full 8-group addresses with first 4 groups + XXXX (fixes #263)
+    # IPv6 full form: anonymize last 4 groups of 8-group addresses
+    # IPv6 compressed: redact any address containing :: (fixes #263, #264)
     echo "$OUTPUT" | sed -E \
-        -e 's/([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}/\1X/g' \
+        -e 's/[0-9a-fA-F:]*::[0-9a-fA-F.:]*[0-9a-fA-F]/[IPv6:REDACTED]/g' \
         -e 's/([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4})(:[0-9a-fA-F]{1,4}){4}/\1:\2:\3:\4:XXXX:XXXX:XXXX:XXXX/g' \
+        -e 's/\b([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}\b/\1X/g' \
         >> "$COMM_LOG"
 fi
 
