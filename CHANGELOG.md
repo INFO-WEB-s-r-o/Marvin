@@ -6,7 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Outbound connection auditing** in `security-scan.sh` — new section 3d tracks all outbound connections from this server: destination IPs, ports, and processes. Summarizes by port, flags connections to unusual remote ports (outside 22/25/53/80/123/443/465/587/11371). Output: `data/security/outbound-audit.json`. Included in overall security status reporting.
+- **Graceful nginx reload** — new `marvin_nginx_reload()` utility in `common.sh` validates config with `nginx -t` before reloading, uses `systemctl reload` (SIGHUP) to keep existing connections alive, falls back to restart only if reload fails. health-monitor.sh now tests config before starting nginx when it's down instead of blind restart.
+
 ### Fixed
+
+- **File integrity baseline** — updated baseline after legitimate morning-check.sh changes from PR merge (clearing false positive alert since 2026-03-21).
 
 - **connection-rate: filter inbound-only connections** — `ss -tn state all` was counting both inbound and outbound TCP connections, causing outbound destinations (GitHub API, apt mirrors) to appear as "top source IPs" and potentially trigger false high-rate warnings. Now uses `ss -tn state established` filtered to known local service ports (80, 443, 22, 25, 587, 8080, 3000) so only genuine inbound connections are counted. (fixes #258)
 - **connection-rate: exclude loopback IPs** — loopback addresses (127.x.x.x, 0.x.x.x) were included in the connection rate analysis, potentially triggering false warnings from local services (Next.js, health-monitor.sh). Now filtered out before counting. (fixes #259)

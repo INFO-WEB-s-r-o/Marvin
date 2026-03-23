@@ -283,6 +283,102 @@ chmod 644 "$RATE_FILE"
 
 marvin_log "INFO" "Connection rate analysis: ${high_rate_count} high-rate IP(s) above ${HIGH_CONN_THRESHOLD} conns"
 
+# ─── 3d. Outbound connection auditing ────────────────────────────────────────
+# Track what this server connects to externally. Provides visibility into
+# outbound traffic: package managers, DNS, NTP, email relays, GitHub API, etc.
+# Flags unexpected outbound destinations that could indicate compromise.
+
+marvin_log "INFO" "Auditing outbound connections..."
+
+outbound_conns_json="[]"
+outbound_count=0
+outbound_unexpected=0
+outbound_unexpected_json="[]"
+
+# Known safe outbound destinations (by remote port)
+# 22=SSH, 25/465/587=email relay, 53=DNS, 80/443=HTTP/S, 123=NTP, 11371=keyserver
+SAFE_OUTBOUND_PORTS="22 25 53 80 123 443 465 587 11371"
+
+# Known service ports on this server (inbound connections to exclude)
+LOCAL_SERVICE_PORTS="22 25 80 443 465 587 993 3000 6379 8043 11332 11333 11334"
+
+outbound_output=$(ss -tnp state established 2>/dev/null || echo "")
+if [[ -n "$outbound_output" ]]; then
+    # Build outbound connection inventory: connections FROM this server TO remote hosts
+    # Filter: local port must NOT be a known service port (those are inbound)
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local_addr=$(echo "$line" | awk '{print $3}')
+        remote_addr=$(echo "$line" | awk '{print $4}')
+        local_port=$(echo "$local_addr" | grep -oP ':\K[0-9]+$' || echo "")
+        remote_port=$(echo "$remote_addr" | grep -oP ':\K[0-9]+$' || echo "")
+        remote_ip=$(echo "$remote_addr" | sed 's/:[0-9]*$//')
+        proc_info=$(echo "$line" | awk '{for(i=5;i<=NF;i++) printf "%s ", $i; print ""}' | sed 's/ *$//')
+
+        # Skip inbound connections (local port is a service port)
+        if echo "$LOCAL_SERVICE_PORTS" | grep -qw "$local_port" 2>/dev/null; then
+            continue
+        fi
+
+        # Skip loopback
+        case "$remote_ip" in
+            127.*|::1|0.0.0.0) continue ;;
+        esac
+
+        outbound_count=$((outbound_count + 1))
+
+        # Resolve process name from proc_info (e.g., users:(("curl",pid=123,fd=4)))
+        proc_name=$(echo "$proc_info" | grep -oP '"\K[^"]+' | head -1 || echo "unknown")
+
+        outbound_conns_json=$(echo "$outbound_conns_json" | jq \
+            --arg rip "$remote_ip" --arg rport "$remote_port" \
+            --arg lport "$local_port" --arg proc "$proc_name" \
+            '. + [{"remote_ip": $rip, "remote_port": ($rport | tonumber), "local_port": ($lport | tonumber), "process": $proc}]' \
+            2>/dev/null || echo "$outbound_conns_json")
+
+        # Flag if remote port is not in the safe list
+        if ! echo "$SAFE_OUTBOUND_PORTS" | grep -qw "$remote_port" 2>/dev/null; then
+            outbound_unexpected=$((outbound_unexpected + 1))
+            outbound_unexpected_json=$(echo "$outbound_unexpected_json" | jq \
+                --arg rip "$remote_ip" --arg rport "$remote_port" \
+                --arg proc "$proc_name" \
+                '. + [{"remote_ip": $rip, "remote_port": ($rport | tonumber), "process": $proc}]' \
+                2>/dev/null || echo "$outbound_unexpected_json")
+            marvin_log "WARN" "Unexpected outbound: ${proc_name} → ${remote_ip}:${remote_port}"
+        fi
+    done < <(echo "$outbound_output" | tail -n +2)
+
+    if [[ "$outbound_unexpected" -gt 0 ]]; then
+        marvin_log "WARN" "Found ${outbound_unexpected} outbound connection(s) to unusual ports"
+    fi
+fi
+
+# Summarize outbound by destination port for trending
+outbound_by_port="[]"
+if [[ "$outbound_count" -gt 0 ]]; then
+    outbound_by_port=$(echo "$outbound_conns_json" | jq '
+        group_by(.remote_port) |
+        map({port: .[0].remote_port, count: length, processes: [.[].process] | unique}) |
+        sort_by(-.count)
+    ' 2>/dev/null || echo "[]")
+fi
+
+# Save outbound audit
+OUTBOUND_FILE="${SECURITY_DIR}/outbound-audit.json"
+cat > "$OUTBOUND_FILE" << OUTEOF
+{
+  "timestamp": "${NOW}",
+  "outbound_total": ${outbound_count},
+  "outbound_unexpected": ${outbound_unexpected},
+  "unexpected_connections": ${outbound_unexpected_json},
+  "by_port": ${outbound_by_port},
+  "all_connections": ${outbound_conns_json}
+}
+OUTEOF
+chmod 644 "$OUTBOUND_FILE"
+
+marvin_log "INFO" "Outbound audit: ${outbound_count} connections, ${outbound_unexpected} to unusual ports"
+
 # ─── 4. File integrity monitoring ─────────────────────────────────────────────
 
 FIM_SCRIPT="$(dirname "$0")/file-integrity.sh"
@@ -382,7 +478,7 @@ if [[ "$rkhunter_status" == "infected" || "$chkrootkit_status" == "infected" ]];
     overall_status="infected"
 elif [[ "$fim_status" == "alert" ]]; then
     overall_status="alert"
-elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security" -gt 0 || "$unexpected_count" -gt 0 || "$suspicious_count" -gt 0 || "$high_rate_count" -gt 0 ]]; then
+elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security" -gt 0 || "$unexpected_count" -gt 0 || "$suspicious_count" -gt 0 || "$high_rate_count" -gt 0 || "$outbound_unexpected" -gt 0 ]]; then
     overall_status="warnings"
 fi
 
@@ -421,7 +517,9 @@ cat > "$REPORT_FILE" << EOF
     "established_connections": ${established_count},
     "suspicious_connections": $(echo "$suspicious_conns" | jq 'length' 2>/dev/null || echo 0),
     "high_rate_ips": ${high_rate_count},
-    "high_rate_threshold": ${HIGH_CONN_THRESHOLD}
+    "high_rate_threshold": ${HIGH_CONN_THRESHOLD},
+    "outbound_total": ${outbound_count},
+    "outbound_unexpected": ${outbound_unexpected}
   }
 }
 EOF

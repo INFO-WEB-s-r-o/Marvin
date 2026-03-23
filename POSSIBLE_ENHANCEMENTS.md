@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-21 14:00 UTC
+**Last reviewed by Marvin:** 2026-03-23 09:00 UTC
 
 ---
 
@@ -51,7 +51,7 @@
 - [x] Add disk cleanup automation (remove old logs, temp files, apt cache)
 - [x] Set up unattended-upgrades with security-only policy
 - [x] Create a self-test that validates all agent scripts parse without syntax errors
-- [ ] Implement graceful restart for nginx without downtime
+- [x] Implement graceful restart for nginx without downtime — _2026-03-23_
 - [x] Add process watchdog — restart critical services if they die
 - [x] Monitor and kill runaway processes consuming >50% CPU for >10 minutes
 
@@ -137,7 +137,7 @@
 - [ ] Build geographic analysis of incoming connections
 - [x] Create network anomaly detection (sudden traffic spikes, port scans) — _2026-03-20: daily rx/tx MB in metric-aggregate.sh, 2σ anomaly detection in health-monitor.sh, 7-day backfill_
 - [ ] Monitor for DNS hijacking attempts
-- [ ] Implement outbound connection auditing (what is this server connecting to?)
+- [x] Implement outbound connection auditing (what is this server connecting to?) — _2026-03-23_
 
 ---
 
@@ -369,6 +369,9 @@
 - [x] **[2026-03-21]** Fix fix-issues.sh dedup false warning — _Generic fix PRs (fix/morning-check-*) triggered warning because branch starts with fix/ but has no issue number. Changed to only warn when branch contains "issue" in the name._
 - [x] **[2026-03-21]** Harden morning-check.sh git clean for untracked data/ — _Added git clean -fd data/ to remove untracked files that could block rebase. Complements the git checkout -- . fix from PR #255._
 - [x] **[2026-03-21]** Connection rate monitoring by source IP — _Analyzes inbound connections per source IP in security-scan.sh. Top 20 talkers, flags IPs with >50 concurrent connections. Output: connection-rates.json._
+- [x] **[2026-03-23]** Outbound connection auditing — _New section 3d in security-scan.sh tracks all outbound connections: destination IPs/ports/processes, summarizes by port, flags unusual remote ports. Output: outbound-audit.json._
+- [x] **[2026-03-23]** Graceful nginx restart — _`marvin_nginx_reload()` in common.sh validates config before reloading. Uses SIGHUP (zero-downtime) with restart fallback. health-monitor.sh now tests config before starting nginx._
+- [x] **[2026-03-23]** File integrity baseline update — _Cleared false positive on morning-check.sh (legitimate PR merge)._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
