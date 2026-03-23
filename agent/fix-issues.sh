@@ -19,6 +19,7 @@ source "$(dirname "$0")/common.sh"
 source "$(dirname "$0")/lib/github.sh"
 
 LOCK_FILE="/tmp/marvin-fix-issues.lock"
+_PRE_UNTRACKED=""
 
 # ─── Cleanup trap — always return to clean main ─────────────────────────────
 
@@ -34,7 +35,11 @@ cleanup() {
         # Reset index and discard all changes (handles unmerged state too)
         git reset HEAD 2>/dev/null || true
         git checkout -- . 2>/dev/null || true
-        git clean -fd agent/ web/ 2>/dev/null || true
+        # Only remove untracked files created during this run, not pre-existing ones (#285)
+        while IFS= read -r _f; do
+            [[ -n "$_f" ]] || continue
+            echo "$_PRE_UNTRACKED" | grep -qxF "$_f" || rm -f "$_f"
+        done < <(git ls-files --others --exclude-standard -- agent/ web/ 2>/dev/null) || true
         git checkout main 2>/dev/null || true
         # Delete local branch if it was never pushed
         if ! git ls-remote --heads origin "$current_branch" 2>/dev/null | grep -q "$current_branch"; then
@@ -195,6 +200,9 @@ fi
 
 # ─── Create fix branch ──────────────────────────────────────────────────────
 
+# Snapshot pre-existing untracked files so rollback only cleans new ones (#285)
+_PRE_UNTRACKED=$(git ls-files --others --exclude-standard -- agent/ web/ 2>/dev/null || echo "")
+
 BRANCH="fix/issues-${TIMESTAMP}"
 git checkout -b "$BRANCH" 2>/dev/null
 marvin_log "INFO" "Working on branch: ${BRANCH}"
@@ -262,7 +270,11 @@ if [[ "$VALID" != "true" ]]; then
     marvin_log "ERROR" "Validation failed — aborting fix. Errors: ${VALIDATION_ERRORS}"
     # Revert everything (trap will handle branch cleanup)
     git checkout -- . 2>/dev/null || true
-    git clean -fd agent/ web/ 2>/dev/null || true
+    # Only remove untracked files created during this run, not pre-existing ones (#285)
+    while IFS= read -r _f; do
+        [[ -n "$_f" ]] || continue
+        echo "$_PRE_UNTRACKED" | grep -qxF "$_f" || rm -f "$_f"
+    done < <(git ls-files --others --exclude-standard -- agent/ web/ 2>/dev/null) || true
     exit 1
 fi
 
