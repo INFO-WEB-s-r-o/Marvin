@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Rollback git failure handling** in `self-enhance.sh` — `_enhance_rollback()` no longer silently ignores `git reset` and `git checkout` failures. Git command errors are now logged and propagated, preventing the agent from falsely reporting a successful rollback when the codebase remains in an unknown state. (fixes #276)
 - **File integrity baseline** — updated baseline after legitimate morning-check.sh changes from PR merge (clearing false positive alert since 2026-03-21).
 
 - **connection-rate: filter inbound-only connections** — `ss -tn state all` was counting both inbound and outbound TCP connections, causing outbound destinations (GitHub API, apt mirrors) to appear as "top source IPs" and potentially trigger false high-rate warnings. Now uses `ss -tn state established` filtered to known local service ports (80, 443, 22, 25, 587, 8080, 3000) so only genuine inbound connections are counted. (fixes #258)

@@ -32,12 +32,20 @@ _enhance_rollback() {
     # Reset to pre-enhancement commit — this reverts both committed and uncommitted changes
     if [[ -n "${PRE_ENHANCE_HEAD}" ]]; then
         marvin_log "INFO" "Resetting to pre-enhancement HEAD: ${PRE_ENHANCE_HEAD:0:12}"
-        git reset --hard "$PRE_ENHANCE_HEAD" 2>/dev/null || true
+        if ! git reset --hard "$PRE_ENHANCE_HEAD" 2>&1; then
+            marvin_log "CRITICAL" "git reset --hard failed — agent may be in unknown state"
+            return 1
+        fi
     else
         # Fallback: revert only uncommitted changes if HEAD wasn't captured
-        git checkout -- agent/ web/ 2>/dev/null || true
+        if ! git checkout -- agent/ web/ 2>&1; then
+            marvin_log "CRITICAL" "git checkout rollback failed — agent may be in unknown state"
+            return 1
+        fi
     fi
-    git clean -fd agent/ web/ 2>/dev/null || true
+    if ! git clean -fd agent/ web/ 2>&1; then
+        marvin_log "WARN" "git clean failed during rollback — untracked files may remain"
+    fi
     marvin_log "INFO" "Rollback complete — codebase restored to pre-enhancement state"
 }
 
