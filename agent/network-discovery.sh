@@ -133,18 +133,18 @@ ${CONTEXT}")
     echo "## Claude's Analysis" >> "$COMM_LOG"
     # Anonymize IP addresses before writing to public log (privacy, issue #70)
     # IPv6 compressed: redact any address containing :: (fixes #263, #264, #267)
-    # IPv6 full form: anonymize last 4 groups of 8-group addresses
+    # IPv6 full form: anonymize last 4 groups of 8-group addresses (with word boundaries, fixes #270)
     # IPv4 in URLs: handle ://IP separately since general rule excludes / (fixes #268)
     # IPv4 general: replace last octet with X, exclude / to protect version strings
     # Fallback: if sed fails, withhold output entirely rather than leaking IPs
-    ANON_OUTPUT=$(echo "$OUTPUT" | sed -E \
+    ANON_OUTPUT=$(printf '%s\n' "$OUTPUT" | sed -E \
         -e 's/(^|[^0-9a-fA-F:])([0-9a-fA-F:]*::[0-9a-fA-F.:]*[0-9a-fA-F])([^0-9a-fA-F:]|$)/\1[IPv6:REDACTED]\3/g' \
-        -e 's/([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4})(:[0-9a-fA-F]{1,4}){4}/\1:\2:\3:\4:XXXX:XXXX:XXXX:XXXX/g' \
+        -e 's/(^|[^0-9a-fA-F:])([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4})(:[0-9a-fA-F]{1,4}){4}([^0-9a-fA-F:]|$)/\1\2:\3:\4:\5:XXXX:XXXX:XXXX:XXXX\7/g' \
         -e 's|://([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}([/?#])|://\1X\2|g' \
         -e 's|://([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}\b|://\1X|g' \
         -e 's/(^|[^0-9/])([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}\b/\1\2X/g' \
         2>/dev/null) || ANON_OUTPUT="[IP anonymization failed — output withheld for privacy]"
-    echo "$ANON_OUTPUT" >> "$COMM_LOG"
+    printf '%s\n' "$ANON_OUTPUT" >> "$COMM_LOG"
 fi
 
 # =============================================================================
