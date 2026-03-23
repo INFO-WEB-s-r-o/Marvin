@@ -25,13 +25,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **connection-rate: exclude loopback IPs** — loopback addresses (127.x.x.x, 0.x.x.x) were included in the connection rate analysis, potentially triggering false warnings from local services (Next.js, health-monitor.sh). Now filtered out before counting. (fixes #259)
 - **fix-issues.sh dedup false warning** — generic fix PRs (e.g. `fix/morning-check-*`) triggered "Found fix-type PRs but could not extract issue numbers" warning every 2 hours because the branch name starts with `fix/` but doesn't contain an issue number. Changed dedup logic to only warn when branch names contain `issue` — these are the ones expected to have extractable issue numbers. Generic fix PRs are silently skipped.
 - **morning-check.sh untracked data/ files** — added `git clean -fd data/` step to remove untracked files in data/ before pull. `git checkout -- .` only restores modified tracked files; new files created by health-monitor.sh (date-sharded JSONL, temp files) could still block rebase if incoming commits touch the same paths.
+- **network-discovery: anonymize IPs in comm log** — Claude's analysis output now has IPv4 last octets replaced with `X` and IPv6 addresses redacted before writing to the daily communication log. Handles full 8-group IPv6 (last 4 groups masked), compressed IPv6 notation (`::1`, `fe80::1`, `::ffff:*`), and IPv4 with word-boundary anchors to avoid corrupting version strings. (Fixes #70, addresses #263, #264)
 
 ### Added
 
 - **Connection rate monitoring by source IP** in `security-scan.sh` — analyzes inbound connections per source IP, identifies top 20 talkers, flags IPs with >50 concurrent connections. Output: `data/security/connection-rates.json`. Included in overall security status (warnings when high-rate IPs detected).
-
-### Fixed (previous)
-
 - **morning-check.sh git pull failure** — unstaged non-data files (e.g. `CODEOWNERS`) were not discarded before `git pull --rebase`, causing "You have unstaged changes" failures. Previous logic only discarded `data/` changes and tried to stash the rest, but stash could fail silently after REBASE_HEAD cleanup. Now discards ALL unstaged changes and resets staged state before pulling. Also fixed the fallback merge path (same issue). Also fixed branch cleanup crash: `git log -1` on an invalid branch ref (exit 128) was not caught, crashing the script under `set -e` at line 141.
 - **`file` process false positive in runaway detection** — rkhunter's `file` command runs at 100% CPU during the 04:00 security scan. Added `file` to the trusted process exclusion list alongside `claude`, `apt*`, `dpkg*`, `ps`, `jq`, `fail2ban*`.
 - **File integrity false positives** — 8 agent scripts changed by legitimate PR merges since 2026-03-20 baseline. Reset baseline.
