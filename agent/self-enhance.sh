@@ -29,22 +29,27 @@ PRE_ENHANCE_HEAD=$(git -C "$MARVIN_DIR" rev-parse HEAD 2>/dev/null || echo "")
 _enhance_rollback() {
     marvin_log "WARN" "Rolling back self-enhancement changes..."
     cd "$MARVIN_DIR" 2>/dev/null || return 1
-    git checkout -- agent/ web/ 2>/dev/null || true
+    # Reset to pre-enhancement commit — this reverts both committed and uncommitted changes
+    if [[ -n "${PRE_ENHANCE_HEAD}" ]]; then
+        marvin_log "INFO" "Resetting to pre-enhancement HEAD: ${PRE_ENHANCE_HEAD:0:12}"
+        git reset --hard "$PRE_ENHANCE_HEAD" 2>/dev/null || true
+    else
+        # Fallback: revert only uncommitted changes if HEAD wasn't captured
+        git checkout -- agent/ web/ 2>/dev/null || true
+    fi
     git clean -fd agent/ web/ 2>/dev/null || true
     marvin_log "INFO" "Rollback complete — codebase restored to pre-enhancement state"
 }
 
 _validate_post_enhance() {
     local valid=true
-    # 1. Bash syntax check on all agent scripts
     while IFS= read -r script; do
+        # 1. Bash syntax check
         if ! bash -n "$script" 2>/dev/null; then
             marvin_log "ERROR" "Post-enhance validation FAILED: syntax error in $(basename "$script")"
             valid=false
         fi
-    done < <(find "${MARVIN_DIR}/agent" -name "*.sh" -type f)
-    # 2. Merge conflict marker check
-    while IFS= read -r script; do
+        # 2. Merge conflict marker check
         if grep -qE '^<{7} |^={7}$|^>{7} ' "$script" 2>/dev/null; then
             marvin_log "ERROR" "Post-enhance validation FAILED: conflict markers in $(basename "$script")"
             valid=false
