@@ -39,7 +39,7 @@ cleanup() {
         # Only remove untracked files created during this run, not pre-existing ones (#285)
         while IFS= read -r _f; do
             [[ -n "$_f" ]] || continue
-            [[ $'\n'"$_PRE_UNTRACKED"$'\n' == *$'\n'"$_f"$'\n'* ]] || rm -f "$_f"
+            printf '%s\n' "$_PRE_UNTRACKED" | grep -qxF "$_f" || rm -f "$_f"
         done < <(git ls-files --others --exclude-standard -- agent/ web/ 2>/dev/null) || true
         git checkout main 2>/dev/null || true
         # Delete local branch if it was never pushed
@@ -274,7 +274,7 @@ if [[ "$VALID" != "true" ]]; then
     # Only remove untracked files created during this run, not pre-existing ones (#285)
     while IFS= read -r _f; do
         [[ -n "$_f" ]] || continue
-        echo "$_PRE_UNTRACKED" | grep -qxF "$_f" || rm -f "$_f"
+        printf '%s\n' "$_PRE_UNTRACKED" | grep -qxF "$_f" || rm -f "$_f"
     done < <(git ls-files --others --exclude-standard -- agent/ web/ 2>/dev/null) || true
     exit 1
 fi
