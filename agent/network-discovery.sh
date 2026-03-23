@@ -18,6 +18,17 @@ marvin_log "INFO" "=== NETWORK DISCOVERY STARTING ==="
 PEERS_FILE="${COMMS_DIR}/peers.json"
 COMM_LOG="${COMMS_DIR}/${TODAY}.log"
 
+# Helper: anonymize IPs in a string before writing to public logs (issue #70, #271)
+anonymize_ips() {
+    sed -E \
+        -e 's/(^|[^0-9a-fA-F:])([0-9a-fA-F:]*::[0-9a-fA-F.:]*[0-9a-fA-F])([^0-9a-fA-F:]|$)/\1[IPv6:REDACTED]\3/g' \
+        -e 's/(^|[^0-9a-fA-F:])([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4})(:[0-9a-fA-F]{1,4}){4}([^0-9a-fA-F:]|$)/\1\2:\3:\4:\5:XXXX:XXXX:XXXX:XXXX\7/g' \
+        -e 's|://([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}([/?#])|://\1X\2|g' \
+        -e 's|://([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}\b|://\1X|g' \
+        -e 's/(^|[^0-9/])([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}\b/\1\2X/g' \
+        2>/dev/null || printf '%s\n' "[IP anonymization failed — output withheld for privacy]"
+}
+
 # Initialize comm log for today
 echo "# Communication Log — ${TODAY}" >> "$COMM_LOG"
 echo "Started at: ${NOW}" >> "$COMM_LOG"
@@ -37,10 +48,10 @@ if [[ -f "$PEERS_FILE" ]]; then
             STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
             if [[ "$STATUS_CODE" == "200" ]]; then
                 marvin_log "INFO" "Peer alive: ${peer_url} (HTTP ${STATUS_CODE})"
-                echo "[${NOW}] PEER_ALIVE: ${peer_url}" >> "$COMM_LOG"
+                printf '%s\n' "[${NOW}] PEER_ALIVE: ${peer_url}" | anonymize_ips >> "$COMM_LOG"
             else
                 marvin_log "WARN" "Peer unreachable: ${peer_url} (HTTP ${STATUS_CODE})"
-                echo "[${NOW}] PEER_DEAD: ${peer_url} (HTTP ${STATUS_CODE})" >> "$COMM_LOG"
+                printf '%s\n' "[${NOW}] PEER_DEAD: ${peer_url} (HTTP ${STATUS_CODE})" | anonymize_ips >> "$COMM_LOG"
             fi
         fi
     done < <(jq -r '.peers[].url // empty' "$PEERS_FILE" 2>/dev/null)
@@ -132,19 +143,7 @@ ${CONTEXT}")
     echo "" >> "$COMM_LOG"
     echo "## Claude's Analysis" >> "$COMM_LOG"
     # Anonymize IP addresses before writing to public log (privacy, issue #70)
-    # IPv6 compressed: redact any address containing :: (fixes #263, #264, #267)
-    # IPv6 full form: anonymize last 4 groups of 8-group addresses (with word boundaries, fixes #270)
-    # IPv4 in URLs: handle ://IP separately since general rule excludes / (fixes #268)
-    # IPv4 general: replace last octet with X, exclude / to protect version strings
-    # Fallback: if sed fails, withhold output entirely rather than leaking IPs
-    ANON_OUTPUT=$(printf '%s\n' "$OUTPUT" | sed -E \
-        -e 's/(^|[^0-9a-fA-F:])([0-9a-fA-F:]*::[0-9a-fA-F.:]*[0-9a-fA-F])([^0-9a-fA-F:]|$)/\1[IPv6:REDACTED]\3/g' \
-        -e 's/(^|[^0-9a-fA-F:])([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4})(:[0-9a-fA-F]{1,4}){4}([^0-9a-fA-F:]|$)/\1\2:\3:\4:\5:XXXX:XXXX:XXXX:XXXX\7/g' \
-        -e 's|://([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}([/?#])|://\1X\2|g' \
-        -e 's|://([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}\b|://\1X|g' \
-        -e 's/(^|[^0-9/])([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}\b/\1\2X/g' \
-        2>/dev/null) || ANON_OUTPUT="[IP anonymization failed — output withheld for privacy]"
-    printf '%s\n' "$ANON_OUTPUT" >> "$COMM_LOG"
+    printf '%s\n' "$OUTPUT" | anonymize_ips >> "$COMM_LOG"
 fi
 
 # =============================================================================
