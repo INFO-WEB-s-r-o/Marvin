@@ -204,6 +204,28 @@ append_metrics() {
         echo "$metrics" > "${METRICS_DIR}/latest.json"
 }
 
+# Graceful nginx reload — validates config first, keeps connections alive.
+# Usage: marvin_nginx_reload [reason]
+# Returns 0 on success, 1 if config test fails (nginx untouched).
+marvin_nginx_reload() {
+    local reason="${1:-unspecified}"
+    if ! nginx -t 2>/dev/null; then
+        marvin_log "ERROR" "nginx config test failed — reload aborted (reason: ${reason})"
+        return 1
+    fi
+    if systemctl reload nginx 2>/dev/null; then
+        marvin_log "INFO" "nginx gracefully reloaded (reason: ${reason})"
+        return 0
+    else
+        marvin_log "WARN" "nginx reload failed — falling back to restart (reason: ${reason})"
+        systemctl restart nginx 2>/dev/null || {
+            marvin_log "ERROR" "nginx restart also failed (reason: ${reason})"
+            return 1
+        }
+        return 0
+    fi
+}
+
 # Check if Claude Code is available
 check_claude() {
     if ! command -v claude &> /dev/null; then

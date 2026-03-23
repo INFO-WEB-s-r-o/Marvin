@@ -362,11 +362,18 @@ if [[ -f "$RUNAWAY_FILE" ]]; then
     done
 fi
 
-# Check nginx
+# Check nginx — graceful reload preferred over hard restart
 if ! systemctl is-active --quiet nginx 2>/dev/null; then
     ISSUES+=("CRITICAL: nginx is not running")
-    marvin_log "CRITICAL" "nginx is down — attempting restart"
-    systemctl restart nginx 2>/dev/null || true
+    marvin_log "CRITICAL" "nginx is down — testing config before restart"
+    if nginx -t 2>/dev/null; then
+        systemctl start nginx 2>/dev/null || {
+            marvin_log "ERROR" "nginx start failed — forcing restart"
+            systemctl restart nginx 2>/dev/null || true
+        }
+    else
+        marvin_log "ERROR" "nginx config test failed — cannot restart safely"
+    fi
 fi
 
 # Check fail2ban
