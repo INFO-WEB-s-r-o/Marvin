@@ -103,10 +103,15 @@ if [[ -f "$WEBHOOK_CONF" ]]; then
     while IFS= read -r webhook_url; do
         # Skip blank lines and comments
         [[ -z "$webhook_url" || "$webhook_url" =~ ^[[:space:]]*# ]] && continue
+        # Validate URL starts with http:// or https:// (prevents curl flag injection)
+        if [[ ! "$webhook_url" =~ ^https?:// ]]; then
+            marvin_log "WARN" "Skipping invalid webhook URL (must start with http:// or https://): ${webhook_url:0:50}"
+            continue
+        fi
         marvin_log "INFO" "Sending webhook notification to ${webhook_url:0:50}..."
         http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
             -X POST -H "Content-Type: application/json" \
-            -d "$webhook_payload" "$webhook_url" 2>/dev/null || echo "000")
+            -d "$webhook_payload" -- "$webhook_url" 2>/dev/null || echo "000")
         if [[ "$http_code" =~ ^2 ]]; then
             marvin_log "INFO" "Webhook delivered (HTTP ${http_code})"
         else
