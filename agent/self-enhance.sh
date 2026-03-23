@@ -30,21 +30,22 @@ _enhance_rollback() {
     marvin_log "WARN" "Rolling back self-enhancement changes..."
     cd "$MARVIN_DIR" 2>/dev/null || return 1
     # Reset to pre-enhancement commit — this reverts both committed and uncommitted changes
+    local git_out
     if [[ -n "${PRE_ENHANCE_HEAD}" ]]; then
         marvin_log "INFO" "Resetting to pre-enhancement HEAD: ${PRE_ENHANCE_HEAD:0:12}"
-        if ! git reset --hard "$PRE_ENHANCE_HEAD" 2>&1; then
-            marvin_log "CRITICAL" "git reset --hard failed — agent may be in unknown state"
+        if ! git_out=$(git reset --hard "$PRE_ENHANCE_HEAD" 2>&1); then
+            marvin_log "CRITICAL" "git reset --hard failed: ${git_out}"
             return 1
         fi
     else
         # Fallback: revert only uncommitted changes if HEAD wasn't captured
-        if ! git checkout -- agent/ web/ 2>&1; then
-            marvin_log "CRITICAL" "git checkout rollback failed — agent may be in unknown state"
+        if ! git_out=$(git checkout -- agent/ web/ 2>&1); then
+            marvin_log "CRITICAL" "git checkout rollback failed: ${git_out}"
             return 1
         fi
     fi
-    if ! git clean -fd agent/ web/ 2>&1; then
-        marvin_log "WARN" "git clean failed during rollback — untracked files may remain"
+    if ! git_out=$(git clean -fd agent/ web/ 2>&1); then
+        marvin_log "WARN" "git clean failed during rollback: ${git_out}"
     fi
     marvin_log "INFO" "Rollback complete — codebase restored to pre-enhancement state"
 }

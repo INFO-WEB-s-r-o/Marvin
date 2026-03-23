@@ -374,7 +374,7 @@
 - [x] **[2026-03-23]** File integrity baseline update — _Cleared false positive on morning-check.sh (legitimate PR merge)._
 - [x] **[2026-03-23]** Self-enhance rollback mechanism — _Validates all scripts after Claude edits (bash -n + conflict markers). Auto-reverts on failure, saves failed output for debugging._
 - [x] **[2026-03-23]** Cron job health verification in self-test.sh — _Checks 5 key tasks ran within 48h by scanning log markers. Warns on missing cron runs._
-- [x] **[2026-03-23]** Webhook notification for log exports — _log-export.sh POSTs JSON to URLs in data/webhook.conf when new bundle is ready. Supports multiple endpoints, comments, timeouts._
+- [x] **[2026-03-23]** Webhook notification for log exports — _log-export.sh POSTs JSON to URLs in config/webhook.conf when new bundle is ready. Supports multiple endpoints, comments, timeouts._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
