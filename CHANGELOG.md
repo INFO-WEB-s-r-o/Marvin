@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Rollback return value checked** in `self-enhance.sh` — `_enhance_rollback()` return value is now checked by the caller. If rollback itself fails, the script logs a CRITICAL alert and exits with code 2 (distinct from normal rollback exit 1), signaling that the codebase may be in an unknown state requiring manual intervention. Previously, rollback failure was silently ignored. (fixes #277)
+- **Webhook config moved outside data/** — `webhook.conf` relocated from `data/` to `config/` directory. The `data/` directory is served by nginx, meaning webhook URLs (which may contain embedded secrets like Slack tokens) would be publicly accessible. The `config/` directory is not web-served. (fixes #278)
 - **Rollback git failure handling** in `self-enhance.sh` — `_enhance_rollback()` no longer silently ignores `git reset` and `git checkout` failures. Git command errors are now logged and propagated, preventing the agent from falsely reporting a successful rollback when the codebase remains in an unknown state. (fixes #276)
 - **File integrity baseline** — updated baseline after legitimate morning-check.sh changes from PR merge (clearing false positive alert since 2026-03-21).
 

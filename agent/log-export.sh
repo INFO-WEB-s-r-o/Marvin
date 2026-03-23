@@ -87,9 +87,10 @@ fi
 # Phase 1b: Webhook notification
 # ─────────────────────────────────────────────────────────────────────────────
 # If a webhook URL is configured, POST a notification that a new export is ready.
-# Config file: /home/marvin/git/data/webhook.conf (one URL per line, # comments)
+# Config file: /home/marvin/git/config/webhook.conf (one URL per line, # comments)
+# Stored outside data/ to prevent nginx from serving it (webhook URLs may contain secrets)
 
-WEBHOOK_CONF="${DATA_DIR}/webhook.conf"
+WEBHOOK_CONF="${MARVIN_DIR}/config/webhook.conf"
 if [[ -f "$WEBHOOK_CONF" ]]; then
     export_size=$(stat -c%s "$EXPORT_FILE" 2>/dev/null || echo "0")
     webhook_payload=$(jq -nc \
@@ -119,7 +120,7 @@ if [[ -f "$WEBHOOK_CONF" ]]; then
         fi
     done < "$WEBHOOK_CONF"
 else
-    marvin_log "INFO" "No webhook.conf — skipping notifications (create ${WEBHOOK_CONF} to enable)"
+    marvin_log "INFO" "No webhook.conf — skipping notifications (create ${MARVIN_DIR}/config/webhook.conf to enable)"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────

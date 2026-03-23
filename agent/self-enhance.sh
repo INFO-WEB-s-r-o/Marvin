@@ -156,7 +156,10 @@ OUTPUT=$(run_claude "self-enhance" "$FULL_PROMPT")
 # If Claude's changes broke any scripts, roll back automatically
 if ! _validate_post_enhance; then
     marvin_log "CRITICAL" "Self-enhancement produced invalid code — triggering rollback"
-    _enhance_rollback
+    if ! _enhance_rollback; then
+        marvin_log "CRITICAL" "Rollback FAILED — codebase may be in unknown state. Manual intervention required."
+        exit 2
+    fi
     # Save the output anyway for debugging
     ENHANCE_FILE="${ENHANCE_DIR}/${TODAY}-${TIMESTAMP}-ROLLED-BACK.md"
     cat > "$ENHANCE_FILE" << EOF
