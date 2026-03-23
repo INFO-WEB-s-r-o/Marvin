@@ -199,7 +199,52 @@ else
     test_fail "git repository inaccessible"
 fi
 
-# ─── 9. Security scoring system ───────────────────────────────────────────────
+# ─── 9. Cron job health verification ──────────────────────────────────────────
+# Checks that expected cron-triggered scripts have fired recently.
+# Uses today's and yesterday's logs to verify each major task ran.
+
+marvin_log "INFO" "Self-test: verifying cron job health"
+
+YESTERDAY=$(date -u -d "yesterday" +%Y-%m-%d 2>/dev/null || date -u -v-1d +%Y-%m-%d 2>/dev/null || echo "")
+_cron_log_today="${LOGS_DIR}/${TODAY}.log"
+_cron_log_yesterday="${LOGS_DIR}/${YESTERDAY}.log"
+
+# Combine today + yesterday for a 48h window (some tasks run once daily)
+_cron_combined=""
+[[ -f "$_cron_log_today" ]] && _cron_combined=$(cat "$_cron_log_today")
+[[ -f "$_cron_log_yesterday" ]] && _cron_combined="${_cron_combined}
+$(cat "$_cron_log_yesterday")"
+
+# Expected tasks and their log markers (task_name:log_marker)
+_cron_tasks=(
+    "health-monitor:HEALTH CHECK"
+    "morning-check:MORNING CHECK"
+    "security-scan:SECURITY SCAN"
+    "log-export:LOG EXPORT"
+    "hourly-check:HOURLY CHECK"
+)
+
+_cron_ok=0
+_cron_missing=0
+for entry in "${_cron_tasks[@]}"; do
+    task_name="${entry%%:*}"
+    marker="${entry##*:}"
+    if echo "$_cron_combined" | grep -q "$marker" 2>/dev/null; then
+        test_pass "cron ran: ${task_name}"
+        _cron_ok=$((_cron_ok + 1))
+    else
+        test_warn "cron not seen in 48h: ${task_name}"
+        _cron_missing=$((_cron_missing + 1))
+    fi
+done
+
+if [[ "$_cron_missing" -eq 0 ]]; then
+    marvin_log "INFO" "All ${_cron_ok} expected cron tasks verified"
+else
+    marvin_log "WARN" "${_cron_missing} cron task(s) not seen in 48h logs"
+fi
+
+# ─── 10. Security scoring system ──────────────────────────────────────────────
 # Grades the server A-F across multiple security dimensions
 
 marvin_log "INFO" "Self-test: computing security score"
