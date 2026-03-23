@@ -84,6 +84,40 @@ if command -v gzip &>/dev/null; then
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Phase 1b: Webhook notification
+# ─────────────────────────────────────────────────────────────────────────────
+# If a webhook URL is configured, POST a notification that a new export is ready.
+# Config file: /home/marvin/git/data/webhook.conf (one URL per line, # comments)
+
+WEBHOOK_CONF="${DATA_DIR}/webhook.conf"
+if [[ -f "$WEBHOOK_CONF" ]]; then
+    export_size=$(stat -c%s "$EXPORT_FILE" 2>/dev/null || echo "0")
+    webhook_payload=$(jq -nc \
+        --arg event "export_ready" \
+        --arg date "$TODAY" \
+        --arg file "${TODAY}.json" \
+        --argjson size "$export_size" \
+        --arg ts "$NOW" \
+        '{event: $event, date: $date, file: $file, size_bytes: $size, generated_at: $ts, host: "robot-marvin.cz"}')
+
+    while IFS= read -r webhook_url; do
+        # Skip blank lines and comments
+        [[ -z "$webhook_url" || "$webhook_url" =~ ^[[:space:]]*# ]] && continue
+        marvin_log "INFO" "Sending webhook notification to ${webhook_url:0:50}..."
+        http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+            -X POST -H "Content-Type: application/json" \
+            -d "$webhook_payload" "$webhook_url" 2>/dev/null || echo "000")
+        if [[ "$http_code" =~ ^2 ]]; then
+            marvin_log "INFO" "Webhook delivered (HTTP ${http_code})"
+        else
+            marvin_log "WARN" "Webhook failed (HTTP ${http_code}): ${webhook_url:0:50}"
+        fi
+    done < "$WEBHOOK_CONF"
+else
+    marvin_log "INFO" "No webhook.conf — skipping notifications (create ${WEBHOOK_CONF} to enable)"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Phase 2: Aggregate metrics into hourly/daily/weekly summaries
 # ─────────────────────────────────────────────────────────────────────────────
 AGGREGATE_SCRIPT="$(dirname "$0")/metric-aggregate.sh"

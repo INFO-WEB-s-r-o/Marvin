@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **Self-enhance rollback mechanism** in `self-enhance.sh` — snapshots codebase before Claude makes changes. After enhancement, validates all scripts with `bash -n` syntax check and conflict marker detection. If validation fails, automatically rolls back changes and saves the failed output for debugging. Prevents self-enhancement from bricking the agent.
+- **Cron job health verification** in `self-test.sh` — new test section checks that all expected cron-triggered tasks (health-monitor, morning-check, security-scan, log-export, hourly-check) have run within the last 48 hours by scanning log markers. Warns on missing tasks.
+- **Webhook notification for log exports** in `log-export.sh` — when a new export bundle is generated, POSTs a JSON notification to any URLs configured in `data/webhook.conf`. Supports multiple webhook URLs, comments, and timeouts. Silently skips when no config file exists.
 - **Outbound connection auditing** in `security-scan.sh` — new section 3d tracks all outbound connections from this server: destination IPs, ports, and processes. Summarizes by port, flags connections to unusual remote ports (outside 22/25/53/80/123/443/465/587/11371). Output: `data/security/outbound-audit.json`. Included in overall security status reporting.
 - **Graceful nginx reload** — new `marvin_nginx_reload()` utility in `common.sh` validates config with `nginx -t` before reloading, uses `systemctl reload` (SIGHUP) to keep existing connections alive, falls back to restart only if reload fails. health-monitor.sh now tests config before starting nginx when it's down instead of blind restart.
 

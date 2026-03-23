@@ -20,6 +20,39 @@ marvin_log "INFO" "=== SELF-ENHANCEMENT STARTING ==="
 
 check_claude || exit 1
 
+# ─── Rollback mechanism ─────────────────────────────────────────────────────
+# Snapshot the codebase before Claude makes changes. If changes break scripts,
+# revert automatically. This prevents self-enhancement from bricking the agent.
+
+PRE_ENHANCE_HEAD=$(git -C "$MARVIN_DIR" rev-parse HEAD 2>/dev/null || echo "")
+
+_enhance_rollback() {
+    marvin_log "WARN" "Rolling back self-enhancement changes..."
+    cd "$MARVIN_DIR" 2>/dev/null || return 1
+    git checkout -- agent/ web/ 2>/dev/null || true
+    git clean -fd agent/ web/ 2>/dev/null || true
+    marvin_log "INFO" "Rollback complete — codebase restored to pre-enhancement state"
+}
+
+_validate_post_enhance() {
+    local valid=true
+    # 1. Bash syntax check on all agent scripts
+    while IFS= read -r script; do
+        if ! bash -n "$script" 2>/dev/null; then
+            marvin_log "ERROR" "Post-enhance validation FAILED: syntax error in $(basename "$script")"
+            valid=false
+        fi
+    done < <(find "${MARVIN_DIR}/agent" -name "*.sh" -type f)
+    # 2. Merge conflict marker check
+    while IFS= read -r script; do
+        if grep -qE '^<{7} |^={7}$|^>{7} ' "$script" 2>/dev/null; then
+            marvin_log "ERROR" "Post-enhance validation FAILED: conflict markers in $(basename "$script")"
+            valid=false
+        fi
+    done < <(find "${MARVIN_DIR}/agent" -name "*.sh" -type f)
+    [[ "$valid" == "true" ]]
+}
+
 # Read the enhancement prompt
 ENHANCE_PROMPT=$(cat "${PROMPTS_DIR}/enhance.md")
 
@@ -105,6 +138,32 @@ ${SELF_CONTEXT}"
 
 # Run Claude for self-enhancement
 OUTPUT=$(run_claude "self-enhance" "$FULL_PROMPT")
+
+# ─── Post-enhancement validation ────────────────────────────────────────────
+# If Claude's changes broke any scripts, roll back automatically
+if ! _validate_post_enhance; then
+    marvin_log "CRITICAL" "Self-enhancement produced invalid code — triggering rollback"
+    _enhance_rollback
+    # Save the output anyway for debugging
+    ENHANCE_FILE="${ENHANCE_DIR}/${TODAY}-${TIMESTAMP}-ROLLED-BACK.md"
+    cat > "$ENHANCE_FILE" << EOF
+# Self-Enhancement ROLLED BACK — ${NOW}
+
+**Reason:** Post-enhancement validation failed (syntax error or conflict markers)
+
+## Claude's Analysis & Changes (reverted)
+
+${OUTPUT}
+
+---
+*Enhancement run ${TIMESTAMP} — changes were rolled back automatically*
+EOF
+    marvin_log "INFO" "Rolled-back enhancement log saved: ${ENHANCE_FILE}"
+    marvin_log "INFO" "=== SELF-ENHANCEMENT COMPLETE (ROLLED BACK) ==="
+    exit 1
+fi
+
+marvin_log "INFO" "Post-enhancement validation passed"
 
 # Save the enhancement proposal
 ENHANCE_FILE="${ENHANCE_DIR}/${TODAY}-${TIMESTAMP}.md"
