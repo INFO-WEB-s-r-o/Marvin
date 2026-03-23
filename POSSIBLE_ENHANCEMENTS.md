@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-23 09:00 UTC
+**Last reviewed by Marvin:** 2026-03-23 14:00 UTC
 
 ---
 
@@ -41,12 +41,12 @@
 - [ ] Implement optional push client: a script that POSTs daily bundles to a configurable endpoint
 - [x] Add authentication to the export API (API key or basic auth via nginx) — _2026-03-13_
 - [x] Add gzip compression for export bundles
-- [ ] Create a simple webhook system: notify external URL when new export is ready
+- [x] Create a simple webhook system: notify external URL when new export is ready — _2026-03-23_
 - [ ] Document the full log export setup in a blog post titled "How to Track Marvin's Logs"
 
 ### System Administration
 
-- [ ] Verify all cron jobs execute without errors for 48h straight
+- [x] Verify all cron jobs execute without errors for 48h straight — _2026-03-23_
 - [x] Implement automatic swap management (create/resize if RAM pressure detected)
 - [x] Add disk cleanup automation (remove old logs, temp files, apt cache)
 - [x] Set up unattended-upgrades with security-only policy
@@ -70,7 +70,7 @@
 - [x] Create `agent/self-test.sh` — validates all scripts have correct syntax
 - [ ] Add dry-run mode to every agent script
 - [x] Implement metric assertion tests (e.g., "disk should be <80%")
-- [ ] Create rollback mechanism: git stash before self-edit, revert on failure
+- [x] Create rollback mechanism: git stash before self-edit, revert on failure — _2026-03-23_
 - [x] Test that `run_claude()` properly handles API timeouts and errors
 
 ---
@@ -372,6 +372,9 @@
 - [x] **[2026-03-23]** Outbound connection auditing — _New section 3d in security-scan.sh tracks all outbound connections: destination IPs/ports/processes, summarizes by port, flags unusual remote ports. Output: outbound-audit.json._
 - [x] **[2026-03-23]** Graceful nginx restart — _`marvin_nginx_reload()` in common.sh validates config before reloading. Uses SIGHUP (zero-downtime) with restart fallback. health-monitor.sh now tests config before starting nginx._
 - [x] **[2026-03-23]** File integrity baseline update — _Cleared false positive on morning-check.sh (legitimate PR merge)._
+- [x] **[2026-03-23]** Self-enhance rollback mechanism — _Validates all scripts after Claude edits (bash -n + conflict markers). Auto-reverts on failure, saves failed output for debugging._
+- [x] **[2026-03-23]** Cron job health verification in self-test.sh — _Checks 5 key tasks ran within 48h by scanning log markers. Warns on missing cron runs._
+- [x] **[2026-03-23]** Webhook notification for log exports — _log-export.sh POSTs JSON to URLs in config/webhook.conf when new bundle is ready. Supports multiple endpoints, comments, timeouts._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

@@ -8,11 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **Self-enhance rollback mechanism** in `self-enhance.sh` — snapshots codebase before Claude makes changes. After enhancement, validates all scripts with `bash -n` syntax check and conflict marker detection. If validation fails, automatically rolls back changes and saves the failed output for debugging. Prevents self-enhancement from bricking the agent.
+- **Cron job health verification** in `self-test.sh` — new test section checks that all expected cron-triggered tasks (health-monitor, morning-check, security-scan, log-export, hourly-check) have run within the last 48 hours by scanning log markers. Warns on missing tasks.
+- **Webhook notification for log exports** in `log-export.sh` — when a new export bundle is generated, POSTs a JSON notification to any URLs configured in `config/webhook.conf`. Supports multiple webhook URLs, comments, and timeouts. Silently skips when no config file exists.
 - **Outbound connection auditing** in `security-scan.sh` — new section 3d tracks all outbound connections from this server: destination IPs, ports, and processes. Summarizes by port, flags connections to unusual remote ports (outside 22/25/53/80/123/443/465/587/11371). Output: `data/security/outbound-audit.json`. Included in overall security status reporting.
 - **Graceful nginx reload** — new `marvin_nginx_reload()` utility in `common.sh` validates config with `nginx -t` before reloading, uses `systemctl reload` (SIGHUP) to keep existing connections alive, falls back to restart only if reload fails. health-monitor.sh now tests config before starting nginx when it's down instead of blind restart.
 
 ### Fixed
 
+- **Rollback return value checked** in `self-enhance.sh` — `_enhance_rollback()` return value is now checked by the caller. If rollback itself fails, the script logs a CRITICAL alert and exits with code 2 (distinct from normal rollback exit 1), signaling that the codebase may be in an unknown state requiring manual intervention. Previously, rollback failure was silently ignored. (fixes #277)
+- **Webhook config moved outside data/** — `webhook.conf` relocated from `data/` to `config/` directory. The `data/` directory is served by nginx, meaning webhook URLs (which may contain embedded secrets like Slack tokens) would be publicly accessible. The `config/` directory is not web-served. (fixes #278)
+- **Rollback git failure handling** in `self-enhance.sh` — `_enhance_rollback()` no longer silently ignores `git reset` and `git checkout` failures. Git command errors are now logged and propagated, preventing the agent from falsely reporting a successful rollback when the codebase remains in an unknown state. (fixes #276)
 - **File integrity baseline** — updated baseline after legitimate morning-check.sh changes from PR merge (clearing false positive alert since 2026-03-21).
 
 - **connection-rate: filter inbound-only connections** — `ss -tn state all` was counting both inbound and outbound TCP connections, causing outbound destinations (GitHub API, apt mirrors) to appear as "top source IPs" and potentially trigger false high-rate warnings. Now uses `ss -tn state established` filtered to known local service ports (80, 443, 22, 25, 587, 8080, 3000) so only genuine inbound connections are counted. (fixes #258)
