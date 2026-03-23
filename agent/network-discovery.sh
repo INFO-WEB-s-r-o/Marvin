@@ -131,7 +131,7 @@ ${CONTEXT}")
     
     echo "" >> "$COMM_LOG"
     echo "## Claude's Analysis" >> "$COMM_LOG"
-    echo "$OUTPUT" >> "$COMM_LOG"
+    printf '%s\n' "$OUTPUT" >> "$COMM_LOG"
 fi
 
 # =============================================================================
