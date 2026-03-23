@@ -19,7 +19,8 @@ source "$(dirname "$0")/common.sh"
 source "$(dirname "$0")/lib/github.sh"
 
 LOCK_FILE="/tmp/marvin-fix-issues.lock"
-_PRE_UNTRACKED=""
+# Snapshot pre-existing untracked files BEFORE trap can fire (#285, #287)
+_PRE_UNTRACKED=$(git ls-files --others --exclude-standard -- agent/ web/ 2>/dev/null || echo "")
 
 # ─── Cleanup trap — always return to clean main ─────────────────────────────
 
@@ -38,7 +39,7 @@ cleanup() {
         # Only remove untracked files created during this run, not pre-existing ones (#285)
         while IFS= read -r _f; do
             [[ -n "$_f" ]] || continue
-            echo "$_PRE_UNTRACKED" | grep -qxF "$_f" || rm -f "$_f"
+            [[ $'\n'"$_PRE_UNTRACKED"$'\n' == *$'\n'"$_f"$'\n'* ]] || rm -f "$_f"
         done < <(git ls-files --others --exclude-standard -- agent/ web/ 2>/dev/null) || true
         git checkout main 2>/dev/null || true
         # Delete local branch if it was never pushed
@@ -200,7 +201,7 @@ fi
 
 # ─── Create fix branch ──────────────────────────────────────────────────────
 
-# Snapshot pre-existing untracked files so rollback only cleans new ones (#285)
+# Re-snapshot in case git stash above changed the set of untracked files
 _PRE_UNTRACKED=$(git ls-files --others --exclude-standard -- agent/ web/ 2>/dev/null || echo "")
 
 BRANCH="fix/issues-${TIMESTAMP}"
