@@ -133,13 +133,16 @@ ${CONTEXT}")
     echo "## Claude's Analysis" >> "$COMM_LOG"
     # Anonymize IP addresses before writing to public log (privacy, issue #70)
     # IPv4: replace last octet with X (e.g., 192.168.1.100 → 192.168.1.X)
+    #   - negative lookbehind for / prevents version strings like nginx/1.24.0.1
     # IPv6 full form: anonymize last 4 groups of 8-group addresses
     # IPv6 compressed: redact any address containing :: (fixes #263, #264, #267)
-    echo "$OUTPUT" | sed -E \
+    # Fallback: if sed fails, withhold output entirely rather than leaking IPs
+    ANON_OUTPUT=$(echo "$OUTPUT" | sed -E \
         -e 's/(^|[^0-9a-fA-F:])([0-9a-fA-F:]*::[0-9a-fA-F.:]*[0-9a-fA-F])([^0-9a-fA-F:]|$)/\1[IPv6:REDACTED]\3/g' \
         -e 's/([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4})(:[0-9a-fA-F]{1,4}){4}/\1:\2:\3:\4:XXXX:XXXX:XXXX:XXXX/g' \
-        -e 's/\b([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}\b/\1X/g' \
-        >> "$COMM_LOG"
+        -e 's/(^|[^0-9/])([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}\b/\1\2X/g' \
+        2>/dev/null) || ANON_OUTPUT="[IP anonymization failed — output withheld for privacy]"
+    echo "$ANON_OUTPUT" >> "$COMM_LOG"
 fi
 
 # =============================================================================
