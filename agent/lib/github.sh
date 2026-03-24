@@ -340,13 +340,15 @@ github_signed_commit() {
     git checkout main 2>/dev/null || true
     git checkout -b "$branch" 2>/dev/null || git checkout "$branch"
 
-    # Stage files
+    # Stage files — only safe directories to avoid committing runtime data
     if [[ ${#files[@]} -gt 0 ]]; then
         for f in "${files[@]}"; do
             git add "$f"
         done
     else
-        git add -A
+        marvin_log "WARN" "github_signed_commit called without explicit files — staging safe dirs only" >&2
+        git add -- agent/ web/ 2>/dev/null || true
+        git add -- *.md 2>/dev/null || true
     fi
 
     # Create GPG-signed commit
