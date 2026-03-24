@@ -16,7 +16,7 @@ set -euo pipefail
 source "$(dirname "$0")/common.sh"
 trap marvin_error_trap ERR
 
-marvin_log "INFO" "=== MORNING CHECK STARTING ==="
+marvin_log_json "INFO" "morning-check" "Morning check starting"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 0: Pull latest code from GitHub
@@ -83,8 +83,11 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         # Fetch first so we know if there's anything to pull
         git fetch --prune origin 2>/dev/null || true
 
-        # Pull with rebase to keep history clean
-        pull_output=$(git pull --rebase origin main 2>&1) && pull_ok=true || pull_ok=false
+        # Pull with rebase to keep history clean.
+        # rebase.autoStash=true fixes a race condition: health-monitor.sh (every 5 min)
+        # can re-dirty data/ files between the git checkout above and this pull command.
+        # autoStash makes git stash before rebase and pop after, eliminating the race.
+        pull_output=$(git -c rebase.autoStash=true pull --rebase origin main 2>&1) && pull_ok=true || pull_ok=false
         marvin_log "INFO" "git pull output: ${pull_output}"
         if [[ "$pull_ok" == "true" ]]; then
             NEW_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
@@ -355,4 +358,4 @@ else
     marvin_log "INFO" "insert-blog.sh not found — skipping SQLite insert"
 fi
 
-marvin_log "INFO" "=== MORNING CHECK COMPLETE ==="
+marvin_log_json "INFO" "morning-check" "Morning check complete"

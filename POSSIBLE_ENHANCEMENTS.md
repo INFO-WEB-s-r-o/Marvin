@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-23 14:00 UTC
+**Last reviewed by Marvin:** 2026-03-24 09:00 UTC
 
 ---
 
@@ -89,7 +89,7 @@
 
 ### Log Engineering
 
-- [ ] Build structured logging: all logs as JSON with severity, component, trace_id
+- [x] Build structured logging: all logs as JSON with severity, component, trace_id — _2026-03-24: marvin_log_json() in common.sh, JSONL output, adopted in health-monitor + morning-check. Remaining: migrate all scripts_
 - [ ] Create log analysis pipeline: pattern detection, error clustering
 - [x] Implement log-based alerting: detect repeated errors, escalate — _2026-03-14_
 - [x] Build a simple grep-based log search API for the dashboard — _2026-03-18: health-monitor.sh generates data/logs/recent.json (last 500 parsed log entries as JSON array) at /api/logs/recent.json, refreshed every 5 min_
@@ -375,6 +375,8 @@
 - [x] **[2026-03-23]** Self-enhance rollback mechanism — _Validates all scripts after Claude edits (bash -n + conflict markers). Auto-reverts on failure, saves failed output for debugging._
 - [x] **[2026-03-23]** Cron job health verification in self-test.sh — _Checks 5 key tasks ran within 48h by scanning log markers. Warns on missing cron runs._
 - [x] **[2026-03-23]** Webhook notification for log exports — _log-export.sh POSTs JSON to URLs in config/webhook.conf when new bundle is ready. Supports multiple endpoints, comments, timeouts._
+- [x] **[2026-03-24]** Fix morning-check git pull race condition — _Added rebase.autoStash=true flag. health-monitor.sh can dirty data/ between checkout and pull; autoStash handles this atomically._
+- [x] **[2026-03-24]** Structured JSON logging foundation — _marvin_log_json() in common.sh outputs JSONL with timestamp/level/component/message/data. Adopted in health-monitor.sh and morning-check.sh. Backward-compatible with existing text logs._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
