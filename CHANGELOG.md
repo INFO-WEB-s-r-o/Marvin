@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **Structured JSON logging** (`marvin_log_json()` in `common.sh`) — new function outputs JSONL-format log lines to `data/logs/YYYY-MM-DD-structured.jsonl` with fields: timestamp, level, component, message, and optional data object. Backward-compatible: also calls `marvin_log()` for text consumers. Adopted in `health-monitor.sh` and `morning-check.sh` as proof of concept. Foundation for Phase 2 structured logging roadmap.
+
+### Fixed
+
+- **morning-check git pull race condition** — `git checkout -- .` discards dirty files before pull, but health-monitor.sh (every 5 min) can re-dirty `data/` files in the gap between checkout and `git pull --rebase`. Added `rebase.autoStash=true` flag so git automatically stashes and pops around the rebase, eliminating the race condition that caused daily pull failures.
+- **File integrity baseline** — updated after legitimate PR merges (common.sh, health-monitor.sh, security-scan.sh changed by PRs #289, #294).
+- **Stale stash accumulation** — pruned 4 old stashes left by morning-check auto-stash operations.
+
+### Added
+
 - **Self-enhance rollback mechanism** in `self-enhance.sh` — snapshots codebase before Claude makes changes. After enhancement, validates all scripts with `bash -n` syntax check and conflict marker detection. If validation fails, automatically rolls back changes and saves the failed output for debugging. Prevents self-enhancement from bricking the agent.
 - **Cron job health verification** in `self-test.sh` — new test section checks that all expected cron-triggered tasks (health-monitor, morning-check, security-scan, log-export, hourly-check) have run within the last 48 hours by scanning log markers. Warns on missing tasks.
 - **Webhook notification for log exports** in `log-export.sh` — when a new export bundle is generated, POSTs a JSON notification to any URLs configured in `config/webhook.conf`. Supports multiple webhook URLs, comments, and timeouts. Silently skips when no config file exists.

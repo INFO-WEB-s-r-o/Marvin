@@ -10,7 +10,7 @@ set -euo pipefail
 source "$(dirname "$0")/common.sh"
 trap marvin_error_trap ERR
 
-marvin_log "INFO" "Health monitor starting"
+marvin_log_json "INFO" "health-monitor" "Health monitor starting"
 
 # Collect and store metrics
 metrics=$(collect_metrics)
@@ -655,4 +655,5 @@ if [[ -f "${LOGS_DIR}/${TODAY}.log" ]]; then
         || true
 fi
 
-marvin_log "INFO" "Health monitor complete: status=${STATUS}, issues=${#ISSUES[@]}"
+marvin_log_json "INFO" "health-monitor" "Health monitor complete" \
+    "{\"status\":\"${STATUS}\",\"issues_count\":${#ISSUES[@]}}"
