@@ -101,6 +101,29 @@ if [[ -f "$WEBHOOK_CONF" ]]; then
         --arg ts "$NOW" \
         '{event: $event, date: $date, file: $file, size_bytes: $size, generated_at: $ts, host: "robot-marvin.cz"}')
 
+    # Helper: check if an IP/hostname matches private/internal ranges
+    # IPv6 prefix checks are guarded by colon detection to avoid false positives
+    # on legitimate hostnames starting with fc/fd/fe80 (issue #296)
+    _is_private_ip() {
+        local ip_lower="${1,,}"
+        # IPv4 and hostname checks
+        [[ "$ip_lower" == "localhost" ]] \
+            || [[ "$ip_lower" =~ ^127\. ]] \
+            || [[ "$ip_lower" =~ ^10\. ]] \
+            || [[ "$ip_lower" =~ ^0\. ]] \
+            || [[ "$ip_lower" =~ ^169\.254\. ]] \
+            || [[ "$ip_lower" =~ ^192\.168\. ]] \
+            || [[ "$ip_lower" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]] \
+            || [[ "$ip_lower" =~ ^100\.(6[4-9]|[7-9][0-9]|1([01][0-9]|2[0-7]))\. ]] \
+            || { [[ "$ip_lower" == *:* ]] && {
+                    [[ "$ip_lower" =~ ^::1$ ]] \
+                    || [[ "$ip_lower" =~ ^fd ]] \
+                    || [[ "$ip_lower" =~ ^fc ]] \
+                    || [[ "$ip_lower" =~ ^fe80 ]] \
+                    || [[ "$ip_lower" =~ ^::ffff: ]];
+                }; }
+    }
+
     while IFS= read -r webhook_url; do
         # Skip blank lines and comments
         [[ -z "$webhook_url" || "$webhook_url" =~ ^[[:space:]]*# ]] && continue
@@ -121,22 +144,6 @@ if [[ -f "$WEBHOOK_CONF" ]]; then
         # Strip IPv6 brackets for resolution
         webhook_host_bare="${webhook_host_lower#[}"
         webhook_host_bare="${webhook_host_bare%]}"
-        # Helper: check if an IP string matches private/internal ranges
-        _is_private_ip() {
-            local ip_lower="${1,,}"
-            [[ "$ip_lower" == "localhost" ]] \
-                || [[ "$ip_lower" =~ ^127\. ]] \
-                || [[ "$ip_lower" =~ ^10\. ]] \
-                || [[ "$ip_lower" =~ ^0\. ]] \
-                || [[ "$ip_lower" =~ ^169\.254\. ]] \
-                || [[ "$ip_lower" =~ ^192\.168\. ]] \
-                || [[ "$ip_lower" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]] \
-                || [[ "$ip_lower" =~ ^::1$ ]] \
-                || [[ "$ip_lower" =~ ^fd ]] \
-                || [[ "$ip_lower" =~ ^fc ]] \
-                || [[ "$ip_lower" =~ ^fe80 ]] \
-                || [[ "$ip_lower" =~ ^::ffff: ]]
-        }
         # Check 1: literal hostname/IP against private ranges
         if _is_private_ip "${webhook_host_bare}"; then
             marvin_log "WARN" "Skipping webhook to internal/private address (SSRF protection): ${webhook_host}"
