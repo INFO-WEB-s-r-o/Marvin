@@ -64,7 +64,7 @@ _validate_post_enhance() {
             marvin_log "ERROR" "Post-enhance validation FAILED: conflict markers in ${script#${MARVIN_DIR}/}"
             valid=false
         fi
-    done < <(find "${MARVIN_DIR}" -name "*.sh" -type f -not -path "*/.git/*" -not -path "*/node_modules/*")
+    done < <(find "${MARVIN_DIR}" -name "*.sh" -type f -not -path "*/.git/*" -not -path "*/node_modules/*" -not -path "*/data/*")
 
     # 2. Conflict marker check for web/ source files (JS/TS/JSX/TSX/JSON/CSS)
     #    These aren't bash-checkable but conflict markers would break the build

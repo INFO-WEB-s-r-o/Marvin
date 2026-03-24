@@ -163,10 +163,21 @@ if [[ -f "$WEBHOOK_CONF" ]]; then
         # Pin the pre-validated IP via --resolve to prevent DNS rebinding (issue #299).
         # Without this, curl performs its own DNS lookup which could resolve to a
         # different (private) IP between our getent check and the actual request.
+        # Extract the actual port curl will connect on (issue #303) — pinning only
+        # ports 80/443 leaves custom-port URLs unprotected.
+        webhook_port=80
+        [[ "$webhook_url" =~ ^https:// ]] && webhook_port=443
+        # Extract explicit port from URL (e.g. http://example.com:8080/hook)
+        # The host was already stripped to bare hostname above, so parse from URL.
+        webhook_hostport="${webhook_url#http://}"
+        webhook_hostport="${webhook_hostport#https://}"
+        webhook_hostport="${webhook_hostport%%[/?]*}"
+        if [[ "$webhook_hostport" =~ :([0-9]+)$ ]]; then
+            webhook_port="${BASH_REMATCH[1]}"
+        fi
         resolve_args=()
         if [[ -n "${resolved_ip}" ]]; then
-            resolve_args+=(--resolve "${webhook_host_bare}:443:${resolved_ip}")
-            resolve_args+=(--resolve "${webhook_host_bare}:80:${resolved_ip}")
+            resolve_args+=(--resolve "${webhook_host_bare}:${webhook_port}:${resolved_ip}")
         fi
         http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
             "${resolve_args[@]}" \
