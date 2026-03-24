@@ -52,18 +52,29 @@ _enhance_rollback() {
 
 _validate_post_enhance() {
     local valid=true
+
+    # 1. Bash syntax + conflict marker check for ALL .sh files in the repo
+    #    (not just agent/ — catches setup/, root scripts, new files)
     while IFS= read -r script; do
-        # 1. Bash syntax check
         if ! bash -n "$script" 2>/dev/null; then
-            marvin_log "ERROR" "Post-enhance validation FAILED: syntax error in $(basename "$script")"
+            marvin_log "ERROR" "Post-enhance validation FAILED: syntax error in ${script#${MARVIN_DIR}/}"
             valid=false
         fi
-        # 2. Merge conflict marker check
         if grep -qE '^<{7} |^={7}$|^>{7} ' "$script" 2>/dev/null; then
-            marvin_log "ERROR" "Post-enhance validation FAILED: conflict markers in $(basename "$script")"
+            marvin_log "ERROR" "Post-enhance validation FAILED: conflict markers in ${script#${MARVIN_DIR}/}"
             valid=false
         fi
-    done < <(find "${MARVIN_DIR}/agent" -name "*.sh" -type f)
+    done < <(find "${MARVIN_DIR}" -name "*.sh" -type f -not -path "*/.git/*" -not -path "*/node_modules/*" -not -path "*/data/*")
+
+    # 2. Conflict marker check for web/ source files (JS/TS/JSX/TSX/JSON/CSS)
+    #    These aren't bash-checkable but conflict markers would break the build
+    while IFS= read -r webfile; do
+        if grep -qE '^<{7} |^={7}$|^>{7} ' "$webfile" 2>/dev/null; then
+            marvin_log "ERROR" "Post-enhance validation FAILED: conflict markers in ${webfile#${MARVIN_DIR}/}"
+            valid=false
+        fi
+    done < <(find "${MARVIN_DIR}/web" -type f \( -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" -o -name "*.json" -o -name "*.css" \) -not -path "*/node_modules/*" -not -path "*/.next/*" 2>/dev/null)
+
     [[ "$valid" == "true" ]]
 }
 
