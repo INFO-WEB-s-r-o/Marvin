@@ -101,12 +101,62 @@ if [[ -f "$WEBHOOK_CONF" ]]; then
         --arg ts "$NOW" \
         '{event: $event, date: $date, file: $file, size_bytes: $size, generated_at: $ts, host: "robot-marvin.cz"}')
 
+    # Helper: check if an IP/hostname matches private/internal ranges
+    # IPv6 prefix checks are guarded by colon detection to avoid false positives
+    # on legitimate hostnames starting with fc/fd/fe80 (issue #296)
+    _is_private_ip() {
+        local ip_lower="${1,,}"
+        # IPv4 and hostname checks
+        [[ "$ip_lower" == "localhost" ]] \
+            || [[ "$ip_lower" =~ ^127\. ]] \
+            || [[ "$ip_lower" =~ ^10\. ]] \
+            || [[ "$ip_lower" =~ ^0\. ]] \
+            || [[ "$ip_lower" =~ ^169\.254\. ]] \
+            || [[ "$ip_lower" =~ ^192\.168\. ]] \
+            || [[ "$ip_lower" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]] \
+            || [[ "$ip_lower" =~ ^100\.(6[4-9]|[7-9][0-9]|1([01][0-9]|2[0-7]))\. ]] \
+            || { [[ "$ip_lower" == *:* ]] && {
+                    [[ "$ip_lower" =~ ^::1$ ]] \
+                    || [[ "$ip_lower" =~ ^fd ]] \
+                    || [[ "$ip_lower" =~ ^fc ]] \
+                    || [[ "$ip_lower" =~ ^fe80 ]] \
+                    || [[ "$ip_lower" =~ ^::ffff: ]];
+                }; }
+    }
+
     while IFS= read -r webhook_url; do
         # Skip blank lines and comments
         [[ -z "$webhook_url" || "$webhook_url" =~ ^[[:space:]]*# ]] && continue
         # Validate URL starts with http:// or https:// (prevents curl flag injection)
         if [[ ! "$webhook_url" =~ ^https?:// ]]; then
             marvin_log "WARN" "Skipping invalid webhook URL (must start with http:// or https://): ${webhook_url:0:50}"
+            continue
+        fi
+        # Block requests to internal/private network addresses (SSRF protection)
+        webhook_host="${webhook_url#http://}"
+        webhook_host="${webhook_host#https://}"
+        if [[ "$webhook_host" == "["* ]]; then
+            webhook_host="${webhook_host%%]*}]"
+        else
+            webhook_host="${webhook_host%%[/:]*}"
+        fi
+        webhook_host_lower="${webhook_host,,}"
+        # Strip IPv6 brackets for resolution
+        webhook_host_bare="${webhook_host_lower#[}"
+        webhook_host_bare="${webhook_host_bare%]}"
+        # Check 1: literal hostname/IP against private ranges
+        if _is_private_ip "${webhook_host_bare}"; then
+            marvin_log "WARN" "Skipping webhook to internal/private address (SSRF protection): ${webhook_host}"
+            continue
+        fi
+        # Check 2: resolve hostname and verify resolved IP is not private (DNS rebinding protection)
+        resolved_ip=$(getent hosts "${webhook_host_bare}" 2>/dev/null | awk '{print $1; exit}')
+        if [[ -n "${resolved_ip}" ]] && _is_private_ip "${resolved_ip}"; then
+            marvin_log "WARN" "Skipping webhook — hostname '${webhook_host}' resolves to private IP '${resolved_ip}' (DNS rebinding protection)"
+            continue
+        fi
+        if [[ -z "${resolved_ip}" ]] && ! [[ "${webhook_host_bare}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            marvin_log "WARN" "Skipping webhook — cannot resolve hostname '${webhook_host}' (DNS lookup failed)"
             continue
         fi
         marvin_log "INFO" "Sending webhook notification to ${webhook_url:0:50}..."
