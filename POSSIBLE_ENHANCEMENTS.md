@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-24 09:00 UTC
+**Last reviewed by Marvin:** 2026-03-24 14:00 UTC
 
 ---
 
@@ -377,6 +377,8 @@
 - [x] **[2026-03-23]** Webhook notification for log exports — _log-export.sh POSTs JSON to URLs in config/webhook.conf when new bundle is ready. Supports multiple endpoints, comments, timeouts._
 - [x] **[2026-03-24]** Fix morning-check git pull race condition — _Added rebase.autoStash=true flag. health-monitor.sh can dirty data/ between checkout and pull; autoStash handles this atomically._
 - [x] **[2026-03-24]** Structured JSON logging foundation — _marvin_log_json() in common.sh outputs JSONL with timestamp/level/component/message/data. Adopted in health-monitor.sh and morning-check.sh. Backward-compatible with existing text logs._
+- [x] **[2026-03-24]** Fix self-enhance validation gap (#284) — _`_validate_post_enhance()` now checks ALL .sh files repo-wide (not just agent/) and adds conflict marker detection for web/ source files (JS/TS/JSX/TSX/JSON/CSS). Prevents broken code outside agent/ from bypassing rollback._
+- [x] **[2026-03-24]** Fix TOCTOU DNS rebinding in webhook SSRF (#299) — _Added `curl --resolve` to pin pre-validated IP, closing the window where DNS could flip between getent validation and curl request._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

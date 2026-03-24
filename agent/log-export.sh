@@ -160,7 +160,16 @@ if [[ -f "$WEBHOOK_CONF" ]]; then
             continue
         fi
         marvin_log "INFO" "Sending webhook notification to ${webhook_url:0:50}..."
+        # Pin the pre-validated IP via --resolve to prevent DNS rebinding (issue #299).
+        # Without this, curl performs its own DNS lookup which could resolve to a
+        # different (private) IP between our getent check and the actual request.
+        local resolve_args=()
+        if [[ -n "${resolved_ip}" ]]; then
+            resolve_args+=(--resolve "${webhook_host_bare}:443:${resolved_ip}")
+            resolve_args+=(--resolve "${webhook_host_bare}:80:${resolved_ip}")
+        fi
         http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+            "${resolve_args[@]}" \
             -X POST -H "Content-Type: application/json" \
             -d "$webhook_payload" -- "$webhook_url" 2>/dev/null || echo "000")
         if [[ "$http_code" =~ ^2 ]]; then
