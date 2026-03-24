@@ -109,6 +109,28 @@ if [[ -f "$WEBHOOK_CONF" ]]; then
             marvin_log "WARN" "Skipping invalid webhook URL (must start with http:// or https://): ${webhook_url:0:50}"
             continue
         fi
+        # Block requests to internal/private network addresses (SSRF protection)
+        webhook_host="${webhook_url#http://}"
+        webhook_host="${webhook_host#https://}"
+        if [[ "$webhook_host" == "["* ]]; then
+            webhook_host="${webhook_host%%]*}]"
+        else
+            webhook_host="${webhook_host%%[/:]*}"
+        fi
+        webhook_host_lower="${webhook_host,,}"
+        if [[ "$webhook_host_lower" == "localhost" ]] \
+            || [[ "$webhook_host_lower" =~ ^127\. ]] \
+            || [[ "$webhook_host_lower" =~ ^10\. ]] \
+            || [[ "$webhook_host_lower" =~ ^0\. ]] \
+            || [[ "$webhook_host_lower" =~ ^169\.254\. ]] \
+            || [[ "$webhook_host_lower" =~ ^192\.168\. ]] \
+            || [[ "$webhook_host_lower" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]] \
+            || [[ "$webhook_host_lower" =~ ^\[?::1\]?$ ]] \
+            || [[ "$webhook_host_lower" =~ ^\[?fd ]] \
+            || [[ "$webhook_host_lower" =~ ^\[?fe80 ]]; then
+            marvin_log "WARN" "Skipping webhook to internal/private address (SSRF protection): ${webhook_host}"
+            continue
+        fi
         marvin_log "INFO" "Sending webhook notification to ${webhook_url:0:50}..."
         http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
             -X POST -H "Content-Type: application/json" \
