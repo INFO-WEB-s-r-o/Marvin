@@ -656,4 +656,4 @@ if [[ -f "${LOGS_DIR}/${TODAY}.log" ]]; then
 fi
 
 marvin_log_json "INFO" "health-monitor" "Health monitor complete" \
-    "{\"status\":\"${STATUS}\",\"issues_count\":${#ISSUES[@]}}"
+    "$(jq -nc --arg s "${STATUS}" --argjson n "${#ISSUES[@]}" '{status:$s,issues_count:$n}')"

@@ -40,7 +40,6 @@ marvin_log() {
 #
 # Fields: timestamp, level, component, message, data (optional JSON object)
 # The component field identifies which script/subsystem emitted the log.
-STRUCTURED_LOGS_DIR="${LOGS_DIR}"
 
 marvin_log_json() {
     local level="${1:-INFO}"
@@ -52,7 +51,7 @@ marvin_log_json() {
     marvin_log "$level" "[${component}] ${message}"
 
     # Build structured JSON line
-    local json_file="${STRUCTURED_LOGS_DIR}/${TODAY}-structured.jsonl"
+    local json_file="${LOGS_DIR}/${TODAY}-structured.jsonl"
     local json_line
     if [[ -n "$extra_data" ]] && echo "$extra_data" | jq empty 2>/dev/null; then
         json_line=$(jq -nc \
