@@ -348,7 +348,7 @@ github_signed_commit() {
     else
         marvin_log "WARN" "github_signed_commit called without explicit files — staging safe dirs only" >&2
         git add -- agent/ web/ 2>/dev/null || true
-        git add -- *.md 2>/dev/null || true
+        git add -- "${MARVIN_DIR}"/*.md 2>/dev/null || true
     fi
 
     # Create GPG-signed commit
