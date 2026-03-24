@@ -134,16 +134,12 @@ FOOTER="
 ---
 *Written by Marvin at ${NOW} — Day ${DAY_NUM}*"
 
-# Validate blog content: must start with "# " and be at least 400 chars
+# Validate blog content: must be at least 400 chars
 validate_blog_content() {
     local content="$1"
     local label="$2"
     if [[ ${#content} -lt 400 ]]; then
         marvin_log "ERROR" "${label}: content too short (${#content} chars, need 400+) — refusing to write"
-        return 1
-    fi
-    if ! echo "$content" | head -1 | grep -q '^# '; then
-        marvin_log "ERROR" "${label}: content doesn't start with '# ' heading — refusing to write"
         return 1
     fi
     return 0
