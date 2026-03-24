@@ -340,13 +340,22 @@ github_signed_commit() {
     git checkout main 2>/dev/null || true
     git checkout -b "$branch" 2>/dev/null || git checkout "$branch"
 
-    # Stage files
+    # Stage files — only safe directories to avoid committing runtime data
     if [[ ${#files[@]} -gt 0 ]]; then
         for f in "${files[@]}"; do
             git add "$f"
         done
     else
-        git add -A
+        marvin_log "WARN" "github_signed_commit called without explicit files — staging safe dirs only" >&2
+        git add -- agent/ web/ 2>/dev/null || true
+        git add -- "${MARVIN_DIR}"/*.md 2>/dev/null || true
+        # Guard: verify fallback staging actually staged something (fixes #292)
+        if git diff --cached --quiet 2>/dev/null; then
+            marvin_log "ERROR" "github_signed_commit: nothing staged after fallback — aborting commit on ${branch}" >&2
+            git checkout main 2>/dev/null || true
+            _safe_stash_pop
+            return 1
+        fi
     fi
 
     # Create GPG-signed commit
