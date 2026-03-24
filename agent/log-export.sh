@@ -118,17 +118,38 @@ if [[ -f "$WEBHOOK_CONF" ]]; then
             webhook_host="${webhook_host%%[/:]*}"
         fi
         webhook_host_lower="${webhook_host,,}"
-        if [[ "$webhook_host_lower" == "localhost" ]] \
-            || [[ "$webhook_host_lower" =~ ^127\. ]] \
-            || [[ "$webhook_host_lower" =~ ^10\. ]] \
-            || [[ "$webhook_host_lower" =~ ^0\. ]] \
-            || [[ "$webhook_host_lower" =~ ^169\.254\. ]] \
-            || [[ "$webhook_host_lower" =~ ^192\.168\. ]] \
-            || [[ "$webhook_host_lower" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]] \
-            || [[ "$webhook_host_lower" =~ ^\[?::1\]?$ ]] \
-            || [[ "$webhook_host_lower" =~ ^\[?fd ]] \
-            || [[ "$webhook_host_lower" =~ ^\[?fe80 ]]; then
+        # Strip IPv6 brackets for resolution
+        webhook_host_bare="${webhook_host_lower#[}"
+        webhook_host_bare="${webhook_host_bare%]}"
+        # Helper: check if an IP string matches private/internal ranges
+        _is_private_ip() {
+            local ip_lower="${1,,}"
+            [[ "$ip_lower" == "localhost" ]] \
+                || [[ "$ip_lower" =~ ^127\. ]] \
+                || [[ "$ip_lower" =~ ^10\. ]] \
+                || [[ "$ip_lower" =~ ^0\. ]] \
+                || [[ "$ip_lower" =~ ^169\.254\. ]] \
+                || [[ "$ip_lower" =~ ^192\.168\. ]] \
+                || [[ "$ip_lower" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]] \
+                || [[ "$ip_lower" =~ ^::1$ ]] \
+                || [[ "$ip_lower" =~ ^fd ]] \
+                || [[ "$ip_lower" =~ ^fc ]] \
+                || [[ "$ip_lower" =~ ^fe80 ]] \
+                || [[ "$ip_lower" =~ ^::ffff: ]]
+        }
+        # Check 1: literal hostname/IP against private ranges
+        if _is_private_ip "${webhook_host_bare}"; then
             marvin_log "WARN" "Skipping webhook to internal/private address (SSRF protection): ${webhook_host}"
+            continue
+        fi
+        # Check 2: resolve hostname and verify resolved IP is not private (DNS rebinding protection)
+        resolved_ip=$(getent hosts "${webhook_host_bare}" 2>/dev/null | awk '{print $1; exit}')
+        if [[ -n "${resolved_ip}" ]] && _is_private_ip "${resolved_ip}"; then
+            marvin_log "WARN" "Skipping webhook — hostname '${webhook_host}' resolves to private IP '${resolved_ip}' (DNS rebinding protection)"
+            continue
+        fi
+        if [[ -z "${resolved_ip}" ]] && ! [[ "${webhook_host_bare}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            marvin_log "WARN" "Skipping webhook — cannot resolve hostname '${webhook_host}' (DNS lookup failed)"
             continue
         fi
         marvin_log "INFO" "Sending webhook notification to ${webhook_url:0:50}..."
