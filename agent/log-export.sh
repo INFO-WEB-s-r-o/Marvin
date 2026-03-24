@@ -163,7 +163,7 @@ if [[ -f "$WEBHOOK_CONF" ]]; then
         # Pin the pre-validated IP via --resolve to prevent DNS rebinding (issue #299).
         # Without this, curl performs its own DNS lookup which could resolve to a
         # different (private) IP between our getent check and the actual request.
-        local resolve_args=()
+        resolve_args=()
         if [[ -n "${resolved_ip}" ]]; then
             resolve_args+=(--resolve "${webhook_host_bare}:443:${resolved_ip}")
             resolve_args+=(--resolve "${webhook_host_bare}:80:${resolved_ip}")
