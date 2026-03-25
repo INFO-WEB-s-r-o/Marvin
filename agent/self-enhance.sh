@@ -53,16 +53,29 @@ _enhance_rollback() {
 _validate_post_enhance() {
     local valid=true
 
-    # 1. Bash syntax + conflict marker check for ALL .sh files in the repo
-    #    (not just agent/ — catches setup/, root scripts, new files)
+    # 1. Bash syntax + conflict marker check for .sh files in the repo
+    #    Files outside Marvin's write scope (agent/, web/) produce warnings
+    #    instead of rollbacks — Marvin can't fix setup/ scripts (#304).
     while IFS= read -r script; do
+        local is_writable=true
+        if [[ "$script" != "${MARVIN_DIR}/agent/"* && "$script" != "${MARVIN_DIR}/web/"* ]]; then
+            is_writable=false
+        fi
         if ! bash -n "$script" 2>/dev/null; then
-            marvin_log "ERROR" "Post-enhance validation FAILED: syntax error in ${script#${MARVIN_DIR}/}"
-            valid=false
+            if [[ "$is_writable" == "true" ]]; then
+                marvin_log "ERROR" "Post-enhance validation FAILED: syntax error in ${script#${MARVIN_DIR}/}"
+                valid=false
+            else
+                marvin_log "WARN" "Pre-existing syntax error in read-only script (non-fatal): ${script#${MARVIN_DIR}/}"
+            fi
         fi
         if grep -qE '^<{7} |^={7}$|^>{7} ' "$script" 2>/dev/null; then
-            marvin_log "ERROR" "Post-enhance validation FAILED: conflict markers in ${script#${MARVIN_DIR}/}"
-            valid=false
+            if [[ "$is_writable" == "true" ]]; then
+                marvin_log "ERROR" "Post-enhance validation FAILED: conflict markers in ${script#${MARVIN_DIR}/}"
+                valid=false
+            else
+                marvin_log "WARN" "Conflict markers in read-only script (non-fatal): ${script#${MARVIN_DIR}/}"
+            fi
         fi
     done < <(find "${MARVIN_DIR}" -name "*.sh" -type f -not -path "*/.git/*" -not -path "*/node_modules/*" -not -path "*/data/*")
 

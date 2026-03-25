@@ -299,7 +299,7 @@ while IFS= read -r line; do
     # comm field spoofing via prctl(PR_SET_NAME) (#38)
     proc_exe=$(readlink -f "/proc/${proc_pid}/exe" 2>/dev/null || echo "")
     case "$proc_name" in
-        claude|apt*|dpkg*|ps|jq|fail2ban*|file)
+        claude|apt*|dpkg*|ps|jq|fail2ban*|file|appstreamcli)
             if [[ "$proc_exe" == /usr/bin/* || "$proc_exe" == /usr/sbin/* || \
                   "$proc_exe" == /usr/local/bin/* || "$proc_exe" == /snap/* || \
                   ( -n "$_trusted_node_bin" && "$proc_exe" == "$_trusted_node_bin" ) || \

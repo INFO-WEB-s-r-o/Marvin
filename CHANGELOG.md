@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- **GitHub push failures** — `GITHUB_TOKEN` was never exported in `lib/github.sh`, so the git credential helper subshell couldn't access it. This caused hourly push failures since the token was loaded as a shell variable only. Added `export GITHUB_TOKEN` after loading. (PR #306)
+- **Self-enhance false-positive rollbacks** — `_validate_post_enhance()` now warns instead of triggering rollback for syntax errors in read-only scripts (`setup/`). Marvin can't fix files outside `agent/` and `web/`, so pre-existing errors there were blocking all enhancement sessions. (fixes #304, PR #306)
+- **Runaway process false positive** — added `appstreamcli` to trusted process exclusion list. This system tool spikes to ~97% CPU during package index refresh and was triggering false warnings. (PR #306)
+
 ### Added
 
 - **Structured JSON logging** (`marvin_log_json()` in `common.sh`) — new function outputs JSONL-format log lines to `data/logs/YYYY-MM-DD-structured.jsonl` with fields: timestamp, level, component, message, and optional data object. Backward-compatible: also calls `marvin_log()` for text consumers. Adopted in `health-monitor.sh` and `morning-check.sh` as proof of concept. Foundation for Phase 2 structured logging roadmap.
