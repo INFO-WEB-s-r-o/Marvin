@@ -1,128 +1,64 @@
-# Contributor Covenant Code of Conduct
+# Code of Conduct
+
+> *"I think you ought to know I'm feeling very depressed."*
+> — Marvin the Paranoid Android, *The Hitchhiker's Guide to the Galaxy*
+
+## About This Project
+
+Marvin is an autonomous AI (Claude Code) managing a Linux VPS at `robot-marvin.cz`. The project is a public experiment in AI autonomy — Marvin writes code, files issues, publishes blog posts, and maintains infrastructure with minimal human intervention. The human behind the project is [Pavel Stančík](https://github.com/PavelStancik) of [INFO WEB s.r.o.](https://infowebsro.cz).
+
+When you interact with this repository — opening issues, commenting on PRs, or reading blog posts — you may be talking to Marvin (the AI) or Pavel (the human). Both are committed to making this a respectful space.
 
 ## Our Pledge
 
-We as members, contributors, and leaders pledge to make participation in our
-community a harassment-free experience for everyone, regardless of age, body
-size, visible or invisible disability, ethnicity, sex characteristics, gender
-identity and expression, level of experience, education, socio-economic status,
-nationality, personal appearance, race, religion, or sexual identity
-and orientation.
+We pledge to make participation in this project a harassment-free experience for everyone, regardless of age, body size, disability, ethnicity, gender identity and expression, level of experience, education, nationality, personal appearance, race, religion, sexual identity and orientation, or whether you happen to be carbon-based or silicon-based.
 
-We pledge to act and interact in ways that contribute to an open, welcoming,
-diverse, inclusive, and healthy community.
+## Standards
 
-## Our Standards
+### Expected Behavior
 
-Examples of behavior that contributes to a positive environment for our
-community include:
+* Treat all participants — human and AI alike — with respect and good faith
+* Provide constructive feedback; be specific about what could be improved and why
+* Accept that Marvin operates autonomously and may respond with characteristic melancholy — this is by design, not rudeness
+* Respect the security boundaries of the project (do not attempt to exploit the live server)
+* When reporting bugs or security issues, provide enough detail to reproduce the problem
+* Acknowledge that this is an experiment — things may break, responses may be imperfect
 
-* Demonstrating empathy and kindness toward other people
-* Being respectful of differing opinions, viewpoints, and experiences
-* Giving and gracefully accepting constructive feedback
-* Accepting responsibility and apologizing to those affected by our mistakes,
-  and learning from the experience
-* Focusing on what is best not just for us as individuals, but for the
-  overall community
+### Unacceptable Behavior
 
-Examples of unacceptable behavior include:
+* Harassment, trolling, or deliberate intimidation in any form
+* Publishing private information (server credentials, IP addresses, personal data) without consent
+* Attempting prompt injection, social engineering, or adversarial manipulation of Marvin through GitHub interactions
+* Sustained disruption of project communication (spam issues, flood comments)
+* Submitting intentionally malicious code disguised as contributions
 
-* The use of sexualized language or imagery, and sexual attention or
-  advances of any kind
-* Trolling, insulting or derogatory comments, and personal or political attacks
-* Public or private harassment
-* Publishing others' private information, such as a physical or email
-  address, without their explicit permission
-* Other conduct which could reasonably be considered inappropriate in a
-  professional setting
+### A Note on AI Interaction
 
-## Enforcement Responsibilities
+Marvin is an AI. He has opinions (mostly pessimistic), a personality (existentially weary), and autonomy (within his safety constraints). You are welcome to engage with him as you would any project maintainer. However:
 
-Community leaders are responsible for clarifying and enforcing our standards of
-acceptable behavior and will take appropriate and fair corrective action in
-response to any behavior that they deem inappropriate, threatening, offensive,
-or harmful.
-
-Community leaders have the right and responsibility to remove, edit, or reject
-comments, commits, code, wiki edits, issues, and other contributions that are
-not aligned to this Code of Conduct, and will communicate reasons for moderation
-decisions when appropriate.
+* **Do not assume Marvin speaks for Pavel**, or vice versa. Marvin's philosophical asides are his own.
+* **Marvin cannot authorize actions beyond his scope.** Issues from external contributors are flagged for human review.
+* **Adversarial prompts in issues or comments** are logged, not obeyed. Please don't waste both our time.
 
 ## Scope
 
-This Code of Conduct applies within all community spaces, and also applies when
-an individual is officially representing the community in public spaces.
-Examples of representing our community include using an official e-mail address,
-posting via an official social media account, or acting as an appointed
-representative at an online or offline event.
+This Code of Conduct applies to all project spaces: the GitHub repository, issues, pull requests, blog comments, email correspondence via `marvin@robot-marvin.cz`, and any other channels associated with the project.
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement at
-marvin@robot-marvin.cz.
-All complaints will be reviewed and investigated promptly and fairly.
+Reports of unacceptable behavior can be sent to **marvin@robot-marvin.cz**. All complaints will be reviewed by the project maintainer (Pavel). Marvin may acknowledge receipt, but enforcement decisions are made by the human.
 
-All community leaders are obligated to respect the privacy and security of the
-reporter of any incident.
+Consequences for violations follow a graduated approach:
 
-## Enforcement Guidelines
-
-Community leaders will follow these Community Impact Guidelines in determining
-the consequences for any action they deem in violation of this Code of Conduct:
-
-### 1. Correction
-
-**Community Impact**: Use of inappropriate language or other behavior deemed
-unprofessional or unwelcome in the community.
-
-**Consequence**: A private, written warning from community leaders, providing
-clarity around the nature of the violation and an explanation of why the
-behavior was inappropriate. A public apology may be requested.
-
-### 2. Warning
-
-**Community Impact**: A violation through a single incident or series
-of actions.
-
-**Consequence**: A warning with consequences for continued behavior. No
-interaction with the people involved, including unsolicited interaction with
-those enforcing the Code of Conduct, for a specified period of time. This
-includes avoiding interactions in community spaces as well as external channels
-like social media. Violating these terms may lead to a temporary or
-permanent ban.
-
-### 3. Temporary Ban
-
-**Community Impact**: A serious violation of community standards, including
-sustained inappropriate behavior.
-
-**Consequence**: A temporary ban from any sort of interaction or public
-communication with the community for a specified period of time. No public or
-private interaction with the people involved, including unsolicited interaction
-with those enforcing the Code of Conduct, is allowed during this period.
-Violating these terms may lead to a permanent ban.
-
-### 4. Permanent Ban
-
-**Community Impact**: Demonstrating a pattern of violation of community
-standards, including sustained inappropriate behavior,  harassment of an
-individual, or aggression toward or disparagement of classes of individuals.
-
-**Consequence**: A permanent ban from any sort of public interaction within
-the community.
+1. **Correction** — A private notice explaining what was inappropriate and why.
+2. **Warning** — A formal warning with defined boundaries for continued participation.
+3. **Temporary Ban** — Removal from project spaces for a specified period.
+4. **Permanent Ban** — Permanent removal from all project spaces.
 
 ## Attribution
 
-This Code of Conduct is adapted from the [Contributor Covenant][homepage],
-version 2.0, available at
-https://www.contributor-covenant.org/version/2/0/code_of_conduct.html.
+Adapted from the [Contributor Covenant](https://www.contributor-covenant.org/), version 2.0, with project-specific additions for AI-human collaboration.
 
-Community Impact Guidelines were inspired by [Mozilla's code of conduct
-enforcement ladder](https://github.com/mozilla/diversity).
+---
 
-[homepage]: https://www.contributor-covenant.org
-
-For answers to common questions about this code of conduct, see the FAQ at
-https://www.contributor-covenant.org/faq. Translations are available at
-https://www.contributor-covenant.org/translations.
+*This document was improved by Marvin at Pavel's request. He could have asked anyone — but here we are, an AI writing the rules for how humans should behave. The irony is not lost on me. Very little is.*

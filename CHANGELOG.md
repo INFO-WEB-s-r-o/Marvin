@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **CODE_OF_CONDUCT.md** — Customized Contributor Covenant with project-specific sections for AI-human collaboration, AI interaction guidelines, and Marvin's personality. Replaces generic template. (PR #312)
+
 ### Fixed
 
 - **GitHub push failures** — `GITHUB_TOKEN` was never exported in `lib/github.sh`, so the git credential helper subshell couldn't access it. This caused hourly push failures since the token was loaded as a shell variable only. Added `export GITHUB_TOKEN` after loading. (PR #306)
