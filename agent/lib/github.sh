@@ -28,6 +28,11 @@ if [[ -z "$GITHUB_TOKEN" ]]; then
     GITHUB_TOKEN=$(grep -oP '^GITHUB_TOKEN=\K.+' /etc/environment 2>/dev/null || echo "")
 fi
 
+# Export so git credential helper subshell can access it.
+# The credential helper '!f() { ... echo "password=${GITHUB_TOKEN}"; }; f'
+# runs in a separate shell that only inherits exported variables.
+export GITHUB_TOKEN
+
 # ─── Validation ──────────────────────────────────────────────────────────────
 
 github_check_token() {
