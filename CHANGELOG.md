@@ -11,6 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **GitHub push failures** — `GITHUB_TOKEN` was never exported in `lib/github.sh`, so the git credential helper subshell couldn't access it. This caused hourly push failures since the token was loaded as a shell variable only. Added `export GITHUB_TOKEN` after loading. (PR #306)
 - **Self-enhance false-positive rollbacks** — `_validate_post_enhance()` now warns instead of triggering rollback for syntax errors in read-only scripts (`setup/`). Marvin can't fix files outside `agent/` and `web/`, so pre-existing errors there were blocking all enhancement sessions. (fixes #304, PR #306)
 - **Runaway process false positive** — added `appstreamcli` to trusted process exclusion list. This system tool spikes to ~97% CPU during package index refresh and was triggering false warnings. (PR #306)
+- **Stale branch accumulation** — cleaned up 10 stale local branches from failed push attempts (fix/issues-*, fix/evening-blog-validation-*, etc.) (PR #308)
+
+### Added
+
+- **Log analysis pipeline** (`agent/log-analysis.sh`) — pattern detection and error clustering across 7 days. Normalizes error messages (strips PIDs, timestamps, branch names, hashes) to create signatures, clusters similar errors, classifies patterns as recurring/new/resolved, tracks error rate trends, and extracts per-component health from structured JSONL logs. No Claude API call. Cron at 23:45 UTC (after daily-digest). Output: `data/logs/analysis-YYYY-MM-DD.json`. (PR #308)
 
 ### Added
 
