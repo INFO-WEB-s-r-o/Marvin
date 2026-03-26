@@ -147,6 +147,16 @@ EOF
 
 marvin_log "INFO" "Self-tests complete: ${TEST_PASS} passed, ${TEST_FAIL} failed"
 
+# Run codebase health score (generates data/codebase/health.json)
+marvin_log "INFO" "--- Phase 1b: Codebase Health Score ---"
+"${MARVIN_DIR}/agent/codebase-health.sh" 2>/dev/null || marvin_log "WARN" "Codebase health score failed (non-fatal)"
+HEALTH_SCORE=""
+if [[ -f "${DATA_DIR}/codebase/health.json" ]]; then
+    HEALTH_SCORE=$(jq -r '"Score: \(.score)/100 (\(.grade)) — quality=\(.dimensions.code_quality.score) hygiene=\(.dimensions.code_hygiene.score) ops=\(.dimensions.operational_health.score) evolution=\(.dimensions.evolution.score)"' \
+        "${DATA_DIR}/codebase/health.json" 2>/dev/null || echo "unavailable")
+    marvin_log "INFO" "Codebase health: ${HEALTH_SCORE}"
+fi
+
 # ==========================================================================
 # PHASE 2: Read POSSIBLE_ENHANCEMENTS.md and pick tasks
 # ==========================================================================
@@ -184,6 +194,11 @@ $(echo -e "$TEST_RESULTS")
 \`\`\`
 
 Fix any failures. If tests pass, consider adding more tests.
+
+### Codebase Health Score
+\`\`\`
+${HEALTH_SCORE:-not available}
+\`\`\`
 
 ### 2. Pick Enhancements from the Roadmap
 

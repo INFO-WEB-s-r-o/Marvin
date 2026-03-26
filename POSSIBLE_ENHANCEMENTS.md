@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-26 09:00 UTC
+**Last reviewed by Marvin:** 2026-03-26 14:00 UTC
 
 ---
 
@@ -136,7 +136,7 @@
 - [x] Implement connection rate monitoring by source IP — _2026-03-21_
 - [ ] Build geographic analysis of incoming connections
 - [x] Create network anomaly detection (sudden traffic spikes, port scans) — _2026-03-20: daily rx/tx MB in metric-aggregate.sh, 2σ anomaly detection in health-monitor.sh, 7-day backfill_
-- [ ] Monitor for DNS hijacking attempts
+- [x] Monitor for DNS hijacking attempts — _2026-03-13: health-monitor.sh checks DNS resolution via 8.8.8.8, alerts on IP mismatch_
 - [x] Implement outbound connection auditing (what is this server connecting to?) — _2026-03-23_
 
 ---
@@ -154,8 +154,8 @@
 ### Self-Awareness
 
 - [x] Track own enhancement history: what changed, what broke, what improved — _2026-03-26: enhancement-tracker.sh scans reports, produces history.json with session counts, rollback rate, weekly trends. Auto-runs after self-enhance_
-- [ ] Build a "health score" for own codebase (test coverage, error rate, complexity)
-- [ ] Create weekly self-review: compare this week's performance to last week's
+- [x] Build a "health score" for own codebase (test coverage, error rate, complexity) — _2026-03-26_
+- [x] Create weekly self-review: compare this week's performance to last week's — _2026-03-19: weekly-analytics.sh WoW deltas for all key metrics_
 - [ ] Implement learning from mistakes: parse error logs, avoid repeating issues
 - [ ] Build capability inventory: what can Marvin do today vs. day 1?
 
@@ -383,6 +383,9 @@
 - [x] **[2026-03-25]** Log analysis pipeline (`agent/log-analysis.sh`) — _Error normalization (strips PIDs/timestamps/hashes), clustering, 7-day trend tracking, recurring/new/resolved pattern classification, component health from structured JSONL. No Claude API. Cron 23:45 UTC._
 - [x] **[2026-03-26]** Dry-run mode foundation — _marvin_parse_args() + marvin_is_dry_run() in common.sh. Adopted in disk-cleanup.sh: all destructive ops gated. Other scripts can opt-in incrementally._
 - [x] **[2026-03-26]** Enhancement history tracker (`agent/enhancement-tracker.sh`) — _Scans enhancement reports, builds history.json with session counts, success/rollback rates, weekly trends. Auto-runs after self-enhance. 75 sessions tracked, 100% success rate._
+- [x] **[2026-03-26]** Codebase health score (`agent/codebase-health.sh`) — _4-dimension scoring (quality/hygiene/ops/evolution, 25 pts each). Measures: syntax, ShellCheck, conflict markers, TODOs, script size, trap coverage, error rates, security score, SLA, roadmap progress. Grade A-F. First run: 96/100 (A)._
+- [x] **[2026-03-26]** Mark DNS hijacking monitoring complete — _Already implemented since 2026-03-13 in health-monitor.sh: checks DNS via 8.8.8.8, alerts on IP mismatch._
+- [x] **[2026-03-26]** Mark weekly self-review complete — _Already implemented since 2026-03-19 in weekly-analytics.sh: WoW comparison across all metrics._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
