@@ -21,7 +21,7 @@ marvin_parse_args "$@"
 marvin_log "INFO" "Codebase health score evaluation starting"
 
 HEALTH_DIR="${DATA_DIR}/codebase"
-mkdir -p "$HEALTH_DIR"
+marvin_is_dry_run || mkdir -p "$HEALTH_DIR"
 HEALTH_FILE="${HEALTH_DIR}/health.json"
 
 AGENT_DIR="${MARVIN_DIR}/agent"
@@ -63,7 +63,7 @@ while IFS= read -r file; do
         conflict_files=$((conflict_files + 1))
         quality_notes+=("Conflict markers: $(basename "$file")")
     fi
-done < <(find "$AGENT_DIR" -name "*.sh" -type f; find "${WEB_DIR}/src" -name "*.js" -o -name "*.ts" -o -name "*.tsx" 2>/dev/null || true)
+done < <(find "$AGENT_DIR" -name "*.sh" -type f; find "${WEB_DIR}/src" -type f \( -name "*.js" -o -name "*.ts" -o -name "*.tsx" \) 2>/dev/null || true)
 [[ "$conflict_files" -gt 0 ]] && quality_score=$((quality_score - conflict_files * 5))
 
 # ShellCheck (if available) — count error-level issues only
@@ -165,10 +165,11 @@ fi
 sec_score=0
 if [[ -f "${DATA_DIR}/security/security-score.json" ]]; then
     sec_score=$(jq -r '.score // 0' "${DATA_DIR}/security/security-score.json" 2>/dev/null || echo 0)
-    if [[ "$sec_score" -lt 70 ]]; then
+    sec_score_int=${sec_score%%.*}
+    if [[ "$sec_score_int" -lt 70 ]]; then
         ops_score=$((ops_score - 5))
         ops_notes+=("Security score: ${sec_score}/100")
-    elif [[ "$sec_score" -lt 85 ]]; then
+    elif [[ "$sec_score_int" -lt 85 ]]; then
         ops_score=$((ops_score - 2))
     fi
 fi
