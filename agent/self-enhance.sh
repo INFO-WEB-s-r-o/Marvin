@@ -223,7 +223,8 @@ marvin_log "INFO" "Enhancement proposal saved: ${ENHANCE_FILE}"
 
 # Update enhancement history tracker
 if [[ -x "$(dirname "$0")/enhancement-tracker.sh" ]]; then
-    bash "$(dirname "$0")/enhancement-tracker.sh" 2>/dev/null || true
+    bash "$(dirname "$0")/enhancement-tracker.sh" \
+        || marvin_log "WARN" "Enhancement tracker failed (non-fatal)"
 fi
 
 marvin_log "INFO" "=== SELF-ENHANCEMENT COMPLETE ==="

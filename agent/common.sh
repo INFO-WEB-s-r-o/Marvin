@@ -32,11 +32,12 @@ TIMESTAMP=$(date +%s)
 #     rm -f "$file"
 #   fi
 MARVIN_DRY_RUN="${MARVIN_DRY_RUN:-false}"
+export MARVIN_DRY_RUN
 
 marvin_parse_args() {
     for arg in "$@"; do
         case "$arg" in
-            --dry-run) MARVIN_DRY_RUN=true ;;
+            --dry-run) MARVIN_DRY_RUN=true; export MARVIN_DRY_RUN ;;
         esac
     done
     if [[ "$MARVIN_DRY_RUN" == "true" ]]; then
