@@ -40,13 +40,13 @@ while IFS= read -r file; do
     fi
     if [[ "$fname" == *"sync-learn"* ]]; then
         sync_sessions=$((sync_sessions + 1))
-    elif [[ "$fname" == *"self-enhance"* || "$fname" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]+\.md$ ]]; then
+    elif [[ "$fname" == *"self-enhance"* || "$fname" == *"ROLLED-BACK"* || "$fname" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]+\.md$ ]]; then
         enhance_sessions=$((enhance_sessions + 1))
     fi
 
-    # Extract date for weekly grouping
-    file_date="${fname:0:10}"
-    if [[ "$file_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    # Extract date for weekly grouping (handles both "YYYY-MM-DD-*.md" and "sync-learn-YYYY-MM-DD-*.md")
+    file_date=$(echo "$fname" | grep -oP '\d{4}-\d{2}-\d{2}' | head -1)
+    if [[ -n "$file_date" && "$file_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
         # ISO week number
         week_key=$(date -d "$file_date" +%G-W%V 2>/dev/null || echo "unknown")
         if [[ "$week_key" != "unknown" ]]; then
