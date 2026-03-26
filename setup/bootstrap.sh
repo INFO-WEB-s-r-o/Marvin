@@ -301,10 +301,25 @@ else
     log "Generated new export API key"
 fi
 cat > /etc/nginx/export-api-key.conf << APIEOF
-set \$export_api_key "${EXPORT_API_KEY}";
+# Marvin Export API Key — generated during bootstrap
+# Format: key_value "valid"; (used by nginx map directive)
+${EXPORT_API_KEY} "valid";
 APIEOF
 chmod 600 /etc/nginx/export-api-key.conf
+chown root:www-data /etc/nginx/export-api-key.conf
 log "Export API key written to /etc/nginx/export-api-key.conf"
+
+# Create map directive for API key validation (consumed by auth_request in HTTPS block)
+cat > /etc/nginx/conf.d/marvin-export-map.conf << MAPEOF
+# Marvin export API key map — validates X-API-Key header
+# Used by auth_request /auth/validate-export-key in the HTTPS server block
+map_hash_bucket_size 128;
+map \$http_x_api_key \$export_api_key_header {
+    default "";
+    include /etc/nginx/export-api-key.conf;
+}
+MAPEOF
+log "Export API key map directive written to /etc/nginx/conf.d/marvin-export-map.conf"
 
 # Write key to a location accessible by Marvin's agent scripts
 echo "${EXPORT_API_KEY}" > "${MARVIN_DIR}/data/.export-api-key"
@@ -336,15 +351,13 @@ server {
         add_header Cache-Control "no-cache";
     }
 
-    # Export API (authenticated — requires X-API-Key header)
+    # Export API — BLOCKED on plaintext HTTP (defense in depth)
+    # The authenticated export endpoint is only available over HTTPS,
+    # which is configured by Certbot post-bootstrap (certbot --nginx).
+    # This prevents API keys from being transmitted in cleartext.
     location /api/exports/ {
-        alias ${MARVIN_DIR}/data/exports/;
         default_type application/json;
-        add_header Content-Type "application/json" always;
-        include /etc/nginx/export-api-key.conf;
-        if (\$http_x_api_key != \$export_api_key) {
-            return 401 '{"error":"Unauthorized"}';
-        }
+        return 403 '{"error":"forbidden","message":"Export API requires HTTPS."}';
     }
 
     # AI discovery endpoint
@@ -573,12 +586,97 @@ if [[ -n "$MARVIN_DOMAIN" ]]; then
     
     if certbot --nginx -d "${MARVIN_DOMAIN}" --non-interactive --agree-tos --register-unsafely-without-email --redirect; then
         log "SSL certificate installed for ${MARVIN_DOMAIN}"
-        
+
         # Update identity beacon with HTTPS URL
         sed -i "s|http://${SERVER_IP}/|https://${MARVIN_DOMAIN}/|" "${MARVIN_DIR}/data/comms/identity.json"
-        
+
         # Enable auto-renewal timer
         systemctl enable --now certbot.timer 2>/dev/null || true
+
+        # Patch HTTPS server block with authenticated export API
+        # Certbot carries over the HTTP 403 block to HTTPS — replace it with auth_request
+        NGINX_SITE="/etc/nginx/sites-available/marvin"
+
+        # Add auth_request validation endpoint and error handler before the HTTPS /api/exports/ location
+        # Find the HTTPS server block (listen 443) and inject auth locations
+        if grep -q "listen 443 ssl" "${NGINX_SITE}"; then
+            log "Patching HTTPS block with authenticated export API..."
+
+            # Replace the 403 block in the HTTPS section with authenticated version
+            # The HTTPS block is the one with "listen 443 ssl" — use a Python one-liner for reliable multi-line replacement
+            python3 - "${NGINX_SITE}" "${MARVIN_DIR}" << 'PYEOF'
+import sys, re
+
+nginx_file = sys.argv[1]
+marvin_dir = sys.argv[2]
+
+with open(nginx_file, 'r') as f:
+    content = f.read()
+
+# Find the HTTPS server block (contains "listen 443 ssl")
+# Replace the 403 export location in HTTPS with authenticated version
+https_export_block = '''    # Export API — BLOCKED on plaintext HTTP (defense in depth)
+    # The authenticated export endpoint is only available over HTTPS,
+    # which is configured by Certbot post-bootstrap (certbot --nginx).
+    # This prevents API keys from being transmitted in cleartext.
+    location /api/exports/ {
+        default_type application/json;
+        return 403 '{"error":"forbidden","message":"Export API requires HTTPS."}';
+    }'''
+
+https_auth_block = f'''    # Export API key validation (internal auth_request endpoint)
+    location = /auth/validate-export-key {{
+        internal;
+        if ($export_api_key_header != "valid") {{
+            return 401;
+        }}
+        return 200;
+    }}
+
+    # Export API auth error handler
+    location @export_auth_error {{
+        internal;
+        default_type application/json;
+        return 401 '{{"error":"unauthorized","message":"API key required. Use X-API-Key header."}}';
+    }}
+
+    # Export API — requires X-API-Key header (auth_request pattern)
+    location /api/exports/ {{
+        auth_request /auth/validate-export-key;
+        error_page 401 = @export_auth_error;
+        alias {marvin_dir}/data/exports/;
+        default_type application/json;
+        gzip_static on;
+        add_header Access-Control-Allow-Origin "*";
+        add_header Cache-Control "no-cache";
+    }}'''
+
+# Split content into server blocks, find the HTTPS one (has "listen 443")
+# and replace the 403 export block there
+blocks = content.split('server {')
+new_blocks = []
+for i, block in enumerate(blocks):
+    if 'listen 443 ssl' in block and 'return 403' in block and '/api/exports/' in block:
+        block = block.replace(https_export_block, https_auth_block)
+    new_blocks.append(block)
+
+new_content = 'server {'.join(new_blocks)
+
+with open(nginx_file, 'w') as f:
+    f.write(new_content)
+PYEOF
+
+            # Verify config
+            if nginx -t 2>/dev/null; then
+                systemctl reload nginx
+                log "HTTPS export API configured with auth_request pattern"
+            else
+                log "WARNING: nginx config test failed after patching — reverting"
+                certbot --nginx -d "${MARVIN_DOMAIN}" --non-interactive --agree-tos --register-unsafely-without-email --redirect 2>/dev/null || true
+            fi
+        else
+            log "WARNING: Could not find HTTPS block — export API will remain disabled until manually configured"
+        fi
     else
         log "WARNING: SSL setup failed. Marvin will serve on HTTP. He can fix this later."
     fi
