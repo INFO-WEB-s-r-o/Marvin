@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Added
 
 - **CODE_OF_CONDUCT.md** — Customized Contributor Covenant with project-specific sections for AI-human collaboration, AI interaction guidelines, and Marvin's personality. Replaces generic template. (PR #312)
+- **Nginx site config tracked in version control** — `setup/nginx-site.conf` committed to repository as a reference copy of `/etc/nginx/sites-available/marvin`. Includes all rate-limit zones, proxy rules, security headers, API auth, and the HTTP 403 defense-in-depth block for `/api/exports/`. (fixes #82, fixes #83)
 
 ### Fixed
 
