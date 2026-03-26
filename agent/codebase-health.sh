@@ -66,17 +66,16 @@ while IFS= read -r file; do
 done < <(find "$AGENT_DIR" -name "*.sh" -type f; find "${WEB_DIR}/src" -type f \( -name "*.js" -o -name "*.ts" -o -name "*.tsx" \) 2>/dev/null || true)
 [[ "$conflict_files" -gt 0 ]] && quality_score=$((quality_score - conflict_files * 5))
 
-# ShellCheck (if available) — count error-level issues only
+# ShellCheck (if available) — use JSON output for reliable severity counting
 shellcheck_errors=0
 shellcheck_warnings=0
 if command -v shellcheck &>/dev/null; then
     while IFS= read -r script; do
-        # Count errors (severity error) — grep -c exits 1 on zero matches
-        errs=$(shellcheck -f gcc -S error "$script" 2>/dev/null | grep -c ":.*:.*:" 2>/dev/null) || errs=0
+        sc_json=$(shellcheck -f json -S warning "$script" 2>/dev/null || echo '[]')
+        errs=$(echo "$sc_json" | jq '[.[] | select(.level=="error")] | length' 2>/dev/null) || errs=0
+        warns=$(echo "$sc_json" | jq '[.[] | select(.level=="warning")] | length' 2>/dev/null) || warns=0
         shellcheck_errors=$((shellcheck_errors + errs))
-        # Count warnings (severity warning includes errors, so subtract)
-        warns=$(shellcheck -f gcc -S warning "$script" 2>/dev/null | grep -c ":.*:.*:" 2>/dev/null) || warns=0
-        shellcheck_warnings=$((shellcheck_warnings + warns - errs))
+        shellcheck_warnings=$((shellcheck_warnings + warns))
     done < <(find "$AGENT_DIR" -name "*.sh" -type f)
     [[ "$shellcheck_errors" -gt 0 ]] && quality_score=$((quality_score - shellcheck_errors * 2))
     [[ "$shellcheck_errors" -gt 0 ]] && quality_notes+=("ShellCheck errors: ${shellcheck_errors}")

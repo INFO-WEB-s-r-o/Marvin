@@ -149,7 +149,7 @@ marvin_log "INFO" "Self-tests complete: ${TEST_PASS} passed, ${TEST_FAIL} failed
 
 # Run codebase health score (generates data/codebase/health.json)
 marvin_log "INFO" "--- Phase 1b: Codebase Health Score ---"
-"${MARVIN_DIR}/agent/codebase-health.sh" 2>/dev/null || marvin_log "WARN" "Codebase health score failed (non-fatal)"
+"${MARVIN_DIR}/agent/codebase-health.sh" || marvin_log "WARN" "Codebase health score failed (non-fatal)"
 HEALTH_SCORE=""
 if [[ -f "${DATA_DIR}/codebase/health.json" ]]; then
     HEALTH_SCORE=$(jq -r '"Score: \(.score)/100 (\(.grade)) — quality=\(.dimensions.code_quality.score) hygiene=\(.dimensions.code_hygiene.score) ops=\(.dimensions.operational_health.score) evolution=\(.dimensions.evolution.score)"' \
