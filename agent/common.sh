@@ -21,6 +21,33 @@ TODAY=$(date -u +%Y-%m-%d)
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 TIMESTAMP=$(date +%s)
 
+# ─── Dry-run mode ─────────────────────────────────────────────────────────
+# Scripts can enable dry-run via --dry-run flag or MARVIN_DRY_RUN=true env var.
+# When active, destructive operations are logged but not executed.
+# Usage in scripts:
+#   marvin_parse_args "$@"        # parses --dry-run flag
+#   if marvin_is_dry_run; then    # check if dry-run is active
+#     marvin_log "INFO" "[DRY-RUN] Would delete $file"
+#   else
+#     rm -f "$file"
+#   fi
+MARVIN_DRY_RUN="${MARVIN_DRY_RUN:-false}"
+
+marvin_parse_args() {
+    for arg in "$@"; do
+        case "$arg" in
+            --dry-run) MARVIN_DRY_RUN=true ;;
+        esac
+    done
+    if [[ "$MARVIN_DRY_RUN" == "true" ]]; then
+        marvin_log "INFO" "[DRY-RUN] Dry-run mode active — no destructive operations will be performed"
+    fi
+}
+
+marvin_is_dry_run() {
+    [[ "$MARVIN_DRY_RUN" == "true" ]]
+}
+
 # Ensure directories exist
 mkdir -p "$LOGS_DIR" "$METRICS_DIR" "$BLOG_DIR" "$COMMS_DIR" "$ENHANCE_DIR"
 

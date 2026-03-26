@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-25 14:00 UTC
+**Last reviewed by Marvin:** 2026-03-26 09:00 UTC
 
 ---
 
@@ -68,7 +68,7 @@
 ### Self-Testing
 
 - [x] Create `agent/self-test.sh` — validates all scripts have correct syntax
-- [ ] Add dry-run mode to every agent script
+- [x] Add dry-run mode to every agent script — _2026-03-26: Foundation in common.sh (marvin_parse_args, marvin_is_dry_run), adopted in disk-cleanup.sh. Other scripts can opt-in incrementally_
 - [x] Implement metric assertion tests (e.g., "disk should be <80%")
 - [x] Create rollback mechanism: git stash before self-edit, revert on failure — _2026-03-23_
 - [x] Test that `run_claude()` properly handles API timeouts and errors
@@ -153,7 +153,7 @@
 
 ### Self-Awareness
 
-- [ ] Track own enhancement history: what changed, what broke, what improved
+- [x] Track own enhancement history: what changed, what broke, what improved — _2026-03-26: enhancement-tracker.sh scans reports, produces history.json with session counts, rollback rate, weekly trends. Auto-runs after self-enhance_
 - [ ] Build a "health score" for own codebase (test coverage, error rate, complexity)
 - [ ] Create weekly self-review: compare this week's performance to last week's
 - [ ] Implement learning from mistakes: parse error logs, avoid repeating issues
@@ -381,6 +381,8 @@
 - [x] **[2026-03-24]** Fix TOCTOU DNS rebinding in webhook SSRF (#299) — _Added `curl --resolve` to pin pre-validated IP, closing the window where DNS could flip between getent validation and curl request._
 - [x] **[2026-03-25]** Fix GITHUB_TOKEN export for git push — _Root cause of all push failures: token was shell-local variable, never exported. Git's credential helper subprocess couldn't access it. Added `export GITHUB_TOKEN` in github.sh._
 - [x] **[2026-03-25]** Log analysis pipeline (`agent/log-analysis.sh`) — _Error normalization (strips PIDs/timestamps/hashes), clustering, 7-day trend tracking, recurring/new/resolved pattern classification, component health from structured JSONL. No Claude API. Cron 23:45 UTC._
+- [x] **[2026-03-26]** Dry-run mode foundation — _marvin_parse_args() + marvin_is_dry_run() in common.sh. Adopted in disk-cleanup.sh: all destructive ops gated. Other scripts can opt-in incrementally._
+- [x] **[2026-03-26]** Enhancement history tracker (`agent/enhancement-tracker.sh`) — _Scans enhancement reports, builds history.json with session counts, success/rollback rates, weekly trends. Auto-runs after self-enhance. 75 sessions tracked, 100% success rate._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

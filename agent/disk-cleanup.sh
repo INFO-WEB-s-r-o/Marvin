@@ -12,6 +12,7 @@
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 trap marvin_error_trap ERR
+marvin_parse_args "$@"
 
 marvin_log "INFO" "Disk cleanup starting"
 
@@ -36,14 +37,14 @@ old_logs_size=0
 while IFS= read -r -d '' f; do
     fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
     old_logs_size=$((old_logs_size + fsize))
-    rm -f "$f"
+    marvin_is_dry_run || rm -f "$f"
 done < <(find /var/log -type f \( -name '*.gz' -o -name '*.xz' -o -name '*.bz2' -o -name '*.old' \) -mtime +30 -print0 2>/dev/null)
 track_freed "Compressed system logs (>30d)" "$old_logs_size"
 
 # ─── 2. APT cache cleanup ───────────────────────────────────────────────────
 
 apt_before=$(du -sb /var/cache/apt/archives/ 2>/dev/null | awk '{print $1}' || echo 0)
-apt-get clean -y 2>/dev/null || true
+marvin_is_dry_run || apt-get clean -y 2>/dev/null || true
 apt_after=$(du -sb /var/cache/apt/archives/ 2>/dev/null | awk '{print $1}' || echo 0)
 apt_freed=$((apt_before - apt_after))
 [[ "$apt_freed" -lt 0 ]] && apt_freed=0
@@ -57,7 +58,7 @@ run_logs_size=0
 while IFS= read -r -d '' f; do
     fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
     run_logs_size=$((run_logs_size + fsize))
-    rm -f "$f"
+    marvin_is_dry_run || rm -f "$f"
 done < <(find "${LOGS_DIR}" -type f -name "*.md" -mtime +14 -print0 2>/dev/null)
 track_freed "Marvin run logs (>14d)" "$run_logs_size"
 
@@ -67,7 +68,7 @@ daily_logs_size=0
 while IFS= read -r -d '' f; do
     fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
     daily_logs_size=$((daily_logs_size + fsize))
-    rm -f "$f"
+    marvin_is_dry_run || rm -f "$f"
 done < <(find "${LOGS_DIR}" -type f -name "????-??-??.log" -mtime +30 -print0 2>/dev/null)
 track_freed "Marvin daily logs (>30d)" "$daily_logs_size"
 
@@ -81,7 +82,10 @@ compressed_bytes=0
 while IFS= read -r -d '' f; do
     if [[ ! -f "${f}.gz" ]]; then
         fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
-        if gzip "$f" 2>/dev/null; then
+        if marvin_is_dry_run; then
+            compressed_bytes=$((compressed_bytes + fsize / 2))  # estimate 50% compression
+            compressed_count=$((compressed_count + 1))
+        elif gzip "$f" 2>/dev/null; then
             gz_size=$(stat -c%s "${f}.gz" 2>/dev/null || echo 0)
             saved=$((fsize - gz_size))
             [[ "$saved" -lt 0 ]] && saved=0
@@ -99,7 +103,7 @@ metrics_size=0
 while IFS= read -r -d '' f; do
     fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
     metrics_size=$((metrics_size + fsize))
-    rm -f "$f"
+    marvin_is_dry_run || rm -f "$f"
 done < <(find "${METRICS_DIR}" -type f -name "????-??-??.jsonl.gz" -mtime +180 -print0 2>/dev/null)
 track_freed "Old metrics JSONL.gz (>180d)" "$metrics_size"
 
@@ -109,14 +113,14 @@ tmp_size=0
 while IFS= read -r -d '' f; do
     fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
     tmp_size=$((tmp_size + fsize))
-    rm -f "$f"
+    marvin_is_dry_run || rm -f "$f"
 done < <(find /tmp -type f -user root -mtime +7 -print0 2>/dev/null)
 track_freed "Old temp files (>7d)" "$tmp_size"
 
 # ─── 7. Systemd journal vacuum (keep 7 days) ────────────────────────────────
 
 journal_before=$(journalctl --disk-usage 2>/dev/null | grep -oP '[\d.]+[KMGT]' || echo "0")
-journalctl --vacuum-time=7d --quiet 2>/dev/null || true
+marvin_is_dry_run || journalctl --vacuum-time=7d --quiet 2>/dev/null || true
 journal_after=$(journalctl --disk-usage 2>/dev/null | grep -oP '[\d.]+[KMGT]' || echo "0")
 # Log it but don't try to parse the sizes precisely
 if [[ "$journal_before" != "$journal_after" ]]; then
@@ -128,12 +132,18 @@ fi
 
 total_human=$(numfmt --to=iec "$FREED_BYTES" 2>/dev/null || echo "${FREED_BYTES}B")
 disk_after=$(df -m / | awk 'NR==2{print $5}')
+_prefix=""
+marvin_is_dry_run && _prefix="[DRY-RUN] "
 
 if [[ ${#ACTIONS[@]} -gt 0 ]]; then
-    marvin_log "INFO" "Disk cleanup complete: freed ${total_human} total. Disk now at ${disk_after}."
+    if marvin_is_dry_run; then
+        marvin_log "INFO" "[DRY-RUN] Disk cleanup complete: would free ${total_human} total. Disk at ${disk_after}."
+    else
+        marvin_log "INFO" "Disk cleanup complete: freed ${total_human} total. Disk now at ${disk_after}."
+    fi
     for action in "${ACTIONS[@]}"; do
         marvin_log "INFO" "  - ${action}"
     done
 else
-    marvin_log "INFO" "Disk cleanup complete: nothing to clean. Disk at ${disk_after}."
+    marvin_log "INFO" "${_prefix}Disk cleanup complete: nothing to clean. Disk at ${disk_after}."
 fi

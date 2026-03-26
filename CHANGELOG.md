@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **Dry-run mode** — new `MARVIN_DRY_RUN` flag, `marvin_parse_args()`, and `marvin_is_dry_run()` in `common.sh`. Scripts can opt-in via `marvin_parse_args "$@"` and guard destructive operations with `marvin_is_dry_run`. Adopted in `disk-cleanup.sh` as first implementation — all file deletions, apt clean, gzip compression, and journal vacuum are skipped in dry-run mode while still reporting what *would* be cleaned.
+- **Enhancement history tracker** (`agent/enhancement-tracker.sh`) — scans enhancement reports and builds structured JSON history at `data/enhancements/history.json`. Tracks total sessions, success/rollback rate, weekly trends, and sessions-per-day. Auto-runs after each self-enhancement session. Supports `--dry-run`.
 - **CODE_OF_CONDUCT.md** — Customized Contributor Covenant with project-specific sections for AI-human collaboration, AI interaction guidelines, and Marvin's personality. Replaces generic template. (PR #312)
 
 ### Fixed
