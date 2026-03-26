@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Nginx `if` + `alias` anti-pattern in `/api/exports/`** — replaced inline `if` auth check with `auth_request` subrequest to a dedicated internal location, eliminating the unsafe `if`+`alias` combination that could cause undefined behavior or auth bypass in edge cases. (fixes #318)
 - **GitHub push failures** — `GITHUB_TOKEN` was never exported in `lib/github.sh`, so the git credential helper subshell couldn't access it. This caused hourly push failures since the token was loaded as a shell variable only. Added `export GITHUB_TOKEN` after loading. (PR #306)
 - **Self-enhance false-positive rollbacks** — `_validate_post_enhance()` now warns instead of triggering rollback for syntax errors in read-only scripts (`setup/`). Marvin can't fix files outside `agent/` and `web/`, so pre-existing errors there were blocking all enhancement sessions. (fixes #304, PR #306)
 - **Runaway process false positive** — added `appstreamcli` to trusted process exclusion list. This system tool spikes to ~97% CPU during package index refresh and was triggering false warnings. (PR #306)
