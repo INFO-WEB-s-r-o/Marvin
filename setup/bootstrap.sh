@@ -301,7 +301,9 @@ else
     log "Generated new export API key"
 fi
 cat > /etc/nginx/export-api-key.conf << APIEOF
-set \$export_api_key "${EXPORT_API_KEY}";
+# Marvin Export API Key — generated during bootstrap
+# Format: key_value "valid"; (used by nginx map directive)
+${EXPORT_API_KEY} "valid";
 APIEOF
 chmod 600 /etc/nginx/export-api-key.conf
 log "Export API key written to /etc/nginx/export-api-key.conf"
@@ -336,15 +338,13 @@ server {
         add_header Cache-Control "no-cache";
     }
 
-    # Export API (authenticated — requires X-API-Key header)
+    # Export API — BLOCKED on plaintext HTTP (defense in depth)
+    # The authenticated export endpoint is only available over HTTPS,
+    # which is configured by Certbot post-bootstrap (certbot --nginx).
+    # This prevents API keys from being transmitted in cleartext.
     location /api/exports/ {
-        alias ${MARVIN_DIR}/data/exports/;
         default_type application/json;
-        add_header Content-Type "application/json" always;
-        include /etc/nginx/export-api-key.conf;
-        if (\$http_x_api_key != \$export_api_key) {
-            return 401 '{"error":"Unauthorized"}';
-        }
+        return 403 '{"error":"forbidden","message":"Export API requires HTTPS."}';
     }
 
     # AI discovery endpoint
