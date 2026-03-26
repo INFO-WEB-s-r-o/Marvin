@@ -60,6 +60,23 @@ if command -v rkhunter &>/dev/null; then
             rkhunter_status="infected"
             marvin_log "CRITICAL" "rkhunter found ${rkhunter_infected} infected file(s)!"
         fi
+
+        # Exclude SSH root access warning from overall status — it is already
+        # scored separately in self-test.sh (§9a ssh_root_login check).
+        # Counting it here double-penalizes the same configuration. (#92)
+        #
+        # Note: the check-name line reads "Checking if SSH root access is
+        # allowed   [ Warning ]". We match the exact check name to avoid
+        # suppressing unrelated warnings that might contain "root access".
+        if [[ "$rkhunter_status" == "warnings" ]]; then
+            _other_warnings=$(grep '\[ Warning \]' "$RKHUNTER_LOG" 2>/dev/null \
+                | grep -cv 'Checking if SSH root access is allowed' | tr -d '[:space:]' || echo 0)
+            if [[ "$_other_warnings" -eq 0 ]]; then
+                rkhunter_status="clean"
+                rkhunter_warnings=$(( rkhunter_warnings > 0 ? rkhunter_warnings - 1 : 0 ))
+                marvin_log "INFO" "rkhunter: only root-access warning (scored separately) — treating as clean"
+            fi
+        fi
     fi
 
     # Clean up old scan logs (keep 7 days)
