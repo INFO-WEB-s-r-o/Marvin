@@ -13,6 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Fixed
 
 - **Untrusted exe false positive for short-lived processes** — When `readlink /proc/PID/exe` returns empty (process exited between `ps` and the check), allowlisted process names like `file` triggered "Untrusted exe" warnings. Now skips silently when exe path is unavailable for known-good names.
+- **`continue` inside `$()` subshell breaks lessons-learned.sh** — `continue` executed inside a command substitution cannot reach the outer `for` loop; with `set -euo pipefail` it crashes the script. Moved `|| continue` outside the `$(...)`. (fixes #335)
+- **Predictable temp file path in lessons-learned.sh** — Replaced hardcoded `/tmp/marvin-error-patterns.tmp` with `mktemp` to prevent symlink attacks. Also replaced `echo -e` with `printf '%s'` to avoid unintended escape interpretation from log-derived content. (fixes #336)
 
 ### Previously Added
 

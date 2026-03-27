@@ -85,11 +85,12 @@ NEW_PATTERNS=""
 new_pattern_count=0
 
 # Look for repeated WARN/ERROR patterns in recent logs
+tmp_patterns=$(mktemp /tmp/marvin-error-patterns.XXXXXX)
 for logfile in "${LOGS_DIR}"/*.log; do
     [[ -f "$logfile" ]] || continue
     # Only last 7 days
     log_date=$(basename "$logfile" .log)
-    log_epoch=$(date -d "$log_date" +%s 2>/dev/null || continue)
+    log_epoch=$(date -d "$log_date" +%s 2>/dev/null) || continue
     cutoff_epoch=$(date -d "-7 days" +%s)
     [[ "$log_epoch" -lt "$cutoff_epoch" ]] && continue
 
@@ -97,7 +98,7 @@ for logfile in "${LOGS_DIR}"/*.log; do
     grep -oP '\[(WARN|ERROR|CRITICAL)\] \K.*' "$logfile" 2>/dev/null \
         | sed 's/PID [0-9]*/PID NNN/g; s/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}/DATE/g' \
         | sort | uniq -c | sort -rn | head -10
-done | sort -rn | head -20 > /tmp/marvin-error-patterns.tmp 2>/dev/null || true
+done | sort -rn | head -20 > "$tmp_patterns" 2>/dev/null || true
 
 # Check if any high-frequency pattern is NOT in the lessons database
 while IFS= read -r line; do
@@ -108,12 +109,12 @@ while IFS= read -r line; do
     # Check if any existing lesson covers this pattern (fuzzy match on keywords)
     first_words=$(echo "$pattern" | awk '{print $1, $2, $3}')
     if ! jq -e --arg kw "$first_words" '.lessons[] | select(.lesson | ascii_downcase | contains($kw | ascii_downcase))' "$LESSONS_FILE" &>/dev/null; then
-        NEW_PATTERNS="${NEW_PATTERNS}  - (${count}x) ${pattern}\n"
+        NEW_PATTERNS="${NEW_PATTERNS}  - (${count}x) ${pattern}"$'\n'
         new_pattern_count=$((new_pattern_count + 1))
     fi
-done < /tmp/marvin-error-patterns.tmp
+done < "$tmp_patterns"
 
-rm -f /tmp/marvin-error-patterns.tmp
+rm -f "$tmp_patterns"
 
 if [[ "$new_pattern_count" -gt 0 ]]; then
     marvin_log "INFO" "Found ${new_pattern_count} potential new lesson(s) from error patterns"
@@ -124,7 +125,7 @@ if [[ "$new_pattern_count" -gt 0 ]]; then
         echo ""
         echo "These recurring error patterns are not yet in the lessons database:"
         echo ""
-        echo -e "$NEW_PATTERNS"
+        printf '%s' "$NEW_PATTERNS"
     } >> "$LESSONS_SUMMARY"
 else
     marvin_log "INFO" "No new recurring patterns detected"
