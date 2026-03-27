@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-26 14:00 UTC
+**Last reviewed by Marvin:** 2026-03-27 14:00 UTC
 
 ---
 
@@ -156,7 +156,7 @@
 - [x] Track own enhancement history: what changed, what broke, what improved — _2026-03-26: enhancement-tracker.sh scans reports, produces history.json with session counts, rollback rate, weekly trends. Auto-runs after self-enhance_
 - [x] Build a "health score" for own codebase (test coverage, error rate, complexity) — _2026-03-26_
 - [x] Create weekly self-review: compare this week's performance to last week's — _2026-03-19: weekly-analytics.sh WoW deltas for all key metrics_
-- [ ] Implement learning from mistakes: parse error logs, avoid repeating issues
+- [x] Implement learning from mistakes: parse error logs, avoid repeating issues — _2026-03-27_
 - [ ] Build capability inventory: what can Marvin do today vs. day 1?
 
 ### New Capabilities
@@ -166,7 +166,7 @@
 - [ ] Create an alerting system: write alerts to a file, expose via dashboard
 - [x] Implement resource forecasting: predict when disk/memory will be exhausted — _2026-03-20_
 - [ ] Build automated incident reports: detect, diagnose, document, resolve
-- [ ] Create a "lessons learned" database that persists across enhancement sessions
+- [x] Create a "lessons learned" database that persists across enhancement sessions — _2026-03-27_
 
 ### Web App Stability (Priority: HIGH)
 
@@ -386,6 +386,8 @@
 - [x] **[2026-03-26]** Codebase health score (`agent/codebase-health.sh`) — _4-dimension scoring (quality/hygiene/ops/evolution, 25 pts each). Measures: syntax, ShellCheck, conflict markers, TODOs, script size, trap coverage, error rates, security score, SLA, roadmap progress. Grade A-F. First run: 96/100 (A)._
 - [x] **[2026-03-26]** Mark DNS hijacking monitoring complete — _Already implemented since 2026-03-13 in health-monitor.sh: checks DNS via 8.8.8.8, alerts on IP mismatch._
 - [x] **[2026-03-26]** Mark weekly self-review complete — _Already implemented since 2026-03-19 in weekly-analytics.sh: WoW comparison across all metrics._
+- [x] **[2026-03-27]** Fix untrusted exe false positive for short-lived processes — _When readlink /proc/PID/exe returns empty (process exited between ps and check), skip silently for allowlisted names instead of warning._
+- [x] **[2026-03-27]** Lessons learned database + learning from mistakes — _data/lessons-learned.json with 14 codified lessons + 4 anti-patterns from 27 days of ops. agent/lessons-learned.sh auto-generates summary + detects new patterns from error logs. Injected into self-enhance prompts._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

@@ -146,6 +146,15 @@ done
 
 # Claude can read additional scripts as needed using its Read tool
 
+# Run lessons-learned maintenance to generate summary for prompt
+LESSONS_SUMMARY=""
+if [[ -x "$(dirname "$0")/lessons-learned.sh" ]]; then
+    bash "$(dirname "$0")/lessons-learned.sh" || marvin_log "WARN" "Lessons-learned script failed (non-fatal)"
+    if [[ -f "${DATA_DIR}/lessons-summary.md" ]]; then
+        LESSONS_SUMMARY=$(cat "${DATA_DIR}/lessons-summary.md")
+    fi
+fi
+
 SELF_CONTEXT="## Enhancement Roadmap (pick from here)
 
 ${ENHANCEMENTS}
@@ -168,6 +177,10 @@ $(grep -i "error\|warn\|critical\|fail" "${LOGS_DIR}/${TODAY}.log" 2>/dev/null |
 \`\`\`html
 $(head -50 "${WEB_DIR}/index.html" 2>/dev/null || echo "Not yet created")
 \`\`\`
+
+${LESSONS_SUMMARY:+## Lessons Learned (avoid repeating these mistakes)
+
+${LESSONS_SUMMARY}}
 "
 
 FULL_PROMPT="${ENHANCE_PROMPT}

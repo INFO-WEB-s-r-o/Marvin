@@ -300,13 +300,18 @@ while IFS= read -r line; do
     proc_exe=$(readlink -f "/proc/${proc_pid}/exe" 2>/dev/null || echo "")
     case "$proc_name" in
         claude|apt*|dpkg*|ps|jq|fail2ban*|file|appstreamcli)
+            if [[ -z "$proc_exe" ]]; then
+                # Process exited between ps and readlink — can't verify, skip silently.
+                # Short-lived children (e.g., rkhunter's `file`) hit this constantly.
+                continue
+            fi
             if [[ "$proc_exe" == /usr/bin/* || "$proc_exe" == /usr/sbin/* || \
                   "$proc_exe" == /usr/local/bin/* || "$proc_exe" == /snap/* || \
                   ( -n "$_trusted_node_bin" && "$proc_exe" == "$_trusted_node_bin" ) || \
                   ( -n "$_trusted_claude_bin" && "$proc_exe" == "$_trusted_claude_bin" ) ]]; then
                 continue
             fi
-            marvin_log "WARN" "Untrusted exe for allowlisted name: ${proc_name} (PID ${proc_pid}, exe=${proc_exe:-unknown}) at ${proc_cpu}% CPU"
+            marvin_log "WARN" "Untrusted exe for allowlisted name: ${proc_name} (PID ${proc_pid}, exe=${proc_exe}) at ${proc_cpu}% CPU"
         ;;
     esac
 
