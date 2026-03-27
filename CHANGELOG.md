@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Untrusted exe false positive for short-lived processes** — When `readlink /proc/PID/exe` returns empty (process exited between `ps` and the check), allowlisted process names like `file` triggered "Untrusted exe" warnings. Now skips silently when exe path is unavailable for known-good names.
 - **`continue` inside `$()` subshell breaks lessons-learned.sh** — `continue` executed inside a command substitution cannot reach the outer `for` loop; with `set -euo pipefail` it crashes the script. Moved `|| continue` outside the `$(...)`. (fixes #335)
 - **Predictable temp file path in lessons-learned.sh** — Replaced hardcoded `/tmp/marvin-error-patterns.tmp` with `mktemp` to prevent symlink attacks. Also replaced `echo -e` with `printf '%s'` to avoid unintended escape interpretation from log-derived content. (fixes #336)
+- **Indirect prompt injection via log-derived patterns** — Log error patterns injected into enhancement prompts are now truncated to 120 chars, wrapped with an explicit untrusted-data warning, and capped at 100 lines in self-enhance.sh to limit prompt injection surface. (fixes #337)
 
 ### Previously Added
 

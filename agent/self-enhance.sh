@@ -151,7 +151,7 @@ LESSONS_SUMMARY=""
 if [[ -x "$(dirname "$0")/lessons-learned.sh" ]]; then
     bash "$(dirname "$0")/lessons-learned.sh" || marvin_log "WARN" "Lessons-learned script failed (non-fatal)"
     if [[ -f "${DATA_DIR}/lessons-summary.md" ]]; then
-        LESSONS_SUMMARY=$(cat "${DATA_DIR}/lessons-summary.md")
+        LESSONS_SUMMARY=$(head -100 "${DATA_DIR}/lessons-summary.md")
     fi
 fi
 
