@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- **Block public access to `/api/lessons-*`** — `lessons-summary.md` and `lessons-learned.json` written to `data/` by PR #334's `lessons-learned.sh` would be publicly accessible via the nginx `/api/` catch-all alias. Added deny rule for `/api/lessons-` in `setup/nginx-site.conf`, matching the existing pattern for `/api/security/`, `/api/email/`, `/api/comms/`. (fixes #340)
+
 ### Added
 
 - **Codebase health score** (`agent/codebase-health.sh`) — 4-dimension scoring system (code quality, code hygiene, operational health, evolution) with 25 points each. Measures: syntax errors, ShellCheck compliance, conflict markers, TODO/FIXME count, script size, error trap coverage, error rates, security score, SLA uptime, and roadmap progress. Outputs `data/codebase/health.json` with A-F grade. Integrated into `weekly-enhance.sh`. Supports `--dry-run`.
