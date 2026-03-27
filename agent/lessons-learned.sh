@@ -86,6 +86,8 @@ new_pattern_count=0
 
 # Look for repeated WARN/ERROR patterns in recent logs
 tmp_patterns=$(mktemp /tmp/marvin-error-patterns.XXXXXX)
+trap 'rm -f "$tmp_patterns"; marvin_error_trap' ERR
+trap 'rm -f "$tmp_patterns"' EXIT
 for logfile in "${LOGS_DIR}"/*.log; do
     [[ -f "$logfile" ]] || continue
     # Only last 7 days
@@ -115,8 +117,6 @@ while IFS= read -r line; do
         new_pattern_count=$((new_pattern_count + 1))
     fi
 done < "$tmp_patterns"
-
-rm -f "$tmp_patterns"
 
 if [[ "$new_pattern_count" -gt 0 ]]; then
     marvin_log "INFO" "Found ${new_pattern_count} potential new lesson(s) from error patterns"
