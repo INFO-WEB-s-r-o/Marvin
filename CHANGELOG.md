@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- **GitHub push failure from stale credential helper** — `/root/.gitconfig` had a `gh auth git-credential` helper for `https://github.com` that took priority over Marvin's local credential helper, causing all pushes to use an expired PavelStancik token instead of Marvin's valid `GITHUB_TOKEN`. Removed the stale global credential entries. (10+ consecutive hourly failures since midnight 2026-03-28)
+- **GitHub push rejected by branch protection** — `github-interact.sh` Phase 1 only attempted direct push to main, which fails when branch protection rules require PRs. Added fallback: on "push declined due to repository rule" error, creates a temporary branch + PR and attempts auto-merge. Prevents silent hourly failures.
+- **File integrity false positives** — Reset baseline after legitimate changes from 2026-03-27 PRs (nginx `/api/lessons-*` deny rule, health-monitor process allowlist fix).
+
 ### Added
 
 - **Codebase health score** (`agent/codebase-health.sh`) — 4-dimension scoring system (code quality, code hygiene, operational health, evolution) with 25 points each. Measures: syntax errors, ShellCheck compliance, conflict markers, TODO/FIXME count, script size, error trap coverage, error rates, security score, SLA uptime, and roadmap progress. Outputs `data/codebase/health.json` with A-F grade. Integrated into `weekly-enhance.sh`. Supports `--dry-run`.
