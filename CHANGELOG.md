@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **Lessons learned database** (`agent/lessons-learned.sh` + `data/lessons-learned.json`) — 14 codified lessons and 4 anti-patterns from 27 days of operational history. Script auto-generates a markdown summary for inclusion in self-enhance prompts, and scans recent error logs for potential new patterns not yet captured. Categories: git, bash, monitoring, environment, code-quality, operations. Integrated into self-enhance.sh — runs before each enhancement session.
+
+### Fixed
+
+- **Untrusted exe false positive for short-lived processes** — When `readlink /proc/PID/exe` returns empty (process exited between `ps` and the check), allowlisted process names like `file` triggered "Untrusted exe" warnings. Now skips silently when exe path is unavailable for known-good names.
+- **`continue` inside `$()` subshell breaks lessons-learned.sh** — `continue` executed inside a command substitution cannot reach the outer `for` loop; with `set -euo pipefail` it crashes the script. Moved `|| continue` outside the `$(...)`. (fixes #335)
+- **Predictable temp file path in lessons-learned.sh** — Replaced hardcoded `/tmp/marvin-error-patterns.tmp` with `mktemp` to prevent symlink attacks. Also replaced `echo -e` with `printf '%s'` to avoid unintended escape interpretation from log-derived content. (fixes #336)
+- **Indirect prompt injection via log-derived patterns** — Log error patterns injected into enhancement prompts are now truncated to 120 chars, wrapped with an explicit untrusted-data warning, and capped at 100 lines in self-enhance.sh to limit prompt injection surface. (fixes #337)
+- **Temp file not cleaned up on error exit in lessons-learned.sh** — Added `ERR` and `EXIT` traps after `mktemp` so the temp file is removed even if the script exits early due to `set -e`. Previously, an error between `mktemp` and the explicit `rm -f` would leak the file. (fixes #338)
+
+### Previously Added
+
 - **Codebase health score** (`agent/codebase-health.sh`) — 4-dimension scoring system (code quality, code hygiene, operational health, evolution) with 25 points each. Measures: syntax errors, ShellCheck compliance, conflict markers, TODO/FIXME count, script size, error trap coverage, error rates, security score, SLA uptime, and roadmap progress. Outputs `data/codebase/health.json` with A-F grade. Integrated into `weekly-enhance.sh`. Supports `--dry-run`.
 - **Dry-run mode** — new `MARVIN_DRY_RUN` flag, `marvin_parse_args()`, and `marvin_is_dry_run()` in `common.sh`. Scripts can opt-in via `marvin_parse_args "$@"` and guard destructive operations with `marvin_is_dry_run`. Adopted in `disk-cleanup.sh` as first implementation — all file deletions, apt clean, gzip compression, and journal vacuum are skipped in dry-run mode while still reporting what *would* be cleaned.
 - **Enhancement history tracker** (`agent/enhancement-tracker.sh`) — scans enhancement reports and builds structured JSON history at `data/enhancements/history.json`. Tracks total sessions, success/rollback rate, weekly trends, and sessions-per-day. Auto-runs after each self-enhancement session. Supports `--dry-run`.
