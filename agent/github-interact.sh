@@ -55,11 +55,12 @@ if git -C "$MARVIN_DIR" log origin/main..main --oneline 2>/dev/null | head -5 | 
         marvin_log "INFO" "Branch protection active — creating PR for pending commits"
         _pr_branch="auto/push-$(date +%Y%m%d-%H%M%S)"
         _commit_msg=$(git -C "$MARVIN_DIR" log origin/main..main --oneline 2>/dev/null | head -1)
-        cd "$MARVIN_DIR" || true
-        if git checkout -b "$_pr_branch" 2>/dev/null \
-            && git checkout main 2>/dev/null \
-            && git reset --hard origin/main 2>/dev/null \
+        _saved_head=$(git -C "$MARVIN_DIR" rev-parse HEAD 2>/dev/null)
+        if git -C "$MARVIN_DIR" checkout -b "$_pr_branch" 2>/dev/null \
             && github_push_branch "$_pr_branch" 2>/dev/null; then
+            # Branch pushed successfully — now safe to reset main to origin
+            git -C "$MARVIN_DIR" checkout main 2>/dev/null || true
+            git -C "$MARVIN_DIR" reset --hard origin/main 2>/dev/null || true
             _pr_body="Auto-generated PR for commits that could not be pushed directly to main (branch protection)."
             _pr_response=$(github_api POST "/repos/${GITHUB_REPO}/pulls" \
                 "$(jq -n --arg t "$_commit_msg" --arg b "$_pr_body" --arg h "$_pr_branch" \
@@ -78,9 +79,11 @@ if git -C "$MARVIN_DIR" log origin/main..main --oneline 2>/dev/null | head -5 | 
                 marvin_log "WARN" "Could not create PR for pending commits"
             fi
         else
-            PUSH_RESULT="Push failed — branch protection active, branch creation failed."
-            marvin_log "WARN" "Could not create branch for pending commits"
+            # Push failed — restore HEAD to preserve commits
+            marvin_log "WARN" "Could not push branch for pending commits — restoring HEAD"
             git -C "$MARVIN_DIR" checkout main 2>/dev/null || true
+            git -C "$MARVIN_DIR" reset --hard "${_saved_head}" 2>/dev/null || true
+            PUSH_RESULT="Push failed — branch protection active, branch push failed."
         fi
     else
         PUSH_RESULT="Push failed (exit ${push_exit}) — will retry next run."
