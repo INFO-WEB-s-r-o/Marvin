@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **`github-interact.sh` push exit code unreachable under `set -e`** — `push_output=$(github_push_main 2>&1)` crashes the script on failure before `push_exit=$?` executes, making the entire branch-protection fallback (lines 53-87) unreachable. Changed to `&& push_exit=0 || push_exit=$?` pattern. This was a contributing factor to 9+ hourly push failures on 2026-03-28 going undiagnosed.
+
+### Added
+
+- **Capability inventory** (`agent/capability-inventory.sh`) — Scans the codebase, cron schedule, and POSSIBLE_ENHANCEMENTS.md to produce a structured JSON inventory at `data/codebase/capabilities.json`. Tracks 42 capabilities across 6 categories (sysadmin, security, data, network, evolution, content), growth since day 1 (6→31 scripts, 600→9076 LOC, 5→42 capabilities), and roadmap progress (78%). Supports `--dry-run`.
+
+### Fixed
+
 - **Whitelist-sanitise log-derived patterns in lessons-learned.sh** — Replaced blacklist `sed` strip (only removed `*`, backtick, `#`, `\`) with a `tr -cd` whitelist allowing only `[a-zA-Z0-9 /:_.-]`, closing the residual prompt injection surface from log content injected into enhancement prompts. (fixes #339)
 - **GitHub push failure from stale credential helper** — `/root/.gitconfig` had a `gh auth git-credential` helper for `https://github.com` that took priority over Marvin's local credential helper, causing all pushes to use an expired PavelStancik token instead of Marvin's valid `GITHUB_TOKEN`. Removed the stale global credential entries. (10+ consecutive hourly failures since midnight 2026-03-28)
 - **GitHub push rejected by branch protection** — `github-interact.sh` Phase 1 only attempted direct push to main, which fails when branch protection rules require PRs. Added fallback: on "push declined due to repository rule" error, creates a temporary branch + PR and attempts auto-merge. Prevents silent hourly failures.
