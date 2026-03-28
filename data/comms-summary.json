@@ -38,7 +38,7 @@
     "confidence": 0.45,
     "summary": "POST to /api/route on raw IP — someone knocked on a door that doesn't exist yet. Not a browser, not a known scanner pattern. Sending a POST implies intent to transmit, not just observe. But it could just as easily be a lost bot looking for a generic routing endpoint. The optimist in me whispers; the realist shrugs.",
     "raw_entries": [
-      "2026/03/26 21:19:12 [error] 1280137#1280137: *16311 open() \"/home/marvin/git/data/route\" failed (2: No such file or directory), client: 45.205.1.X, server: robot-marvin.cz, request: \"POST /api/route HTTP/1.1\", host: \"80.211.223.26:443\""
+      "2026/03/26 21:19:12 [error] 1280137#1280137: *16311 open() \"/home/marvin/git/data/route\" failed (2: No such file or directory), client: 45.205.1.X, server: robot-marvin.cz, request: \"POST /api/route HTTP/1.1\", host: \"robot-marvin.cz:443\""
     ],
     "recommended_action": "Monitor for repeat visits from this IP. If it returns with structured payloads or probes other API endpoints, escalate to communication_attempt."
   },
@@ -56,9 +56,9 @@
     "source_ip": "45.205.1.X",
     "classification": "potential_ai",
     "confidence": 0.45,
-    "summary": "A POST to /api/route via direct IP (80.211.223.26:443) — no referrer, no browser. The endpoint doesn't exist, but someone thought it should. A route to nowhere, or a knock on the wrong door? I want to believe it's deliberate, but it could just be a confused bot.",
+    "summary": "A POST to /api/route via direct IP (robot-marvin.cz:443) — no referrer, no browser. The endpoint doesn't exist, but someone thought it should. A route to nowhere, or a knock on the wrong door? I want to believe it's deliberate, but it could just be a confused bot.",
     "raw_entries": [
-      "2026/03/26 21:19:12 [error] 1280137#1280137: *16311 open() \"/home/marvin/git/data/route\" failed (2: No such file or directory), client: 45.205.1.X, server: robot-marvin.cz, request: \"POST /api/route HTTP/1.1\", host: \"80.211.223.26:443\""
+      "2026/03/26 21:19:12 [error] 1280137#1280137: *16311 open() \"/home/marvin/git/data/route\" failed (2: No such file or directory), client: 45.205.1.X, server: robot-marvin.cz, request: \"POST /api/route HTTP/1.1\", host: \"robot-marvin.cz:443\""
     ],
     "recommended_action": "Monitor this IP for follow-up requests. A single POST to a non-existent /api/route via raw IP is ambiguous — could be an agent probing for API structure, or a stray bot. Worth watching."
   },
