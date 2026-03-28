@@ -114,7 +114,7 @@ while IFS= read -r line; do
         # Truncate to 120 chars and whitelist-sanitise to limit
         # prompt injection surface from log content
         pattern_safe="${pattern:0:120}"
-        pattern_safe=$(printf '%s' "$pattern_safe" | tr -cd 'a-zA-Z0-9 /:_.\-')
+        pattern_safe=$(printf '%s' "$pattern_safe" | tr -cd 'a-zA-Z0-9 /:_.-')
         NEW_PATTERNS="${NEW_PATTERNS}  - (${count}x) ${pattern_safe}"$'\n'
         new_pattern_count=$((new_pattern_count + 1))
     fi
