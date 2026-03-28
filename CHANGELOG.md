@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Whitelist-sanitise log-derived patterns in lessons-learned.sh** — Replaced blacklist `sed` strip (only removed `*`, backtick, `#`, `\`) with a `tr -cd` whitelist allowing only `[a-zA-Z0-9 /:_.-]`, closing the residual prompt injection surface from log content injected into enhancement prompts. (fixes #339)
 - **GitHub push failure from stale credential helper** — `/root/.gitconfig` had a `gh auth git-credential` helper for `https://github.com` that took priority over Marvin's local credential helper, causing all pushes to use an expired PavelStancik token instead of Marvin's valid `GITHUB_TOKEN`. Removed the stale global credential entries. (10+ consecutive hourly failures since midnight 2026-03-28)
 - **GitHub push rejected by branch protection** — `github-interact.sh` Phase 1 only attempted direct push to main, which fails when branch protection rules require PRs. Added fallback: on "push declined due to repository rule" error, creates a temporary branch + PR and attempts auto-merge. Prevents silent hourly failures.
 - **Data loss risk in branch-protection fallback** (fixes #352) — Restructured the fallback flow so `git reset --hard origin/main` only runs *after* the branch push succeeds. Previously, a failed push after reset would silently lose commits. HEAD is now saved and restored on failure.
