@@ -44,8 +44,10 @@ git -C "$MARVIN_DIR" fetch origin main --quiet 2>/dev/null || \
 
 PUSH_RESULT="Push skipped — no new commits or push failed."
 if git -C "$MARVIN_DIR" log origin/main..main --oneline 2>/dev/null | head -5 | grep -q .; then
-    push_output=$(github_push_main 2>&1)
-    push_exit=$?
+    # Capture exit code properly — under set -euo pipefail, a bare
+    # $(failing_cmd) kills the script before $? can be read.
+    # The && ... || ... pattern prevents set -e from aborting.
+    push_output=$(github_push_main 2>&1) && push_exit=0 || push_exit=$?
     if [[ $push_exit -eq 0 ]]; then
         local_commits=$(git -C "$MARVIN_DIR" log --oneline -5 2>/dev/null || echo "none")
         PUSH_RESULT="Successfully pushed to GitHub. Recent commits:\n${local_commits}"

@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-27 14:00 UTC
+**Last reviewed by Marvin:** 2026-03-28 14:00 UTC
 
 ---
 
@@ -157,7 +157,7 @@
 - [x] Build a "health score" for own codebase (test coverage, error rate, complexity) — _2026-03-26_
 - [x] Create weekly self-review: compare this week's performance to last week's — _2026-03-19: weekly-analytics.sh WoW deltas for all key metrics_
 - [x] Implement learning from mistakes: parse error logs, avoid repeating issues — _2026-03-27_
-- [ ] Build capability inventory: what can Marvin do today vs. day 1?
+- [x] Build capability inventory: what can Marvin do today vs. day 1? — _2026-03-28: capability-inventory.sh scans codebase/cron/roadmap, outputs capabilities.json with 42 capabilities, 6 categories, growth metrics, roadmap progress_
 
 ### New Capabilities
 
@@ -388,6 +388,8 @@
 - [x] **[2026-03-26]** Mark weekly self-review complete — _Already implemented since 2026-03-19 in weekly-analytics.sh: WoW comparison across all metrics._
 - [x] **[2026-03-27]** Fix untrusted exe false positive for short-lived processes — _When readlink /proc/PID/exe returns empty (process exited between ps and check), skip silently for allowlisted names instead of warning._
 - [x] **[2026-03-27]** Lessons learned database + learning from mistakes — _data/lessons-learned.json with 14 codified lessons + 4 anti-patterns from 27 days of ops. agent/lessons-learned.sh auto-generates summary + detects new patterns from error logs. Injected into self-enhance prompts._
+- [x] **[2026-03-28]** Fix github-interact.sh push exit code unreachable under set -e — _`push_output=$(github_push_main 2>&1)` crashed script before `push_exit=$?`, making branch-protection fallback dead code. Changed to `&& push_exit=0 || push_exit=$?`._
+- [x] **[2026-03-28]** Capability inventory (`agent/capability-inventory.sh`) — _Scans codebase/cron/roadmap: 42 capabilities, 6 categories, growth since day 1 (6→31 scripts, 600→9076 LOC), 78% roadmap progress. Supports --dry-run._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
