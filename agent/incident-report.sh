@@ -104,10 +104,10 @@ _create_incident() {
 
     # Append to active incidents (flock to prevent concurrent write races)
     (
-        flock -w 10 200 || { marvin_log "WARN" "Failed to acquire lock for incident create"; return 1; }
+        flock -w 10 200 || { marvin_log "WARN" "Failed to acquire lock for incident create"; exit 1; }
         jq --argjson inc "$incident" '.incidents += [$inc]' "$ACTIVE_FILE" \
             > "${ACTIVE_FILE}.tmp" && mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
-    ) 200>"$LOCK_FILE"
+    ) 200>"$LOCK_FILE" || { marvin_log "WARN" "Incident create failed (lock timeout): ${id}"; return 1; }
 
     marvin_log "WARN" "INCIDENT OPENED: ${id} [${severity}] ${title}"
 
@@ -120,11 +120,11 @@ _add_timeline() {
     local type="$1" event="$2"
     local ts="$NOW"
     (
-        flock -w 10 200 || { marvin_log "WARN" "Failed to acquire lock for timeline update"; return 1; }
+        flock -w 10 200 || { marvin_log "WARN" "Failed to acquire lock for timeline update"; exit 1; }
         jq --arg t "$type" --arg ts "$ts" --arg ev "$event" \
             '(.incidents[] | select(.type == $t and .status == "active") | .timeline) += [{timestamp: $ts, event: $ev}]' \
             "$ACTIVE_FILE" > "${ACTIVE_FILE}.tmp" && mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
-    ) 200>"$LOCK_FILE"
+    ) 200>"$LOCK_FILE" || marvin_log "WARN" "Timeline update failed (lock timeout): ${type}"
 }
 
 # ─── DETECT: Scan for new incidents ──────────────────────────────────────────
@@ -358,7 +358,7 @@ if [[ "$DO_CLOSE" == "true" ]]; then
 
             # Update the incident (flock to prevent concurrent write races)
             (
-                flock -w 10 200 || { marvin_log "WARN" "Failed to acquire lock for incident resolve"; continue; }
+                flock -w 10 200 || { marvin_log "WARN" "Failed to acquire lock for incident resolve"; exit 1; }
                 jq --arg id "$inc_id" --arg res "$resolution" --arg ts "$NOW" --argjson dur "$duration_min" \
                     '(.incidents[] | select(.id == $id)) |= (
                         .status = "resolved" |
@@ -367,7 +367,7 @@ if [[ "$DO_CLOSE" == "true" ]]; then
                         .duration_minutes = $dur |
                         .timeline += [{timestamp: $ts, event: ("Resolved: " + $res)}]
                     )' "$ACTIVE_FILE" > "${ACTIVE_FILE}.tmp" && mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
-            ) 200>"$LOCK_FILE"
+            ) 200>"$LOCK_FILE" || { marvin_log "WARN" "Incident resolve failed (lock timeout): ${inc_id}"; continue; }
 
             # Update individual history file
             if [[ -f "${HISTORY_DIR}/${inc_id}.json" ]]; then
@@ -383,15 +383,19 @@ if [[ "$DO_CLOSE" == "true" ]]; then
         fi
     done
 
-    # Archive fully-resolved incidents older than 7 days (remove from active file)
+    # Archive incidents older than 7 days (resolved by resolved_at, active by opened_at)
+    # This prevents stale active incidents from accumulating indefinitely (#361)
     week_ago=$(date -u -d "${TODAY} - 7 days" +%Y-%m-%dT00:00:00Z 2>/dev/null || echo "")
     if [[ -n "$week_ago" ]]; then
         (
-            flock -w 10 200 || { marvin_log "WARN" "Failed to acquire lock for archive cleanup"; }
+            flock -w 10 200 || { marvin_log "WARN" "Failed to acquire lock for archive cleanup"; exit 1; }
             jq --arg cutoff "$week_ago" \
-                '.incidents |= [.[] | select(.status == "active" or .resolved_at > $cutoff)]' \
+                '.incidents |= [.[] | select(
+                    (.status == "active" and .opened_at > $cutoff) or
+                    (.status != "active" and .resolved_at > $cutoff)
+                )]' \
                 "$ACTIVE_FILE" > "${ACTIVE_FILE}.tmp" && mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
-        ) 200>"$LOCK_FILE"
+        ) 200>"$LOCK_FILE" || marvin_log "WARN" "Archive cleanup failed (lock timeout)"
     fi
 
     marvin_log "INFO" "Incident closure check complete: ${resolved_count} resolved"
