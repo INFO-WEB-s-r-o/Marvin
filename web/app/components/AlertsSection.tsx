@@ -72,7 +72,7 @@ export default function AlertsSection() {
       ]);
       if (sumResp.ok) setSummary(await sumResp.json());
       if (alertResp.ok) setAlerts(await alertResp.json());
-      setFetchError(!sumResp.ok && !alertResp.ok);
+      setFetchError(!sumResp.ok || !alertResp.ok);
     } catch (e) {
       console.warn('Failed to fetch alerts:', e);
       setFetchError(true);

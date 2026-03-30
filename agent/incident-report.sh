@@ -246,10 +246,13 @@ if [[ "$DO_CLOSE" == "true" ]]; then
                     resolution="Website responding (HTTP 200)"
                 fi ;;
             dns-failure)
-                ip=$(dig +short robot-marvin.cz A @8.8.8.8 2>/dev/null | tail -1)
-                if [[ "${ip:-}" == "80.211.223.26" ]]; then
-                    should_resolve=true
-                    resolution="DNS resolution restored"
+                expected_ip=$(jq -r '.checks.dns_expected_ip // empty' "${DATA_DIR}/status.json" 2>/dev/null)
+                if [[ -n "${expected_ip:-}" ]]; then
+                    ip=$(dig +short robot-marvin.cz A @8.8.8.8 2>/dev/null | tail -1)
+                    if [[ "${ip:-}" == "$expected_ip" ]]; then
+                        should_resolve=true
+                        resolution="DNS resolution restored (resolves to ${ip})"
+                    fi
                 fi ;;
             alert-escalation)
                 cc=$(jq '[.alerts[] | select(.severity == "critical")] | length' \
