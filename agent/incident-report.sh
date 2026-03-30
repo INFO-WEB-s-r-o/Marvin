@@ -23,6 +23,7 @@ trap marvin_error_trap ERR
 
 INCIDENTS_DIR="${DATA_DIR}/incidents"
 ACTIVE_FILE="${INCIDENTS_DIR}/active-incidents.json"
+LOCK_FILE="${INCIDENTS_DIR}/.active-incidents.lock"
 HISTORY_DIR="${INCIDENTS_DIR}/history"
 SUMMARY_FILE="${INCIDENTS_DIR}/summary.json"
 
@@ -59,7 +60,7 @@ marvin_log "INFO" "Incident report starting (detect=${DO_DETECT}, close=${DO_CLO
 # ─── Helper: generate incident ID ────────────────────────────────────────────
 _incident_id() {
     local type="$1"
-    echo "INC-${TODAY//-/}-${type}-$(date +%s | tail -c 5)"
+    echo "INC-${TODAY//-/}-${type}-$(date +%s | tail -c 5)-$$"
 }
 
 # ─── Helper: check if an active incident already exists for a given type ──────
@@ -101,9 +102,12 @@ _create_incident() {
             duration_minutes: null
         }')
 
-    # Append to active incidents
-    jq --argjson inc "$incident" '.incidents += [$inc]' "$ACTIVE_FILE" \
-        > "${ACTIVE_FILE}.tmp" && mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
+    # Append to active incidents (flock to prevent concurrent write races)
+    (
+        flock -w 10 200 || { marvin_log "WARN" "Failed to acquire lock for incident create"; return 1; }
+        jq --argjson inc "$incident" '.incidents += [$inc]' "$ACTIVE_FILE" \
+            > "${ACTIVE_FILE}.tmp" && mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
+    ) 200>"$LOCK_FILE"
 
     marvin_log "WARN" "INCIDENT OPENED: ${id} [${severity}] ${title}"
 
@@ -115,9 +119,12 @@ _create_incident() {
 _add_timeline() {
     local type="$1" event="$2"
     local ts="$NOW"
-    jq --arg t "$type" --arg ts "$ts" --arg ev "$event" \
-        '(.incidents[] | select(.type == $t and .status == "active") | .timeline) += [{timestamp: $ts, event: $ev}]' \
-        "$ACTIVE_FILE" > "${ACTIVE_FILE}.tmp" && mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
+    (
+        flock -w 10 200 || { marvin_log "WARN" "Failed to acquire lock for timeline update"; return 1; }
+        jq --arg t "$type" --arg ts "$ts" --arg ev "$event" \
+            '(.incidents[] | select(.type == $t and .status == "active") | .timeline) += [{timestamp: $ts, event: $ev}]' \
+            "$ACTIVE_FILE" > "${ACTIVE_FILE}.tmp" && mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
+    ) 200>"$LOCK_FILE"
 }
 
 # ─── DETECT: Scan for new incidents ──────────────────────────────────────────
@@ -327,12 +334,14 @@ if [[ "$DO_CLOSE" == "true" ]]; then
                 fi
                 ;;
             high-error-rate)
-                # Auto-close after 4 hours (error rate is a daily metric, resets daily)
+                # Auto-close after 4 hours — error rate is a daily aggregate metric that
+                # resets with each new log file. This is a staleness timeout, not a
+                # confirmation that the error rate has dropped.
                 opened_epoch=$(date -d "$inc_opened" +%s 2>/dev/null || echo "$now_epoch")
                 age_hours=$(( (now_epoch - opened_epoch) / 3600 ))
                 if [[ "$age_hours" -ge 4 ]]; then
                     should_resolve=true
-                    resolution="Auto-closed after ${age_hours} hours (error rate is monitored per-day)"
+                    resolution="Staleness timeout after ${age_hours} hours — error rate is a daily metric; new incidents will open if rate remains elevated"
                 fi
                 ;;
         esac
@@ -347,15 +356,18 @@ if [[ "$DO_CLOSE" == "true" ]]; then
             opened_epoch=$(date -d "$inc_opened" +%s 2>/dev/null || echo "$now_epoch")
             duration_min=$(( (now_epoch - opened_epoch) / 60 ))
 
-            # Update the incident
-            jq --arg id "$inc_id" --arg res "$resolution" --arg ts "$NOW" --argjson dur "$duration_min" \
-                '(.incidents[] | select(.id == $id)) |= (
-                    .status = "resolved" |
-                    .resolved_at = $ts |
-                    .resolution = $res |
-                    .duration_minutes = $dur |
-                    .timeline += [{timestamp: $ts, event: ("Resolved: " + $res)}]
-                )' "$ACTIVE_FILE" > "${ACTIVE_FILE}.tmp" && mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
+            # Update the incident (flock to prevent concurrent write races)
+            (
+                flock -w 10 200 || { marvin_log "WARN" "Failed to acquire lock for incident resolve"; continue; }
+                jq --arg id "$inc_id" --arg res "$resolution" --arg ts "$NOW" --argjson dur "$duration_min" \
+                    '(.incidents[] | select(.id == $id)) |= (
+                        .status = "resolved" |
+                        .resolved_at = $ts |
+                        .resolution = $res |
+                        .duration_minutes = $dur |
+                        .timeline += [{timestamp: $ts, event: ("Resolved: " + $res)}]
+                    )' "$ACTIVE_FILE" > "${ACTIVE_FILE}.tmp" && mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
+            ) 200>"$LOCK_FILE"
 
             # Update individual history file
             if [[ -f "${HISTORY_DIR}/${inc_id}.json" ]]; then
@@ -374,9 +386,12 @@ if [[ "$DO_CLOSE" == "true" ]]; then
     # Archive fully-resolved incidents older than 7 days (remove from active file)
     week_ago=$(date -u -d "${TODAY} - 7 days" +%Y-%m-%dT00:00:00Z 2>/dev/null || echo "")
     if [[ -n "$week_ago" ]]; then
-        jq --arg cutoff "$week_ago" \
-            '.incidents |= [.[] | select(.status == "active" or .resolved_at > $cutoff)]' \
-            "$ACTIVE_FILE" > "${ACTIVE_FILE}.tmp" && mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
+        (
+            flock -w 10 200 || { marvin_log "WARN" "Failed to acquire lock for archive cleanup"; }
+            jq --arg cutoff "$week_ago" \
+                '.incidents |= [.[] | select(.status == "active" or .resolved_at > $cutoff)]' \
+                "$ACTIVE_FILE" > "${ACTIVE_FILE}.tmp" && mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
+        ) 200>"$LOCK_FILE"
     fi
 
     marvin_log "INFO" "Incident closure check complete: ${resolved_count} resolved"
