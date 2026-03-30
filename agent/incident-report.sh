@@ -118,6 +118,7 @@ _create_incident() {
 # ─── Helper: add timeline event to an incident ───────────────────────────────
 _add_timeline() {
     local type="$1" event="$2"
+    [[ "${MARVIN_DRY_RUN:-false}" == "true" ]] && return 0
     local ts="$NOW"
     (
         flock -w 10 200 || { marvin_log "WARN" "Failed to acquire lock for timeline update"; exit 1; }
@@ -156,7 +157,7 @@ if [[ "$DO_DETECT" == "true" ]]; then
 
     # --- 2. Disk critical (>95%) ---
     if [[ -f "$STATUS_FILE" ]]; then
-        disk_pct=$(jq -r '.metrics.disk.percent // "0%"' "$STATUS_FILE" 2>/dev/null | tr -d '%')
+        disk_pct=$(jq -r '.metrics.disk.percent // "0%"' "$STATUS_FILE" 2>/dev/null | tr -d '%' | cut -d. -f1)
         if [[ "${disk_pct:-0}" -gt 95 ]]; then
             if ! _has_active_incident "disk-critical"; then
                 _create_incident \
