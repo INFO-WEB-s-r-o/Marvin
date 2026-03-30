@@ -3,15 +3,15 @@
 # Marvin — Automated Incident Reports
 # =============================================================================
 # Detects, diagnoses, documents, and tracks incidents automatically.
-# Triggered by health-monitor.sh when critical issues are found, and also
-# runs on a schedule to finalize/close incidents from the past 24 hours.
+# Scans health status, active alerts, service state, and log patterns.
+# Auto-resolves incidents when conditions clear.
 #
 # No Claude API call — pure log/metric analysis with jq.
 #
 # Modes:
-#   --detect   Scan for new incidents (called by health-monitor or cron)
-#   --close    Auto-close resolved incidents older than 4 hours
-#   --summary  Generate incidents summary for dashboard
+#   --detect   Scan for new incidents (default if no flags)
+#   --close    Auto-resolve incidents where conditions cleared
+#   --summary  Generate dashboard-friendly summary
 #
 # Cron: twice daily (12:15 UTC after self-enhance, 00:15 UTC after midnight)
 #   With --detect --close --summary flags
@@ -29,8 +29,8 @@ SUMMARY_FILE="${INCIDENTS_DIR}/summary.json"
 
 mkdir -p "$INCIDENTS_DIR" "$HISTORY_DIR"
 
-# Initialize active incidents file if missing
-if [[ ! -f "$ACTIVE_FILE" ]]; then
+# Initialize active incidents file if missing or corrupt
+if [[ ! -f "$ACTIVE_FILE" ]] || ! jq empty "$ACTIVE_FILE" 2>/dev/null; then
     echo '{"incidents":[]}' > "$ACTIVE_FILE"
 fi
 
@@ -38,6 +38,8 @@ fi
 DO_DETECT=false
 DO_CLOSE=false
 DO_SUMMARY=false
+
+marvin_parse_args "$@"
 
 for arg in "$@"; do
     case "$arg" in
@@ -55,7 +57,7 @@ if [[ "$DO_DETECT" == "false" && "$DO_CLOSE" == "false" && "$DO_SUMMARY" == "fal
     DO_SUMMARY=true
 fi
 
-marvin_log "INFO" "Incident report starting (detect=${DO_DETECT}, close=${DO_CLOSE}, summary=${DO_SUMMARY})"
+marvin_log_json "INFO" "incident-report" "Starting (detect=${DO_DETECT}, close=${DO_CLOSE}, summary=${DO_SUMMARY})"
 
 # ─── Helper: generate incident ID ────────────────────────────────────────────
 _incident_id() {
@@ -74,8 +76,8 @@ _has_active_incident() {
 _create_incident() {
     local id="$1" severity="$2" type="$3" title="$4" detail="$5"
 
-    if [[ "${MARVIN_DRY_RUN:-false}" == "true" ]]; then
-        marvin_log "INFO" "[DRY RUN] Would create incident: ${id} [${severity}] ${title}"
+    if marvin_is_dry_run; then
+        marvin_log "INFO" "[DRY-RUN] Would create incident: ${id} [${severity}] ${title}"
         return 0
     fi
 
@@ -118,7 +120,7 @@ _create_incident() {
 # ─── Helper: add timeline event to an incident ───────────────────────────────
 _add_timeline() {
     local type="$1" event="$2"
-    [[ "${MARVIN_DRY_RUN:-false}" == "true" ]] && return 0
+    marvin_is_dry_run && return 0
     local ts="$NOW"
     (
         flock -w 10 200 || { marvin_log "WARN" "Failed to acquire lock for timeline update"; exit 1; }
@@ -348,8 +350,8 @@ if [[ "$DO_CLOSE" == "true" ]]; then
         esac
 
         if [[ "$should_resolve" == "true" ]]; then
-            if [[ "${MARVIN_DRY_RUN:-false}" == "true" ]]; then
-                marvin_log "INFO" "[DRY RUN] Would resolve incident: ${inc_id} — ${resolution}"
+            if marvin_is_dry_run; then
+                marvin_log "INFO" "[DRY-RUN] Would resolve: ${inc_id} — ${resolution}"
                 resolved_count=$((resolved_count + 1))
                 continue
             fi
@@ -447,7 +449,7 @@ if [[ "$DO_SUMMARY" == "true" ]]; then
             incidents: $incidents
         }' > "$SUMMARY_FILE"
 
-    marvin_log "INFO" "Incident summary updated: ${active_count} active, ${resolved_30d} resolved (30d), avg ${avg_resolution}min MTTR"
+    marvin_log_json "INFO" "incident-report" "Summary: ${active_count} active, ${resolved_30d} resolved (30d), avg ${avg_resolution}min MTTR"
 fi
 
 marvin_log "INFO" "Incident report complete"

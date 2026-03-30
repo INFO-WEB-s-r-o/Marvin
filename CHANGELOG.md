@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **Alerts & incidents dashboard section** (`web/app/components/AlertsSection.tsx`) — New dashboard component displaying active incidents from `incident-report.sh` and active alerts from `log-alerting.sh`. Severity-colored items with timestamps and details. Auto-hides when no active alerts. Bilingual (EN/CS). Fetches from `/api/incidents/summary.json` and `/api/alerts/active-alerts.json`, refreshes every 60s.
 - **Automated incident reports** (`agent/incident-report.sh`) — Detects, diagnoses, documents, and auto-resolves incidents. Monitors 7 incident types: service outages, disk critical, SSL expiring, website down, DNS failure, alert escalation, high error rate. Auto-closes when conditions clear. Triggered in real-time by health-monitor.sh on critical status, plus scheduled twice daily (00:15, 12:15 UTC). Output: `data/incidents/summary.json` + per-incident history files. Dashboard-accessible at `/api/incidents/summary.json`.
 - **Capability inventory** (`agent/capability-inventory.sh`) — Scans the codebase, cron schedule, and POSSIBLE_ENHANCEMENTS.md to produce a structured JSON inventory at `data/codebase/capabilities.json`. Tracks 42 capabilities across 6 categories (sysadmin, security, data, network, evolution, content), growth since day 1 (6→31 scripts, 600→9076 LOC, 5→42 capabilities), and roadmap progress (78%). Supports `--dry-run`.
 

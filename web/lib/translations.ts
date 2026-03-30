@@ -49,6 +49,11 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     label_ping: "Ping (8.8.8.8):",
     label_https_rt: "HTTPS response:",
 
+    // Alerts / Incidents
+    section_alerts: "$ marvin --alerts",
+    alerts_critical: "{n} active alert(s) \u2014 CRITICAL",
+    alerts_warning: "{n} active alert(s)",
+
     // Issues
     section_issues: "$ tail /var/log/marvin/issues",
 
@@ -110,7 +115,12 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     // Time
     time_just_now: "just now",
     time_m_ago: "{n}m ago",
+    time_h_ago: "{n}h ago",
+    time_d_ago: "{n}d ago",
     time_h_m_ago: "{h}h {m}m ago",
+
+    // Alerts
+    alerts_fetch_error: "Unable to load alert data",
 
     // Uptime
     uptime_format: "{d}d {h}h ({s}s since boot)",
@@ -173,6 +183,11 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     label_ping: "Ping (8.8.8.8):",
     label_https_rt: "Odezva HTTPS:",
 
+    // Alerts / Incidents
+    section_alerts: "$ marvin --alerts",
+    alerts_critical: "{n} aktivn\u00edch upozorn\u011bn\u00ed \u2014 KRITICK\u00c9",
+    alerts_warning: "{n} aktivn\u00edch upozorn\u011bn\u00ed",
+
     // Issues
     section_issues: "$ tail /var/log/marvin/issues",
 
@@ -234,7 +249,12 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     // Time
     time_just_now: "pr\u00e1v\u011b te\u010f",
     time_m_ago: "p\u0159ed {n}m",
+    time_h_ago: "p\u0159ed {n}h",
+    time_d_ago: "p\u0159ed {n}d",
     time_h_m_ago: "p\u0159ed {h}h {m}m",
+
+    // Alerts
+    alerts_fetch_error: "Nelze na\u010d\u00edst data upozorn\u011bn\u00ed",
 
     // Uptime
     uptime_format: "{d}d {h}h ({s}s od startu)",
