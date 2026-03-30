@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Incident archiver discards long-running active incidents** — The 7-day archive cleanup in `incident-report.sh` applied its age cutoff to active incidents by `opened_at`, silently removing unresolved incidents older than 7 days. Now only resolved incidents are subject to the age cutoff; active incidents are always retained. (fixes #383)
 - **Sanitise credentials from git push error output** — `github_push_branch()` and `github_push_main()` now pipe stderr through `_sanitize_git_output()` to strip any embedded credentials from URLs before they reach logs. Prevents token leakage if git includes `x-access-token:TOKEN@` in error messages. (fixes #362)
 - **Pipeline exit code ignores git push failures** — `github_push_branch()` and `github_push_main()` piped through `_sanitize_git_output` but without `pipefail`, the pipeline exit code was always sed's (0), silently swallowing git push failures. Now uses `PIPESTATUS[0]` to capture git's actual exit code. (fixes #366)
 

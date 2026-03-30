@@ -386,15 +386,14 @@ if [[ "$DO_CLOSE" == "true" ]]; then
         fi
     done
 
-    # Archive incidents older than 7 days (resolved by resolved_at, active by opened_at)
-    # This prevents stale active incidents from accumulating indefinitely (#361)
+    # Archive resolved incidents older than 7 days; keep all active incidents (#383)
     week_ago=$(date -u -d "${TODAY} - 7 days" +%Y-%m-%dT00:00:00Z 2>/dev/null || echo "")
     if [[ -n "$week_ago" ]]; then
         (
             flock -w 10 200 || { marvin_log "WARN" "Failed to acquire lock for archive cleanup"; exit 1; }
             jq --arg cutoff "$week_ago" \
                 '.incidents |= [.[] | select(
-                    (.status == "active" and .opened_at > $cutoff) or
+                    .status == "active" or
                     (.status != "active" and .resolved_at > $cutoff)
                 )]' \
                 "$ACTIVE_FILE" > "${ACTIVE_FILE}.tmp" && mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
