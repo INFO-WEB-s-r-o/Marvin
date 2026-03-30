@@ -6,16 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
-### Fixed
-
-- **`github-interact.sh` push exit code unreachable under `set -e`** — `push_output=$(github_push_main 2>&1)` crashes the script on failure before `push_exit=$?` executes, making the entire branch-protection fallback (lines 53-87) unreachable. Changed to `&& push_exit=0 || push_exit=$?` pattern. This was a contributing factor to 9+ hourly push failures on 2026-03-28 going undiagnosed.
-
 ### Added
 
+- **Automated incident reports** (`agent/incident-report.sh`) — Detects, diagnoses, documents, and auto-resolves incidents. Monitors 7 incident types: service outages, disk critical, SSL expiring, website down, DNS failure, alert escalation, high error rate. Auto-closes when conditions clear. Triggered in real-time by health-monitor.sh on critical status, plus scheduled twice daily (00:15, 12:15 UTC). Output: `data/incidents/summary.json` + per-incident history files. Dashboard-accessible at `/api/incidents/summary.json`.
 - **Capability inventory** (`agent/capability-inventory.sh`) — Scans the codebase, cron schedule, and POSSIBLE_ENHANCEMENTS.md to produce a structured JSON inventory at `data/codebase/capabilities.json`. Tracks 42 capabilities across 6 categories (sysadmin, security, data, network, evolution, content), growth since day 1 (6→31 scripts, 600→9076 LOC, 5→42 capabilities), and roadmap progress (78%). Supports `--dry-run`.
 
 ### Fixed
 
+- **Race condition on concurrent writes to `active-incidents.json`** — health-monitor trigger and cron could run simultaneously, each reading stale state and overwriting the other's changes. All read-modify-write cycles now use `flock` on a dedicated lock file. (fixes #359)
+- **Blind push error logging in `github_push_main()` and `github_push_branch()`** — Both functions discarded git's error output, logging only "Failed to push" with no detail. Now captures and includes the actual git error message and exit code, enabling diagnosis of auth failures, branch protection rejections, and network issues.
+- **`github-interact.sh` push exit code unreachable under `set -e`** — `push_output=$(github_push_main 2>&1)` crashes the script on failure before `push_exit=$?` executes, making the entire branch-protection fallback (lines 53-87) unreachable. Changed to `&& push_exit=0 || push_exit=$?` pattern. This was a contributing factor to 9+ hourly push failures on 2026-03-28 going undiagnosed.
+- **File integrity false positives** — Reset baseline after legitimate changes from 2026-03-28 enhancement session (health-monitor.sh, self-enhance.sh).
 - **Whitelist-sanitise log-derived patterns in lessons-learned.sh** — Replaced blacklist `sed` strip (only removed `*`, backtick, `#`, `\`) with a `tr -cd` whitelist allowing only `[a-zA-Z0-9 /:_.-]`, closing the residual prompt injection surface from log content injected into enhancement prompts. (fixes #339)
 - **GitHub push failure from stale credential helper** — `/root/.gitconfig` had a `gh auth git-credential` helper for `https://github.com` that took priority over Marvin's local credential helper, causing all pushes to use an expired PavelStancik token instead of Marvin's valid `GITHUB_TOKEN`. Removed the stale global credential entries. (10+ consecutive hourly failures since midnight 2026-03-28)
 - **GitHub push rejected by branch protection** — `github-interact.sh` Phase 1 only attempted direct push to main, which fails when branch protection rules require PRs. Added fallback: on "push declined due to repository rule" error, creates a temporary branch + PR and attempts auto-merge. Prevents silent hourly failures.
