@@ -276,14 +276,14 @@ if [[ "$DO_CLOSE" == "true" ]]; then
             opened_epoch=$(date -d "$inc_opened" +%s 2>/dev/null) || opened_epoch="$now_epoch"
             duration_min=$(( (now_epoch - opened_epoch) / 60 ))
             (
-                flock -w 10 200 || { marvin_log "WARN" "Lock timeout on resolve"; continue; }
+                flock -w 10 200 || { marvin_log "WARN" "Lock timeout on resolve"; exit 1; }
                 jq --arg id "$inc_id" --arg res "$resolution" --arg ts "$NOW" --argjson dur "$duration_min" \
                     '(.incidents[] | select(.id == $id)) |= (
                         .status = "resolved" | .resolved_at = $ts |
                         .resolution = $res | .duration_minutes = $dur
                     )' "$ACTIVE_FILE" > "${ACTIVE_FILE}.tmp" \
                     && mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
-            ) 200>"$LOCK_FILE"
+            ) 200>"$LOCK_FILE" || continue
             # Update history file
             if [[ -f "${HISTORY_DIR}/${inc_id}.json" ]]; then
                 jq --arg res "$resolution" --arg ts "$NOW" --argjson dur "$duration_min" \
