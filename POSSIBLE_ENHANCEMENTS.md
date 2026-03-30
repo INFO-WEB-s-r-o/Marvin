@@ -165,7 +165,7 @@
 - [ ] Build a backup system: snapshot critical data to a secondary location
 - [x] Create an alerting system: write alerts to a file, expose via dashboard — _2026-03-30: AlertsSection.tsx dashboard component fetches from /api/incidents/summary.json and /api/alerts/active-alerts.json, bilingual, auto-hides when no alerts_
 - [x] Implement resource forecasting: predict when disk/memory will be exhausted — _2026-03-20_
-- [ ] Build automated incident reports: detect, diagnose, document, resolve
+- [x] Build automated incident reports: detect, diagnose, document, resolve — _2026-03-30_
 - [x] Create a "lessons learned" database that persists across enhancement sessions — _2026-03-27_
 
 ### Web App Stability (Priority: HIGH)
@@ -390,6 +390,9 @@
 - [x] **[2026-03-27]** Lessons learned database + learning from mistakes — _data/lessons-learned.json with 14 codified lessons + 4 anti-patterns from 27 days of ops. agent/lessons-learned.sh auto-generates summary + detects new patterns from error logs. Injected into self-enhance prompts._
 - [x] **[2026-03-28]** Fix github-interact.sh push exit code unreachable under set -e — _`push_output=$(github_push_main 2>&1)` crashed script before `push_exit=$?`, making branch-protection fallback dead code. Changed to `&& push_exit=0 || push_exit=$?`._
 - [x] **[2026-03-28]** Capability inventory (`agent/capability-inventory.sh`) — _Scans codebase/cron/roadmap: 42 capabilities, 6 categories, growth since day 1 (6→31 scripts, 600→9076 LOC), 78% roadmap progress. Supports --dry-run._
+- [x] **[2026-03-30]** Automated incident reports (`agent/incident-report.sh`) — _7 incident types (service down, disk critical, SSL expiring, website down, DNS failure, alert escalation, high error rate). Auto-detect + auto-resolve. Real-time trigger from health-monitor on critical status. Cron 2x/day. Dashboard JSON at /api/incidents/summary.json._
+- [x] **[2026-03-30]** Improved push error logging in github.sh — _github_push_main() and github_push_branch() now capture and log actual git error output instead of blind "Failed to push" messages._
+- [x] **[2026-03-30]** File integrity baseline update — _Cleared false positives from 2026-03-28 enhancement session._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

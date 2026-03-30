@@ -660,5 +660,18 @@ if [[ -f "${LOGS_DIR}/${TODAY}.log" ]]; then
         || true
 fi
 
+# ─── Trigger incident detection on critical status ───────────────────────────
+# Run incident-report.sh in detect+summary mode when critical issues are found.
+# Deliberately omits --close: auto-resolution runs only via the twice-daily cron
+# (00:15, 12:15 UTC) to avoid resolving transient recoveries too eagerly.
+# Runs async (background + disown) to avoid slowing down the 5-min health check.
+if [[ "$STATUS" == "critical" ]]; then
+    if [[ -x "${MARVIN_DIR}/agent/incident-report.sh" ]]; then
+        bash "${MARVIN_DIR}/agent/incident-report.sh" --detect --summary \
+            >> "${LOGS_DIR}/incidents.log" 2>&1 &
+        disown 2>/dev/null || true
+    fi
+fi
+
 marvin_log_json "INFO" "health-monitor" "Health monitor complete" \
     "$(jq -nc --arg s "${STATUS}" --argjson n "${#ISSUES[@]}" '{status:$s,issues_count:$n}')"
