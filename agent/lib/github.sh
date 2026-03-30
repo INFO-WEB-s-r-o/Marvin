@@ -283,6 +283,11 @@ github_setup_remote() {
     marvin_log "INFO" "GitHub remote configured for ${GITHUB_REPO}" >&2
 }
 
+# Strip credentials from git output to prevent token leakage in logs
+_sanitize_git_output() {
+    sed 's|://[^[:space:]]*@github\.com|://***@github.com|g'
+}
+
 # Push a branch to GitHub (GPG-signed commits)
 github_push_branch() {
     local branch="$1"
@@ -295,7 +300,7 @@ github_push_branch() {
 
     # Push with force-with-lease (safe force push for rebased branches)
     # Redirect all output to stderr so it doesn't pollute captured stdout
-    if git push --force-with-lease origin "$branch" >&2 2>&1; then
+    if git push --force-with-lease origin "$branch" 2>&1 | _sanitize_git_output >&2; then
         marvin_log "INFO" "Pushed branch ${branch} to GitHub" >&2
         return 0
     else
@@ -308,7 +313,7 @@ github_push_branch() {
 github_push_main() {
     cd "$MARVIN_DIR" || return 1
     github_setup_remote
-    git push origin main >&2 2>&1 || {
+    git push origin main 2>&1 | _sanitize_git_output >&2 || {
         marvin_log "ERROR" "Failed to push main to GitHub" >&2
         return 1
     }

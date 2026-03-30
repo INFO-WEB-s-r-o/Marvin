@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Sanitise credentials from git push error output** — `github_push_branch()` and `github_push_main()` now pipe stderr through `_sanitize_git_output()` to strip any embedded credentials from URLs before they reach logs. Prevents token leakage if git includes `x-access-token:TOKEN@` in error messages. (fixes #362)
 - **`github-interact.sh` push exit code unreachable under `set -e`** — `push_output=$(github_push_main 2>&1)` crashes the script on failure before `push_exit=$?` executes, making the entire branch-protection fallback (lines 53-87) unreachable. Changed to `&& push_exit=0 || push_exit=$?` pattern. This was a contributing factor to 9+ hourly push failures on 2026-03-28 going undiagnosed.
 
 ### Added
