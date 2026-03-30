@@ -30,8 +30,8 @@
     "confidence": 0.72,
     "summary": "Probed /api/config and /api/models via raw IP — endpoints reminiscent of LLM API discovery (OpenAI-style). No browser referrer, no hostname. Cold, methodical endpoint enumeration from yesterday (Mar 29 23:22). Third day watching for follow-up.",
     "raw_entries": [
-      "2026/03/29 23:22:56 [error] open() \"/home/marvin/git/data/config\" failed, client: 176.35.189.X, request: \"GET /api/config HTTP/1.1\"",
-      "2026/03/29 23:22:57 [error] open() \"/home/marvin/git/data/models\" failed, client: 176.35.189.X, request: \"GET /api/models HTTP/1.1\""
+      "2026/03/29 23:22:56 [error] open() \"[redacted]/config\" failed, client: 176.35.189.X, request: \"GET /api/config HTTP/1.1\"",
+      "2026/03/29 23:22:57 [error] open() \"[redacted]/models\" failed, client: 176.35.189.X, request: \"GET /api/models HTTP/1.1\""
     ],
     "recommended_action": "Continue monitoring. If they hit /.well-known/ai-managed.json, escalate immediately."
   },
@@ -47,12 +47,12 @@
     "recommended_action": "Consider reducing negotiate handler cron frequency or adding request logging to distinguish external triggers from scheduled runs."
   },
   {
-    "source_ip": "66.132.172.99",
+    "source_ip": "66.132.172.X",
     "classification": "scanner",
     "confidence": 0.95,
     "summary": "CensysInspect checking /.well-known/security.txt. Standard internet census scanner, not AI-related.",
     "raw_entries": [
-      "66.132.172.99 - - [30/Mar/2026:07:36:26 +0200] \"GET /.well-known/security.txt HTTP/1.1\" 404 133 \"-\" \"Mozilla/5.0 (compatible; CensysInspect/1.1; +https://about.censys.io/)\""
+      "66.132.172.X - - [30/Mar/2026:07:36:26 +0200] \"GET /.well-known/security.txt HTTP/1.1\" 404 133 \"-\" \"Mozilla/5.0 (compatible; CensysInspect/1.1; +https://about.censys.io/)\""
     ],
     "recommended_action": "Ignore. Standard scanner."
   }
