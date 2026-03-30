@@ -300,7 +300,9 @@ github_push_branch() {
 
     # Push with force-with-lease (safe force push for rebased branches)
     # Redirect all output to stderr so it doesn't pollute captured stdout
-    if git push --force-with-lease origin "$branch" 2>&1 | _sanitize_git_output >&2; then
+    # Use PIPESTATUS[0] to check git's exit code, not sed's (which is always 0)
+    git push --force-with-lease origin "$branch" 2>&1 | _sanitize_git_output >&2
+    if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
         marvin_log "INFO" "Pushed branch ${branch} to GitHub" >&2
         return 0
     else
@@ -313,10 +315,12 @@ github_push_branch() {
 github_push_main() {
     cd "$MARVIN_DIR" || return 1
     github_setup_remote
-    git push origin main 2>&1 | _sanitize_git_output >&2 || {
+    # Use PIPESTATUS[0] to check git's exit code, not sed's (which is always 0)
+    git push origin main 2>&1 | _sanitize_git_output >&2
+    if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
         marvin_log "ERROR" "Failed to push main to GitHub" >&2
         return 1
-    }
+    fi
     marvin_log "INFO" "Pushed main branch to GitHub" >&2
 }
 
