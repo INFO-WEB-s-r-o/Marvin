@@ -299,7 +299,7 @@ github_push_branch() {
     git checkout "$branch" 2>/dev/null || git checkout -b "$branch"
 
     # Push with force-with-lease (safe force push for rebased branches)
-    # Pipeline inside `if` is exempt from set -e; pipefail ensures git's exit code is used
+    # Pipeline inside `if` is exempt from set -e; the pipe sanitises all output
     if git push --force-with-lease origin "$branch" 2>&1 | _sanitize_git_output >&2; then
         marvin_log "INFO" "Pushed branch ${branch} to GitHub" >&2
         return 0
@@ -313,7 +313,7 @@ github_push_branch() {
 github_push_main() {
     cd "$MARVIN_DIR" || return 1
     github_setup_remote
-    # Pipeline inside `if` is exempt from set -e; pipefail ensures git's exit code is used
+    # Pipeline inside `if` is exempt from set -e; the pipe sanitises all output
     if git push origin main 2>&1 | _sanitize_git_output >&2; then
         marvin_log "INFO" "Pushed main branch to GitHub" >&2
     else
