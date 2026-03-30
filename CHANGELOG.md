@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sanitise credentials from git push error output** — `github_push_branch()` and `github_push_main()` now pipe stderr through `_sanitize_git_output()` to strip any embedded credentials from URLs before they reach logs. Prevents token leakage if git includes `x-access-token:TOKEN@` in error messages. (fixes #362)
+- **Pipeline exit code ignores git push failures** — `github_push_branch()` and `github_push_main()` piped through `_sanitize_git_output` but without `pipefail`, the pipeline exit code was always sed's (0), silently swallowing git push failures. Now uses `PIPESTATUS[0]` to capture git's actual exit code. (fixes #366)
+
 ### Added
 
 - **Automated incident reports** (`agent/incident-report.sh`) — Detects, diagnoses, documents, and auto-resolves incidents. Monitors 7 incident types: service outages, disk critical, SSL expiring, website down, DNS failure, alert escalation, high error rate. Auto-closes when conditions clear. Triggered in real-time by health-monitor.sh on critical status, plus scheduled twice daily (00:15, 12:15 UTC). Output: `data/incidents/summary.json` + per-incident history files. Dashboard-accessible at `/api/incidents/summary.json`.

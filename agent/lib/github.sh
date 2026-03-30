@@ -283,6 +283,11 @@ github_setup_remote() {
     marvin_log "INFO" "GitHub remote configured for ${GITHUB_REPO}" >&2
 }
 
+# Strip credentials from git output to prevent token leakage in logs
+_sanitize_git_output() {
+    sed 's|://[^[:space:]]*@github\.com|://***@github.com|g'
+}
+
 # Push a branch to GitHub (GPG-signed commits)
 github_push_branch() {
     local branch="$1"
@@ -294,16 +299,12 @@ github_push_branch() {
     git checkout "$branch" 2>/dev/null || git checkout -b "$branch"
 
     # Push with force-with-lease (safe force push for rebased branches)
-    # Capture output for debugging instead of discarding it
-    local push_output push_exit
-    push_output=$(git push --force-with-lease origin "$branch" 2>&1) && push_exit=0 || push_exit=$?
-    if [[ "$push_exit" -eq 0 ]]; then
+    # Pipeline inside `if` is exempt from set -e; the pipe sanitises all output
+    if git push --force-with-lease origin "$branch" 2>&1 | _sanitize_git_output >&2; then
         marvin_log "INFO" "Pushed branch ${branch} to GitHub" >&2
         return 0
     else
-        local push_output_safe
-        push_output_safe=$(printf '%s' "$push_output" | sed 's|x-access-token:[^@]*@|x-access-token:***@|g')
-        marvin_log "ERROR" "Failed to push branch ${branch} (exit ${push_exit}): ${push_output_safe}" >&2
+        marvin_log "ERROR" "Failed to push branch ${branch} to GitHub" >&2
         return 1
     fi
 }
@@ -312,15 +313,13 @@ github_push_branch() {
 github_push_main() {
     cd "$MARVIN_DIR" || return 1
     github_setup_remote
-    local push_output push_exit
-    push_output=$(git push origin main 2>&1) && push_exit=0 || push_exit=$?
-    if [[ "$push_exit" -ne 0 ]]; then
-        local push_output_safe
-        push_output_safe=$(printf '%s' "$push_output" | sed 's|x-access-token:[^@]*@|x-access-token:***@|g')
-        marvin_log "ERROR" "Failed to push main to GitHub (exit ${push_exit}): ${push_output_safe}" >&2
+    # Pipeline inside `if` is exempt from set -e; the pipe sanitises all output
+    if git push origin main 2>&1 | _sanitize_git_output >&2; then
+        marvin_log "INFO" "Pushed main branch to GitHub" >&2
+    else
+        marvin_log "ERROR" "Failed to push main to GitHub" >&2
         return 1
     fi
-    marvin_log "INFO" "Pushed main branch to GitHub" >&2
 }
 
 # Safe stash pop — recovers from conflicts instead of leaving markers
