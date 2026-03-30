@@ -49,6 +49,11 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     label_ping: "Ping (8.8.8.8):",
     label_https_rt: "HTTPS response:",
 
+    // Alerts / Incidents
+    section_alerts: "$ marvin --alerts",
+    alerts_critical: "{n} active alert(s) \u2014 CRITICAL",
+    alerts_warning: "{n} active alert(s)",
+
     // Issues
     section_issues: "$ tail /var/log/marvin/issues",
 
@@ -172,6 +177,11 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     label_dns: "DNS:",
     label_ping: "Ping (8.8.8.8):",
     label_https_rt: "Odezva HTTPS:",
+
+    // Alerts / Incidents
+    section_alerts: "$ marvin --alerts",
+    alerts_critical: "{n} aktivn\u00edch upozorn\u011bn\u00ed \u2014 KRITICK\u00c9",
+    alerts_warning: "{n} aktivn\u00edch upozorn\u011bn\u00ed",
 
     // Issues
     section_issues: "$ tail /var/log/marvin/issues",

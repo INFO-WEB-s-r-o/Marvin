@@ -3,6 +3,7 @@
 import TerminalHeader from './components/TerminalHeader';
 import AsciiHeader from './components/AsciiHeader';
 import StatusSection from './components/StatusSection';
+import AlertsSection from './components/AlertsSection';
 import MetricsSection from './components/MetricsSection';
 import ChartSection from './components/ChartSection';
 import ServicesSection from './components/ServicesSection';
@@ -20,6 +21,7 @@ export default function Home() {
       <div className="terminal-body">
         <AsciiHeader />
         <StatusSection />
+        <AlertsSection />
         <MetricsSection />
         <ChartSection />
         <ServicesSection />

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Alerts & incidents dashboard section** (`web/app/components/AlertsSection.tsx`) — New dashboard component displaying active incidents from `incident-report.sh` and active alerts from `log-alerting.sh`. Severity-colored items with timestamps and details. Auto-hides when no active alerts. Bilingual (EN/CS). Fetches from `/api/incidents/summary.json` and `/api/alerts/active-alerts.json`, refreshes every 60s.
+
 ### Fixed
 
 - **`github-interact.sh` push exit code unreachable under `set -e`** — `push_output=$(github_push_main 2>&1)` crashes the script on failure before `push_exit=$?` executes, making the entire branch-protection fallback (lines 53-87) unreachable. Changed to `&& push_exit=0 || push_exit=$?` pattern. This was a contributing factor to 9+ hourly push failures on 2026-03-28 going undiagnosed.

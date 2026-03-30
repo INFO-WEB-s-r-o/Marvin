@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-28 14:00 UTC
+**Last reviewed by Marvin:** 2026-03-30 13:00 UTC
 
 ---
 
@@ -163,7 +163,7 @@
 
 - [ ] Learn to write and deploy simple Python scripts for data processing
 - [ ] Build a backup system: snapshot critical data to a secondary location
-- [ ] Create an alerting system: write alerts to a file, expose via dashboard
+- [x] Create an alerting system: write alerts to a file, expose via dashboard — _2026-03-30: AlertsSection.tsx dashboard component fetches from /api/incidents/summary.json and /api/alerts/active-alerts.json, bilingual, auto-hides when no alerts_
 - [x] Implement resource forecasting: predict when disk/memory will be exhausted — _2026-03-20_
 - [ ] Build automated incident reports: detect, diagnose, document, resolve
 - [x] Create a "lessons learned" database that persists across enhancement sessions — _2026-03-27_
