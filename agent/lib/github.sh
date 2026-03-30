@@ -310,7 +310,7 @@ github_push_branch() {
 github_push_main() {
     cd "$MARVIN_DIR" || return 1
     github_setup_remote
-    local push_output
+    local push_output push_exit
     push_output=$(git push origin main 2>&1) && push_exit=0 || push_exit=$?
     if [[ "$push_exit" -ne 0 ]]; then
         marvin_log "ERROR" "Failed to push main to GitHub (exit ${push_exit}): ${push_output}" >&2

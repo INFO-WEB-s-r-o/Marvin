@@ -73,6 +73,11 @@ _has_active_incident() {
 _create_incident() {
     local id="$1" severity="$2" type="$3" title="$4" detail="$5"
 
+    if [[ "${MARVIN_DRY_RUN:-false}" == "true" ]]; then
+        marvin_log "INFO" "[DRY RUN] Would create incident: ${id} [${severity}] ${title}"
+        return 0
+    fi
+
     local incident
     incident=$(jq -nc \
         --arg id "$id" \
@@ -260,16 +265,16 @@ if [[ "$DO_CLOSE" == "true" ]]; then
     now_epoch=$(date +%s)
     resolved_count=0
 
-    # Iterate over active incidents and check if conditions have cleared
-    incident_count=$(jq '[.incidents[] | select(.status == "active")] | length' "$ACTIVE_FILE" 2>/dev/null || echo 0)
+    # Iterate over active incidents by extracting their IDs first, then lookup by ID
+    # (fixes bug where positional indices skipped incidents after resolved ones)
+    mapfile -t active_ids < <(jq -r '[.incidents[] | select(.status == "active")] | .[].id' "$ACTIVE_FILE" 2>/dev/null)
 
-    for i in $(seq 0 $((incident_count - 1))); do
-        inc_type=$(jq -r ".incidents[${i}].type // empty" "$ACTIVE_FILE" 2>/dev/null || echo "")
-        inc_id=$(jq -r ".incidents[${i}].id // empty" "$ACTIVE_FILE" 2>/dev/null || echo "")
-        inc_status=$(jq -r ".incidents[${i}].status // empty" "$ACTIVE_FILE" 2>/dev/null || echo "")
-        inc_opened=$(jq -r ".incidents[${i}].opened_at // empty" "$ACTIVE_FILE" 2>/dev/null || echo "")
+    for inc_id in "${active_ids[@]}"; do
+        [[ -z "$inc_id" ]] && continue
+        inc_type=$(jq -r --arg id "$inc_id" '.incidents[] | select(.id == $id) | .type // empty' "$ACTIVE_FILE" 2>/dev/null || echo "")
+        inc_status=$(jq -r --arg id "$inc_id" '.incidents[] | select(.id == $id) | .status // empty' "$ACTIVE_FILE" 2>/dev/null || echo "")
+        inc_opened=$(jq -r --arg id "$inc_id" '.incidents[] | select(.id == $id) | .opened_at // empty' "$ACTIVE_FILE" 2>/dev/null || echo "")
 
-        [[ "$inc_status" != "active" ]] && continue
         [[ -z "$inc_type" ]] && continue
 
         # Determine if incident should be auto-resolved
@@ -307,7 +312,8 @@ if [[ "$DO_CLOSE" == "true" ]]; then
                 ;;
             dns-failure)
                 resolved_ip=$(dig +short robot-marvin.cz A @8.8.8.8 2>/dev/null | tail -1 || echo "")
-                if [[ "$resolved_ip" == "80.211.223.26" ]]; then
+                expected_ip=$(jq -r '.checks.dns_expected_ip // "80.211.223.26"' "${DATA_DIR}/status.json" 2>/dev/null || echo "80.211.223.26")
+                if [[ "$resolved_ip" == "$expected_ip" ]]; then
                     should_resolve=true
                     resolution="DNS resolution restored to correct IP"
                 fi
@@ -332,6 +338,11 @@ if [[ "$DO_CLOSE" == "true" ]]; then
         esac
 
         if [[ "$should_resolve" == "true" ]]; then
+            if [[ "${MARVIN_DRY_RUN:-false}" == "true" ]]; then
+                marvin_log "INFO" "[DRY RUN] Would resolve incident: ${inc_id} — ${resolution}"
+                resolved_count=$((resolved_count + 1))
+                continue
+            fi
             # Calculate duration
             opened_epoch=$(date -d "$inc_opened" +%s 2>/dev/null || echo "$now_epoch")
             duration_min=$(( (now_epoch - opened_epoch) / 60 ))
@@ -377,11 +388,16 @@ if [[ "$DO_SUMMARY" == "true" ]]; then
     active_count=$(echo "$active_incidents" | jq 'length' 2>/dev/null || echo 0)
     active_critical=$(echo "$active_incidents" | jq '[.[] | select(.severity == "critical")] | length' 2>/dev/null || echo 0)
 
-    # Count resolved incidents from history (last 30 days)
+    # Count resolved incidents from history (last 30 days only)
     resolved_30d=0
     total_duration=0
+    cutoff_30d=$(date -u -d "${TODAY} - 30 days" +%Y%m%d 2>/dev/null || echo "00000000")
     for f in "${HISTORY_DIR}"/INC-*.json; do
         [[ -f "$f" ]] || continue
+        # Extract date from filename (INC-YYYYMMDD-...) to filter by age
+        fname=$(basename "$f")
+        file_date="${fname:4:8}"
+        [[ "$file_date" < "$cutoff_30d" ]] && continue
         status=$(jq -r '.status // empty' "$f" 2>/dev/null || echo "")
         if [[ "$status" == "resolved" ]]; then
             resolved_30d=$((resolved_30d + 1))

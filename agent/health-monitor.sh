@@ -666,7 +666,7 @@ fi
 if [[ "$STATUS" == "critical" ]]; then
     if [[ -x "${MARVIN_DIR}/agent/incident-report.sh" ]]; then
         bash "${MARVIN_DIR}/agent/incident-report.sh" --detect --summary \
-            >> /var/log/marvin-incidents.log 2>&1 &
+            >> "${LOGS_DIR}/incidents.log" 2>&1 &
         disown 2>/dev/null || true
     fi
 fi
