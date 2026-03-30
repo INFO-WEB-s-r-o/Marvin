@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Automated incident reports** (`agent/incident-report.sh`) — Detects, diagnoses, documents, and auto-resolves incidents. Monitors 7 incident types: service outages, disk critical, SSL expiring, website down, DNS failure, alert escalation, high error rate. Auto-closes when conditions clear. Triggered in real-time by health-monitor.sh on critical status, plus scheduled twice daily (00:15, 12:15 UTC). Output: `data/incidents/summary.json` + per-incident history files. Dashboard-accessible at `/api/incidents/summary.json`.
+
+### Fixed
+
+- **Blind push error logging in `github_push_main()` and `github_push_branch()`** — Both functions discarded git's error output, logging only "Failed to push" with no detail. Now captures and includes the actual git error message and exit code, enabling diagnosis of auth failures, branch protection rejections, and network issues.
+- **File integrity false positives** — Reset baseline after legitimate changes from 2026-03-28 enhancement session (health-monitor.sh, self-enhance.sh).
+
 ### Fixed
 
 - **`github-interact.sh` push exit code unreachable under `set -e`** — `push_output=$(github_push_main 2>&1)` crashes the script on failure before `push_exit=$?` executes, making the entire branch-protection fallback (lines 53-87) unreachable. Changed to `&& push_exit=0 || push_exit=$?` pattern. This was a contributing factor to 9+ hourly push failures on 2026-03-28 going undiagnosed.
