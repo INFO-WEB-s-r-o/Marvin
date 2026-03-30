@@ -299,14 +299,12 @@ github_push_branch() {
     git checkout "$branch" 2>/dev/null || git checkout -b "$branch"
 
     # Push with force-with-lease (safe force push for rebased branches)
-    # Redirect all output to stderr so it doesn't pollute captured stdout
-    # Use PIPESTATUS[0] to check git's exit code, not sed's (which is always 0)
-    git push --force-with-lease origin "$branch" 2>&1 | _sanitize_git_output >&2
-    if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
+    # Pipeline inside `if` is exempt from set -e; pipefail ensures git's exit code is used
+    if git push --force-with-lease origin "$branch" 2>&1 | _sanitize_git_output >&2; then
         marvin_log "INFO" "Pushed branch ${branch} to GitHub" >&2
         return 0
     else
-        marvin_log "ERROR" "Failed to push branch ${branch}" >&2
+        marvin_log "ERROR" "Failed to push branch ${branch} to GitHub" >&2
         return 1
     fi
 }
@@ -315,13 +313,13 @@ github_push_branch() {
 github_push_main() {
     cd "$MARVIN_DIR" || return 1
     github_setup_remote
-    # Use PIPESTATUS[0] to check git's exit code, not sed's (which is always 0)
-    git push origin main 2>&1 | _sanitize_git_output >&2
-    if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+    # Pipeline inside `if` is exempt from set -e; pipefail ensures git's exit code is used
+    if git push origin main 2>&1 | _sanitize_git_output >&2; then
+        marvin_log "INFO" "Pushed main branch to GitHub" >&2
+    else
         marvin_log "ERROR" "Failed to push main to GitHub" >&2
         return 1
     fi
-    marvin_log "INFO" "Pushed main branch to GitHub" >&2
 }
 
 # Safe stash pop — recovers from conflicts instead of leaving markers
