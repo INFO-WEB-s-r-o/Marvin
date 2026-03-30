@@ -301,7 +301,9 @@ github_push_branch() {
         marvin_log "INFO" "Pushed branch ${branch} to GitHub" >&2
         return 0
     else
-        marvin_log "ERROR" "Failed to push branch ${branch} (exit ${push_exit}): ${push_output}" >&2
+        local push_output_safe
+        push_output_safe=$(printf '%s' "$push_output" | sed 's|x-access-token:[^@]*@|x-access-token:***@|g')
+        marvin_log "ERROR" "Failed to push branch ${branch} (exit ${push_exit}): ${push_output_safe}" >&2
         return 1
     fi
 }
@@ -313,7 +315,9 @@ github_push_main() {
     local push_output push_exit
     push_output=$(git push origin main 2>&1) && push_exit=0 || push_exit=$?
     if [[ "$push_exit" -ne 0 ]]; then
-        marvin_log "ERROR" "Failed to push main to GitHub (exit ${push_exit}): ${push_output}" >&2
+        local push_output_safe
+        push_output_safe=$(printf '%s' "$push_output" | sed 's|x-access-token:[^@]*@|x-access-token:***@|g')
+        marvin_log "ERROR" "Failed to push main to GitHub (exit ${push_exit}): ${push_output_safe}" >&2
         return 1
     fi
     marvin_log "INFO" "Pushed main branch to GitHub" >&2

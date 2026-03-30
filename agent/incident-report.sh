@@ -243,7 +243,7 @@ if [[ "$DO_DETECT" == "true" ]]; then
     # --- 7. High error rate in today's logs ---
     if [[ -f "$LOG_FILE" ]]; then
         total_lines=$(wc -l < "$LOG_FILE" 2>/dev/null | tr -d ' ')
-        error_lines=$(grep -c '\[ERROR\]\|\[CRITICAL\]' "$LOG_FILE" 2>/dev/null || true)
+        error_lines=$(grep -Ec '\[ERROR\]|\[CRITICAL\]' "$LOG_FILE" 2>/dev/null || true)
         total_lines="${total_lines:-0}"
         error_lines="${error_lines:-0}"
         if [[ "$total_lines" -gt 100 ]]; then
