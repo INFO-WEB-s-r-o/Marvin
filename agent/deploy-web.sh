@@ -215,11 +215,10 @@ while [[ "$_waited" -lt "$MAX_HEALTH_WAIT" ]]; do
             marvin_log "WARN" "Health check: JS asset ${_js_chunk} returned HTTP ${_chunk_status}"
         fi
     else
-        # No JS chunk found in page — might be SSR error, but page returned 200
-        # Accept it with a warning
-        marvin_log "WARN" "Health check: could not extract JS chunk URL (SSR may be limited)"
-        _health_ok=true
-        break
+        # No JS chunk found — page may be broken (SSR error, empty response)
+        # Retry instead of accepting a potentially broken deploy
+        marvin_log "WARN" "Health check: could not extract JS chunk URL — retrying"
+        continue
     fi
 done
 
