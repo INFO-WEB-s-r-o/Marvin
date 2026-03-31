@@ -300,6 +300,7 @@ github_push_branch() {
 
     # Push with force-with-lease (safe force push for rebased branches)
     # Capture sanitized output so error details appear in the Marvin log
+    # Relies on pipefail (via set -euo pipefail in callers): pipeline exit code reflects git's exit code
     local push_output
     push_output=$(git push --force-with-lease origin "$branch" 2>&1 | _sanitize_git_output) \
         && { marvin_log "INFO" "Pushed branch ${branch} to GitHub" >&2; return 0; } \
@@ -311,6 +312,7 @@ github_push_main() {
     cd "$MARVIN_DIR" || return 1
     github_setup_remote
     # Capture sanitized output so error details appear in the Marvin log
+    # Relies on pipefail (via set -euo pipefail in callers): pipeline exit code reflects git's exit code
     local push_output
     push_output=$(git push origin main 2>&1 | _sanitize_git_output) \
         && { marvin_log "INFO" "Pushed main branch to GitHub" >&2; } \
