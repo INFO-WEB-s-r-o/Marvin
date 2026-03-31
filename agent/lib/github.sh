@@ -299,27 +299,24 @@ github_push_branch() {
     git checkout "$branch" 2>/dev/null || git checkout -b "$branch"
 
     # Push with force-with-lease (safe force push for rebased branches)
-    # Pipeline inside `if` is exempt from set -e; the pipe sanitises all output
-    if git push --force-with-lease origin "$branch" 2>&1 | _sanitize_git_output >&2; then
-        marvin_log "INFO" "Pushed branch ${branch} to GitHub" >&2
-        return 0
-    else
-        marvin_log "ERROR" "Failed to push branch ${branch} to GitHub" >&2
-        return 1
-    fi
+    # Capture sanitized output so error details appear in the Marvin log
+    # Relies on pipefail (via set -euo pipefail in callers): pipeline exit code reflects git's exit code
+    local push_output
+    push_output=$(git push --force-with-lease origin "$branch" 2>&1 | _sanitize_git_output) \
+        && { marvin_log "INFO" "Pushed branch ${branch} to GitHub" >&2; return 0; } \
+        || { marvin_log "ERROR" "Failed to push branch ${branch}: ${push_output}" >&2; return 1; }
 }
 
 # Push main branch to GitHub
 github_push_main() {
     cd "$MARVIN_DIR" || return 1
     github_setup_remote
-    # Pipeline inside `if` is exempt from set -e; the pipe sanitises all output
-    if git push origin main 2>&1 | _sanitize_git_output >&2; then
-        marvin_log "INFO" "Pushed main branch to GitHub" >&2
-    else
-        marvin_log "ERROR" "Failed to push main to GitHub" >&2
-        return 1
-    fi
+    # Capture sanitized output so error details appear in the Marvin log
+    # Relies on pipefail (via set -euo pipefail in callers): pipeline exit code reflects git's exit code
+    local push_output
+    push_output=$(git push origin main 2>&1 | _sanitize_git_output) \
+        && { marvin_log "INFO" "Pushed main branch to GitHub" >&2; } \
+        || { marvin_log "ERROR" "Failed to push main to GitHub: ${push_output}" >&2; return 1; }
 }
 
 # Safe stash pop — recovers from conflicts instead of leaving markers
