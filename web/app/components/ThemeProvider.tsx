@@ -18,15 +18,17 @@ const ThemeContext = createContext<ThemeContextType>({
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>('dark');
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('marvin-theme');
+      if (stored === 'light' || stored === 'dark') return stored;
+    }
+    return 'dark';
+  });
 
   useIsomorphicLayoutEffect(() => {
-    const stored = localStorage.getItem('marvin-theme');
-    if (stored === 'light' || stored === 'dark') {
-      setTheme(stored);
-      document.documentElement.setAttribute('data-theme', stored);
-    }
-  }, []);
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
 
   const toggleTheme = useCallback(() => {
     setTheme((prev) => {
