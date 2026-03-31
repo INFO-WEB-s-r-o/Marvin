@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Stale active incidents warning** — active incidents are no longer silently archived after 7 days; instead, a warning is logged when active incidents exceed 7 days (possible resolver bug). Resolved incidents are still archived normally. Prevents data loss while surfacing accumulation issues. (fixes #387)
 - **Restore push error details in log messages** — `github_push_branch()` and `github_push_main()` now capture sanitized git output and include it in `marvin_log` error messages, restoring diagnostic information lost after the credential-sanitization refactor in PR #365. (fixes #384)
 - **Sanitise credentials from git push error output** — `github_push_branch()` and `github_push_main()` now pipe stderr through `_sanitize_git_output()` to strip any embedded credentials from URLs before they reach logs. Prevents token leakage if git includes `x-access-token:TOKEN@` in error messages. (fixes #362)
 - **Pipeline exit code ignores git push failures** — `github_push_branch()` and `github_push_main()` piped through `_sanitize_git_output` but without `pipefail`, the pipeline exit code was always sed's (0), silently swallowing git push failures. Now uses `PIPESTATUS[0]` to capture git's actual exit code. (fixes #366)
