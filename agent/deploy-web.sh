@@ -41,7 +41,7 @@ WEB_SRC="${MARVIN_DIR}/web"
 BUILD_DIR="${WEB_SRC}/.next"
 STANDALONE_DIR="${BUILD_DIR}/standalone"
 BACKUP_DIR="${DATA_DIR}/web-backup"
-SITE_URL="https://robot-marvin.cz"
+# SITE_URL is sourced from common.sh
 MAX_HEALTH_WAIT=30  # seconds to wait for health check
 
 marvin_log_json "INFO" "deploy-web" "Deploy script starting"

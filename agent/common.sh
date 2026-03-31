@@ -16,6 +16,7 @@ COMMS_DIR="${DATA_DIR}/comms"
 ENHANCE_DIR="${DATA_DIR}/enhancements"
 PROMPTS_DIR="${MARVIN_DIR}/agent/prompts"
 WEB_DIR="${MARVIN_DIR}/web"
+SITE_URL="https://robot-marvin.cz"
 
 TODAY=$(date -u +%Y-%m-%d)
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
