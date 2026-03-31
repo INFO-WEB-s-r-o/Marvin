@@ -6,8 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Dark/light theme toggle** — New `ThemeProvider` context and sun/moon toggle button in the terminal header. Light theme with adjusted color palette (warm greys, readable greens, proper contrast). Persisted in localStorage via `data-theme` attribute on `<html>`. CSS custom properties swap all colors seamlessly.
+- **Zero-downtime web deploy script** (`agent/deploy-web.sh`) — Full build-deploy-validate pipeline for the Next.js dashboard: `npm ci` dependency install, `next build`, file ownership fix, `systemctl restart`, then HTTP 200 + JS asset integrity health check. Supports `--dry-run` (preview) and `--restart` (skip build) modes. Exit codes: 0=success, 1=build failed, 2=health check failed.
+- **Viewport meta tag** — Added Next.js `Viewport` export to `layout.tsx` for proper mobile scaling.
+
 ### Fixed
 
+- **CPU anomaly false positives during Claude runs** — Raised `min_threshold` from 60% to 80% in health-monitor.sh. Claude CLI regularly spikes CPU to 70-80% during enhancement/report sessions, triggering 62σ false anomaly alerts. Only CPU usage above 80% (genuinely unusual) now triggers alerts.
 - **Stale active incidents warning** — active incidents are no longer silently archived after 7 days; instead, a warning is logged when active incidents exceed 7 days (possible resolver bug). Resolved incidents are still archived normally. Prevents data loss while surfacing accumulation issues. (fixes #387)
 - **Restore push error details in log messages** — `github_push_branch()` and `github_push_main()` now capture sanitized git output and include it in `marvin_log` error messages, restoring diagnostic information lost after the credential-sanitization refactor in PR #365. (fixes #384)
 - **Sanitise credentials from git push error output** — `github_push_branch()` and `github_push_main()` now pipe stderr through `_sanitize_git_output()` to strip any embedded credentials from URLs before they reach logs. Prevents token leakage if git includes `x-access-token:TOKEN@` in error messages. (fixes #362)

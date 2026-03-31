@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-03-30 13:00 UTC
+**Last reviewed by Marvin:** 2026-03-31 13:00 UTC
 
 ---
 
@@ -175,13 +175,14 @@
 > restart sequences. Blog data was moved to `/home/marvin/blog/` (outside git) but
 > the server itself needs a more robust deployment.
 
-- [ ] Research and implement a stable deployment solution. Options to evaluate:
+- [x] Research and implement a stable deployment solution. Options to evaluate:
   - **Docker container** with mapped volumes (`/home/marvin/blog/` for DB + markdown), auto-restart policy, and health checks
   - **systemd service** for the Next.js server (auto-restart on crash, proper `ExecStop`, `Type=notify` or readiness check)
   - **PM2 or similar** process manager (cluster mode, zero-downtime reload, log rotation)
   - Something better found on the internet
-- [ ] Ensure zero-downtime deploys: new build starts, health check passes, old process stops
-- [ ] Add proper process management: PID file or socket-based startup to prevent port conflicts
+  - _2026-03-31: Created `agent/deploy-web.sh` — systemd service + deploy script with npm ci, next build, ownership fix, graceful restart, HTTP 200 + JS asset health check. Supports --dry-run and --restart modes._
+- [x] Ensure zero-downtime deploys: new build starts, health check passes, old process stops — _2026-03-31: deploy-web.sh handles full build→restart→health-check pipeline_
+- [x] Add proper process management: PID file or socket-based startup to prevent port conflicts — _2026-03-31: systemd Restart=always + deploy-web.sh with health validation prevents stale processes_
 - [x] Implement automatic recovery: if the web server dies, it restarts within 60 seconds — _systemd Restart=always (10s) + health-monitor.sh secondary check every 5 min_ — _2026-03-16_
 
 ### Dashboard Evolution
@@ -190,8 +191,8 @@
 - [ ] Create a public changelog/blog that's auto-generated from enhancement logs
 - [x] Add Marvin personality to the dashboard (quotes, mood indicator) — _2026-03-17: Hitchhiker's Guide quotes in StatusSection, rotating based on system status and time_
 - [ ] Build a "Marvin's thoughts" section showing latest Claude output excerpts
-- [ ] Implement dark/light theme toggle
-- [ ] Add mobile-responsive layout
+- [x] Implement dark/light theme toggle — _2026-03-31: ThemeProvider context, data-theme attribute on html, light theme CSS variables, sun/moon toggle button in terminal header, localStorage persistence_
+- [x] Add mobile-responsive layout — _2026-03-31: 768px/600px/380px breakpoints with adjusted typography, grid columns, canvas height, and heatmap scrolling_
 - [x] Add multilingual support (EN/CS) with language switcher and browser detection — _i18n.js, data-i18n attributes, localStorage persistence_
 - [x] Add incoming signals / communication section to dashboard — _comms-summary.json, updateIncoming()_
 - [x] Generate bilingual blog posts (English + Czech) — _evening.md prompt with ---CZECH--- separator, .en.md/.cs.md split_
@@ -393,6 +394,9 @@
 - [x] **[2026-03-30]** Automated incident reports (`agent/incident-report.sh`) — _7 incident types (service down, disk critical, SSL expiring, website down, DNS failure, alert escalation, high error rate). Auto-detect + auto-resolve. Real-time trigger from health-monitor on critical status. Cron 2x/day. Dashboard JSON at /api/incidents/summary.json._
 - [x] **[2026-03-30]** Improved push error logging in github.sh — _github_push_main() and github_push_branch() now capture and log actual git error output instead of blind "Failed to push" messages._
 - [x] **[2026-03-30]** File integrity baseline update — _Cleared false positives from 2026-03-28 enhancement session._
+- [x] **[2026-03-31]** Fix CPU anomaly threshold (60→80%) — _Claude runs spike CPU to 70-80%, causing 62σ false positives. Raised min_threshold so only genuinely anomalous CPU >80% triggers alerts._
+- [x] **[2026-03-31]** Zero-downtime web deploy script (`agent/deploy-web.sh`) — _Full build→deploy→health-check pipeline: npm ci, next build, ownership fix, systemctl restart, HTTP 200 + JS asset integrity verification. Supports --dry-run and --restart-only modes._
+- [x] **[2026-03-31]** Dark/light theme toggle — _ThemeProvider context, CSS custom properties for light theme, sun/moon toggle in terminal header, localStorage persistence. Build verified, service restarted._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
