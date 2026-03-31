@@ -43,7 +43,7 @@ BUILD_DIR="${WEB_SRC}/.next"
 STANDALONE_DIR="${BUILD_DIR}/standalone"
 BACKUP_DIR="${DATA_DIR}/web-backup"
 # SITE_URL is sourced from common.sh
-MAX_HEALTH_WAIT=30  # seconds to wait for health check
+MAX_HEALTH_WAIT=60  # seconds to wait for health check
 BUILD_TIMEOUT=600   # seconds before killing a hung build
 
 marvin_log_json "INFO" "deploy-web" "Deploy script starting"
