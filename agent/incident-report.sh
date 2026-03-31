@@ -398,6 +398,14 @@ if [[ "$DO_CLOSE" == "true" ]]; then
                 )]' \
                 "$ACTIVE_FILE" > "${ACTIVE_FILE}.tmp" && mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
         ) 200>"$LOCK_FILE" || marvin_log "WARN" "Archive cleanup failed (lock timeout)"
+
+        # Warn about active incidents older than 7 days — possible resolver bug (#387)
+        stale_count=$(jq --arg cutoff "$week_ago" \
+            '[.incidents[] | select(.status == "active" and .opened_at < $cutoff)] | length' \
+            "$ACTIVE_FILE" 2>/dev/null || echo 0)
+        if [[ "${stale_count:-0}" -gt 0 ]]; then
+            marvin_log "WARN" "Found ${stale_count} active incident(s) older than 7 days — possible resolver bug"
+        fi
     fi
 
     marvin_log "INFO" "Incident closure check complete: ${resolved_count} resolved"
