@@ -17,6 +17,7 @@ export default function TerminalHeader() {
         className="theme-toggle"
         onClick={toggleTheme}
         title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
       >
         {theme === 'dark' ? '\u2600' : '\u263E'}
       </button>
