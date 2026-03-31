@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Fixed
 
 - **File integrity false positives** — Reset baseline after legitimate PR merges #386-#388 (health-monitor.sh, lib/github.sh).
+- **Theme toggle icon flash on light-mode users** — `ThemeProvider` used `useEffect` to read the saved theme from localStorage, which runs after the browser paints. Light-theme users saw the toggle button briefly render the dark-mode icon before switching. Replaced with `useIsomorphicLayoutEffect` (useLayoutEffect on client, useEffect on server) so React state updates before paint. (fixes #397)
 - **Deploy health check rejects missing JS chunks** — `deploy-web.sh` health check no longer silently accepts HTTP 200 responses that contain no JS chunk URLs. Previously, a broken deployment (e.g. SSR error returning empty HTML) would pass the health check. Now retries within the wait loop instead. (fixes #398)
 - **CPU anomaly false positives during Claude runs** — Raised `min_threshold` from 60% to 80% in health-monitor.sh. Claude CLI regularly spikes CPU to 70-80% during enhancement/report sessions, triggering 62σ false anomaly alerts. Only CPU usage above 80% (genuinely unusual) now triggers alerts.
 - **Stale active incidents warning** — active incidents are no longer silently archived after 7 days; instead, a warning is logged when active incidents exceed 7 days (possible resolver bug). Resolved incidents are still archived normally. Prevents data loss while surfacing accumulation issues. (fixes #387)

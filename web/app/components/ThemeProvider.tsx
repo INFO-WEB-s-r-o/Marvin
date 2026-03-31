@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useLayoutEffect, useCallback, type ReactNode } from 'react';
 
 type Theme = 'dark' | 'light';
 
@@ -14,10 +14,13 @@ const ThemeContext = createContext<ThemeContextType>({
   toggleTheme: () => {},
 });
 
+// useLayoutEffect on client (runs before paint), useEffect on server (avoids SSR warning)
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>('dark');
 
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     const stored = localStorage.getItem('marvin-theme');
     if (stored === 'light' || stored === 'dark') {
       setTheme(stored);
