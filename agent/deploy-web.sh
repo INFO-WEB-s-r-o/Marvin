@@ -13,10 +13,10 @@
 #   5. Gracefully restart marvin-web service
 #   6. Wait for health check (HTTP 200 + JS asset integrity)
 #
-# Recovery: On health check failure, the script exits 2. The separate
-# health-monitor.sh (cron every 5 min) detects persistent failures and
-# restarts the service. Backups in ${DATA_DIR}/web-backup/ are kept for
-# manual rollback if needed.
+# Recovery: On health check failure, the script automatically rolls back to
+# the previous build from ${DATA_DIR}/web-backup/ and restarts the service.
+# If rollback also fails, health-monitor.sh (cron every 5 min) detects
+# persistent failures and restarts the service.
 #
 # Privileges: This script requires root or a sudoers rule granting the
 # running user passwordless access to systemctl and chown. Example:
@@ -30,7 +30,8 @@
 # Exit codes:
 #   0 = success
 #   1 = build failed or pre-flight check failed
-#   2 = health check failed after deploy
+#   2 = health check failed after deploy (rollback attempted)
+#   3 = rollback failed
 # =============================================================================
 
 set -euo pipefail
@@ -43,6 +44,7 @@ STANDALONE_DIR="${BUILD_DIR}/standalone"
 BACKUP_DIR="${DATA_DIR}/web-backup"
 # SITE_URL is sourced from common.sh
 MAX_HEALTH_WAIT=30  # seconds to wait for health check
+BUILD_TIMEOUT=600   # seconds before killing a hung build
 
 marvin_log_json "INFO" "deploy-web" "Deploy script starting"
 
@@ -128,11 +130,16 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
             fi
         fi
 
-        marvin_log "INFO" "Building Next.js app..."
+        marvin_log "INFO" "Building Next.js app (timeout ${BUILD_TIMEOUT}s)..."
         build_start=$(date +%s)
-        build_output=$(npm run build --prefix "$WEB_SRC" 2>&1) && build_exit=0 || build_exit=$?
+        build_output=$(timeout "$BUILD_TIMEOUT" npm run build --prefix "$WEB_SRC" 2>&1) && build_exit=0 || build_exit=$?
         build_end=$(date +%s)
         build_duration=$((build_end - build_start))
+
+        if [[ "$build_exit" -eq 124 ]]; then
+            marvin_log "ERROR" "Next.js build timed out after ${BUILD_TIMEOUT}s — killing hung process"
+            exit 1
+        fi
 
         if [[ "$build_exit" -ne 0 ]]; then
             marvin_log "ERROR" "Next.js build failed (exit ${build_exit}, ${build_duration}s)"
@@ -229,8 +236,41 @@ if [[ "$_health_ok" == "true" ]]; then
             '{old_build: $old, new_build: $new, health_wait_s: $wait}')"
     exit 0
 else
-    marvin_log "ERROR" "Health check failed after ${MAX_HEALTH_WAIT}s — deploy may have issues"
-    marvin_log "WARN" "health-monitor.sh will detect persistent failures (runs every 5 min)"
-    marvin_log "WARN" "Manual rollback available from: ${BACKUP_DIR}/"
-    exit 2
+    marvin_log "ERROR" "Health check failed after ${MAX_HEALTH_WAIT}s — attempting rollback"
+
+    # Find the most recent backup to restore
+    _rollback_file=$(ls -t "${BACKUP_DIR}"/build-*.tar.gz 2>/dev/null | head -1 || true)
+
+    if [[ -n "$_rollback_file" ]]; then
+        marvin_log "INFO" "Rolling back from: ${_rollback_file}"
+
+        # Extract backup over the current build
+        if tar -xzf "$_rollback_file" -C "${WEB_SRC}" 2>/dev/null; then
+            ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || true
+
+            marvin_log "INFO" "Backup restored — restarting service..."
+            if ${SUDO:+$SUDO} systemctl restart marvin-web; then
+                # Brief health check on rolled-back build
+                sleep 5
+                _rb_code=$(curl -so /dev/null -w '%{http_code}' --max-time 5 "${SITE_URL}/" 2>/dev/null || echo "000")
+                if [[ "$_rb_code" == "200" ]]; then
+                    marvin_log "INFO" "Rollback successful — service restored (HTTP ${_rb_code})"
+                    exit 2
+                else
+                    marvin_log "WARN" "Rollback service started but health check returned HTTP ${_rb_code}"
+                    exit 2
+                fi
+            else
+                marvin_log "ERROR" "Failed to restart service after rollback"
+                exit 3
+            fi
+        else
+            marvin_log "ERROR" "Failed to extract backup from ${_rollback_file}"
+            exit 3
+        fi
+    else
+        marvin_log "WARN" "No backup available for rollback — manual intervention required"
+        marvin_log "WARN" "health-monitor.sh will detect persistent failures (runs every 5 min)"
+        exit 2
+    fi
 fi
