@@ -278,11 +278,7 @@ else
         marvin_log "INFO" "Rolling back from: ${_rollback_file}"
 
         # Extract backup over the current build
-        _tar_err=$(tar -xzf "$_rollback_file" -C "${WEB_SRC}" 2>&1) && _tar_ok=true || _tar_ok=false
-        if [[ -n "$_tar_err" ]]; then
-            marvin_log "WARN" "tar extraction warnings: ${_tar_err}"
-        fi
-        if [[ "$_tar_ok" == "true" ]]; then
+        if tar -xzf "$_rollback_file" -C "${WEB_SRC}" 2>/dev/null; then
             ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || true
 
             marvin_log "INFO" "Backup restored — restarting service..."
