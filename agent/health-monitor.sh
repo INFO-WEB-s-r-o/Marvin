@@ -134,7 +134,7 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
     fi
 
     for pair in \
-        "CPU%|${_cpu_avgs}|$(echo "$metrics" | jq -r '.cpu_percent' 2>/dev/null)|high|60" \
+        "CPU%|${_cpu_avgs}|$(echo "$metrics" | jq -r '.cpu_percent' 2>/dev/null)|high|80" \
         "Memory MB|${_mem_maxes}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)|high|0" \
         "Load 1m|${_load_avgs}|$(echo "$metrics" | jq -r '.load_average["1min"]' 2>/dev/null)|high|${_load_min_threshold}" \
         "Processes|${_proc_avgs}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)|high|200" \

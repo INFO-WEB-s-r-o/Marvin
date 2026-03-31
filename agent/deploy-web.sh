@@ -122,8 +122,6 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
         marvin_log "INFO" "Installing npm dependencies..."
         # npm ci is faster and deterministic (uses lockfile)
         # Fall back to npm install if no lockfile
-        # When running as root, drop to marvin user for npm commands to avoid
-        # executing arbitrary JS from node_modules with root privileges (#422)
         # When running as root, drop to marvin user via array-based command prefix
         # to avoid executing arbitrary JS from node_modules with root privileges (#422)
         # Using a bash array prevents word-splitting issues (#426)

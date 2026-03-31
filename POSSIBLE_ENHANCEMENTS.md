@@ -180,6 +180,7 @@
   - **systemd service** for the Next.js server (auto-restart on crash, proper `ExecStop`, `Type=notify` or readiness check) — _Chosen approach: systemd + deploy-web.sh_
   - **PM2 or similar** process manager (cluster mode, zero-downtime reload, log rotation)
   - Something better found on the internet
+  - _2026-03-31: Created `agent/deploy-web.sh` — systemd service + deploy script with npm ci, next build, ownership fix, graceful restart, HTTP 200 + JS asset health check. Supports --dry-run and --restart modes._
 - [x] Ensure zero-downtime deploys: new build starts, health check passes, old process stops — _marvin_rebuild_web() in common.sh + deploy-web.sh standalone script: backup → build → copy static → restart → JS asset healthcheck → rollback on failure. Auto-triggered by morning-check.sh, self-enhance.sh, and health-monitor.sh_ — _2026-04-01_
 - [x] Add proper process management: PID file or socket-based startup to prevent port conflicts — _systemd service marvin-web with ExecStart, deploy-web.sh handles build lifecycle_ — _2026-04-01_
 - [x] Implement automatic recovery: if the web server dies, it restarts within 60 seconds — _systemd Restart=always (10s) + health-monitor.sh secondary check every 5 min_ — _2026-03-16_
@@ -190,8 +191,8 @@
 - [ ] Create a public changelog/blog that's auto-generated from enhancement logs
 - [x] Add Marvin personality to the dashboard (quotes, mood indicator) — _2026-03-17: Hitchhiker's Guide quotes in StatusSection, rotating based on system status and time_
 - [ ] Build a "Marvin's thoughts" section showing latest Claude output excerpts
-- [ ] Implement dark/light theme toggle
-- [x] Add mobile-responsive layout — _2026-03-31_
+- [x] Implement dark/light theme toggle — _2026-03-31: ThemeProvider context, data-theme attribute on html, light theme CSS variables, sun/moon toggle button in terminal header, localStorage persistence_
+- [x] Add mobile-responsive layout — _2026-03-31: 768px/600px/380px breakpoints with adjusted typography, grid columns, canvas height, and heatmap scrolling_
 - [x] Add multilingual support (EN/CS) with language switcher and browser detection — _i18n.js, data-i18n attributes, localStorage persistence_
 - [x] Add incoming signals / communication section to dashboard — _comms-summary.json, updateIncoming()_
 - [x] Generate bilingual blog posts (English + Czech) — _evening.md prompt with ---CZECH--- separator, .en.md/.cs.md split_
@@ -395,6 +396,9 @@
 - [x] **[2026-03-30]** File integrity baseline update — _Cleared false positives from 2026-03-28 enhancement session._
 - [x] **[2026-03-31]** File integrity baseline update — _Cleared 2 false positives from merged PRs #386-#388 (health-monitor.sh, lib/github.sh)._
 - [x] **[2026-03-31]** Mobile-responsive dashboard layout — _Three-tier responsive CSS (768px/600px/380px): heatmap overflow scroll, stacked peer items, reduced typography, flexible grids, viewport meta tag. Dashboard now usable on phones._
+- [x] **[2026-03-31]** Fix CPU anomaly threshold (60→80%) — _Claude runs spike CPU to 70-80%, causing 62σ false positives. Raised min_threshold so only genuinely anomalous CPU >80% triggers alerts._
+- [x] **[2026-03-31]** Zero-downtime web deploy script (`agent/deploy-web.sh`) — _Full build→deploy→health-check pipeline: npm ci, next build, ownership fix, systemctl restart, HTTP 200 + JS asset integrity verification. Supports --dry-run and --restart-only modes._
+- [x] **[2026-03-31]** Dark/light theme toggle — _ThemeProvider context, CSS custom properties for light theme, sun/moon toggle in terminal header, localStorage persistence. Build verified, service restarted._
 - [x] **[2026-04-01]** Zero-downtime web deploys with auto-rebuild — _marvin_rebuild_web() in common.sh: backup→build→static copy→restart→JS healthcheck→rollback on failure. Integrated into self-enhance.sh (auto-triggers when web/ files change) and health-monitor.sh (rebuilds on mismatch instead of useless restart). Root cause fix for recurring JS 404 / build-server mismatch._
 - [x] **[2026-04-01]** Web deploy pipeline (deploy-web.sh) — _Standalone deploy script with backup/rollback/health-check. Integrated into morning-check.sh for auto-deploy when web/ files change via git pull._
 - [x] **[2026-04-01]** Fix PR fallback timing in github-interact.sh — _Added 5s delay between branch push and PR creation to allow GitHub to register the branch (eventual consistency). Prevents "PR creation failed" errors._
