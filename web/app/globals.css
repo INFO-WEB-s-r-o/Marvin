@@ -752,19 +752,287 @@ canvas {
   aspect-ratio: auto;
 }
 
-/* Responsive */
+/* =============================================================================
+   Responsive — Mobile-first breakpoints
+   ============================================================================= */
+
+/* Tablet (≤768px) */
+@media (max-width: 768px) {
+  .terminal {
+    max-width: 100%;
+  }
+
+  .heatmap-grid {
+    gap: 2px;
+  }
+
+  .blog-box {
+    padding: 20px;
+  }
+}
+
+/* Mobile (≤600px) */
 @media (max-width: 600px) {
   .terminal-body {
     padding: 16px 12px;
   }
-  .ascii-art pre {
-    font-size: 10px;
+
+  .terminal-header {
+    padding: 10px 12px;
+    gap: 6px;
   }
+
+  .title {
+    font-size: 11px;
+    margin-left: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ascii-art pre {
+    font-size: 9px;
+    line-height: 1.15;
+  }
+
+  .tagline {
+    font-size: 12px;
+  }
+
+  .subtitle {
+    font-size: 11px;
+  }
+
+  section {
+    margin-bottom: 24px;
+  }
+
+  h2 {
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+
+  /* Status */
+  .status-box {
+    font-size: 14px;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .mood-quote {
+    font-size: 11px;
+    padding: 6px 12px;
+  }
+
+  .info-line {
+    font-size: 12px;
+  }
+
+  /* Metrics */
   .metrics-grid {
     grid-template-columns: 1fr 1fr;
+    gap: 8px;
   }
+
+  .metric-card {
+    padding: 10px;
+  }
+
   .metric-value {
     font-size: 16px;
+  }
+
+  .metric-label {
+    font-size: 10px;
+  }
+
+  /* Services */
+  .services-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .service-item {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  /* Chart */
+  .chart-container {
+    padding: 12px;
+  }
+
+  canvas {
+    height: 180px !important;
+  }
+
+  /* Uptime heatmap */
+  .uptime-heatmap {
+    padding: 12px;
+  }
+
+  .uptime-summary {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .uptime-overall {
+    font-size: 22px;
+  }
+
+  .heatmap-grid {
+    gap: 2px;
+    overflow-x: auto;
+    min-width: 0;
+  }
+
+  .heatmap-labels {
+    font-size: 9px;
+  }
+
+  .heatmap-legend {
+    font-size: 9px;
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+
+  /* Calendar */
+  .calendar-grid {
+    gap: 1px;
+  }
+
+  .calendar-day {
+    font-size: 10px;
+    padding: 4px 1px;
+  }
+
+  .calendar-dow {
+    font-size: 9px;
+  }
+
+  .calendar-nav-btn {
+    font-size: 12px;
+    padding: 2px 8px;
+  }
+
+  /* Blog */
+  .blog-box {
+    padding: 16px;
+    max-height: 400px;
+    font-size: 13px;
+  }
+
+  .blog-box h1 {
+    font-size: 15px;
+  }
+
+  .blog-box h2 {
+    font-size: 11px;
+  }
+
+  .blog-box h3 {
+    font-size: 12px;
+  }
+
+  .blog-nav {
+    gap: 4px;
+  }
+
+  .blog-nav a {
+    font-size: 11px;
+    padding: 3px 6px;
+  }
+
+  .blog-type-tabs {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .blog-type-tab {
+    font-size: 10px;
+    padding: 3px 8px;
+  }
+
+  /* Comms & Peers */
+  .comms-box {
+    padding: 12px;
+    font-size: 12px;
+  }
+
+  .peer-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 6px 0;
+  }
+
+  .peer-name {
+    font-size: 12px;
+  }
+
+  /* Evolution */
+  .evolution-box {
+    padding: 12px;
+    font-size: 12px;
+  }
+
+  /* Issues / Alerts */
+  .issues-box {
+    padding: 10px;
+  }
+
+  .issue-item {
+    font-size: 12px;
+    padding: 5px 0;
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: 32px;
+    padding-top: 16px;
+    font-size: 11px;
+  }
+
+  .footer-credit {
+    font-size: 10px;
+  }
+}
+
+/* Small phones (≤380px) */
+@media (max-width: 380px) {
+  .terminal-body {
+    padding: 12px 8px;
+  }
+
+  .ascii-art pre {
+    font-size: 7px;
+  }
+
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .services-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lang-btn {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+  }
+
+  .blog-box {
+    padding: 12px;
+    max-height: 350px;
+  }
+
+  canvas {
+    height: 150px !important;
   }
 }
 

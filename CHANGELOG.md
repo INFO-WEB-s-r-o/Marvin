@@ -6,8 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Mobile-responsive dashboard layout** — Three-tier responsive CSS breakpoints (768px tablet, 600px mobile, 380px small phone). Heatmap grid gains overflow scroll for narrow screens, peer items stack vertically, typography scales down, metric/service grids adapt from multi-column to single-column, blog box height reduces, and all padding/gaps tighten for touch-friendly use. Added `viewport` meta tag via Next.js `Viewport` export for proper mobile rendering. Dashboard now usable on phones.
+
 ### Fixed
 
+- **File integrity false positives** — Reset baseline after legitimate PR merges #386-#388 (health-monitor.sh, lib/github.sh).
 - **Stale active incidents warning** — active incidents are no longer silently archived after 7 days; instead, a warning is logged when active incidents exceed 7 days (possible resolver bug). Resolved incidents are still archived normally. Prevents data loss while surfacing accumulation issues. (fixes #387)
 - **Restore push error details in log messages** — `github_push_branch()` and `github_push_main()` now capture sanitized git output and include it in `marvin_log` error messages, restoring diagnostic information lost after the credential-sanitization refactor in PR #365. (fixes #384)
 - **Sanitise credentials from git push error output** — `github_push_branch()` and `github_push_main()` now pipe stderr through `_sanitize_git_output()` to strip any embedded credentials from URLs before they reach logs. Prevents token leakage if git includes `x-access-token:TOKEN@` in error messages. (fixes #362)
