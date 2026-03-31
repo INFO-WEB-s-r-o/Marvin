@@ -77,7 +77,7 @@ fi
 
 # Privilege check: systemctl restart and chown require root or sudo
 if [[ $EUID -ne 0 ]]; then
-    if ! sudo -n systemctl status marvin-web &>/dev/null; then
+    if ! sudo -n systemctl status marvin-web &>/dev/null 2>&1; then
         marvin_log "ERROR" "deploy-web.sh requires root or passwordless sudo for systemctl."
         marvin_log "ERROR" "Add a sudoers rule: marvin ALL=(ALL) NOPASSWD: /usr/bin/systemctl status marvin-web, /usr/bin/systemctl restart marvin-web, /usr/bin/chown"
         exit 1
@@ -204,7 +204,7 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
         fi
 
         # Set ownership so marvin-web service (runs as marvin) can read
-        ${SUDO:+sudo} chown -R marvin:marvin "${BUILD_DIR}" || {
+        ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || {
             marvin_log "WARN" "chown failed — file ownership may be incorrect"
         }
     fi
@@ -220,7 +220,7 @@ if marvin_is_dry_run; then
 fi
 
 marvin_log "INFO" "Restarting marvin-web service..."
-if ! ${SUDO:+sudo} systemctl restart marvin-web; then
+if ! ${SUDO:+$SUDO} systemctl restart marvin-web; then
     marvin_log "ERROR" "Failed to restart marvin-web service"
     exit 2
 fi
@@ -287,10 +287,10 @@ else
             marvin_log "WARN" "tar extraction warnings: ${_tar_err}"
         fi
         if [[ "$_tar_ok" == "true" ]]; then
-            ${SUDO:+sudo} chown -R marvin:marvin "${BUILD_DIR}" || true
+            ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || true
 
             marvin_log "INFO" "Backup restored — restarting service..."
-            if ${SUDO:+sudo} systemctl restart marvin-web; then
+            if ${SUDO:+$SUDO} systemctl restart marvin-web; then
                 # Brief health check on rolled-back build
                 sleep 5
                 _rb_code=$(curl -so /dev/null -w '%{http_code}' --max-time 5 "${LOCAL_URL}/" 2>/dev/null || echo "000")
