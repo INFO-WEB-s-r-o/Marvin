@@ -75,7 +75,7 @@ fi
 
 # Privilege check: systemctl restart and chown require root or sudo
 if [[ $EUID -ne 0 ]]; then
-    if ! sudo -n systemctl status marvin-web &>/dev/null 2>&1; then
+    if ! sudo -n systemctl status marvin-web &>/dev/null; then
         marvin_log "ERROR" "deploy-web.sh requires root or passwordless sudo for systemctl."
         marvin_log "ERROR" "Add a sudoers rule: marvin ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart marvin-web, /usr/bin/chown"
         exit 1
@@ -94,14 +94,17 @@ if [[ -f "${BUILD_DIR}/BUILD_ID" ]]; then
     _old_build_id=$(cat "${BUILD_DIR}/BUILD_ID" 2>/dev/null || echo "")
 fi
 
-# Backup the standalone server.js in case we need to roll back
+# Backup the full build directory so rollback restores both server.js and static assets
 mkdir -p "$BACKUP_DIR"
-if [[ -f "${STANDALONE_DIR}/server.js" ]]; then
-    cp "${STANDALONE_DIR}/server.js" "${BACKUP_DIR}/server.js.bak" 2>/dev/null || true
-    if [[ -f "${BUILD_DIR}/BUILD_ID" ]]; then
-        cp "${BUILD_DIR}/BUILD_ID" "${BACKUP_DIR}/BUILD_ID.bak" 2>/dev/null || true
+if [[ -d "${STANDALONE_DIR}" && -d "${BUILD_DIR}/static" ]]; then
+    _backup_file="${BACKUP_DIR}/build-${_old_build_id:-unknown}.tar.gz"
+    if tar -czf "$_backup_file" -C "${WEB_SRC}" .next/standalone .next/static .next/BUILD_ID 2>/dev/null; then
+        marvin_log "INFO" "Backed up current build to ${_backup_file} (BUILD_ID: ${_old_build_id:-unknown})"
+        # Keep only the 3 most recent backups to conserve disk
+        ls -t "${BACKUP_DIR}"/build-*.tar.gz 2>/dev/null | tail -n +4 | xargs rm -f 2>/dev/null || true
+    else
+        marvin_log "WARN" "Failed to create build backup — continuing without backup"
     fi
-    marvin_log "INFO" "Backed up current build (BUILD_ID: ${_old_build_id:-unknown})"
 fi
 
 # ─── Build ───────────────────────────────────────────────────────────────────
