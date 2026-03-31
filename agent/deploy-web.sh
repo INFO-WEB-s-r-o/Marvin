@@ -6,12 +6,21 @@
 # Call this after web/ source changes (git pull, self-enhance, manual edits).
 #
 # Steps:
-#   1. Install/update npm dependencies
-#   2. Build Next.js app (output: standalone)
-#   3. Set correct file ownership
-#   4. Gracefully restart marvin-web service
-#   5. Wait for health check (HTTP 200 + JS asset integrity)
-#   6. Roll back build if health check fails
+#   1. Verify privileges (root or passwordless sudo)
+#   2. Install/update npm dependencies
+#   3. Build Next.js app (output: standalone)
+#   4. Set correct file ownership
+#   5. Gracefully restart marvin-web service
+#   6. Wait for health check (HTTP 200 + JS asset integrity)
+#
+# Recovery: On health check failure, the script exits 2. The separate
+# health-monitor.sh (cron every 5 min) detects persistent failures and
+# restarts the service. Backups in ${DATA_DIR}/web-backup/ are kept for
+# manual rollback if needed.
+#
+# Privileges: This script requires root or a sudoers rule granting the
+# running user passwordless access to systemctl and chown. Example:
+#   marvin ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart marvin-web, /usr/bin/chown
 #
 # Usage:
 #   ./deploy-web.sh              # full build + deploy
@@ -20,9 +29,8 @@
 #
 # Exit codes:
 #   0 = success
-#   1 = build failed
+#   1 = build failed or pre-flight check failed
 #   2 = health check failed after deploy
-#   3 = rollback failed (manual intervention needed)
 # =============================================================================
 
 set -euo pipefail
@@ -63,6 +71,19 @@ fi
 if ! command -v npm &>/dev/null; then
     marvin_log "ERROR" "npm not found in PATH"
     exit 1
+fi
+
+# Privilege check: systemctl restart and chown require root or sudo
+if [[ $EUID -ne 0 ]]; then
+    if ! sudo -n systemctl status marvin-web &>/dev/null 2>&1; then
+        marvin_log "ERROR" "deploy-web.sh requires root or passwordless sudo for systemctl."
+        marvin_log "ERROR" "Add a sudoers rule: marvin ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart marvin-web, /usr/bin/chown"
+        exit 1
+    fi
+    # We have sudo — use it for privileged commands
+    SUDO="sudo"
+else
+    SUDO=""
 fi
 
 # ─── Backup current build ───────────────────────────────────────────────────
@@ -136,7 +157,9 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
         marvin_log "INFO" "Build validated: BUILD_ID ${_new_build_id}"
 
         # Set ownership so marvin-web service (runs as marvin) can read
-        chown -R marvin:marvin "${BUILD_DIR}" 2>/dev/null || true
+        ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || {
+            marvin_log "WARN" "chown failed — file ownership may be incorrect"
+        }
     fi
 else
     marvin_log "INFO" "Skipping build (--restart mode)"
@@ -150,7 +173,7 @@ if marvin_is_dry_run; then
 fi
 
 marvin_log "INFO" "Restarting marvin-web service..."
-if ! systemctl restart marvin-web 2>/dev/null; then
+if ! ${SUDO:+$SUDO} systemctl restart marvin-web; then
     marvin_log "ERROR" "Failed to restart marvin-web service"
     exit 2
 fi
@@ -205,10 +228,7 @@ if [[ "$_health_ok" == "true" ]]; then
     exit 0
 else
     marvin_log "ERROR" "Health check failed after ${MAX_HEALTH_WAIT}s — deploy may have issues"
-
-    # If we have a backup and the build changed, this is a real problem
-    # But don't auto-rollback — the service might just be slow to start
-    # The health-monitor.sh will catch persistent issues every 5 minutes
-    marvin_log "WARN" "Service is running but health check didn't pass. health-monitor.sh will track."
+    marvin_log "WARN" "health-monitor.sh will detect persistent failures (runs every 5 min)"
+    marvin_log "WARN" "Manual rollback available from: ${BACKUP_DIR}/"
     exit 2
 fi
