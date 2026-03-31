@@ -26,7 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" data-theme="dark" nonce={nonce} suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html:
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html:
           `(function(){var t=localStorage.getItem('marvin-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);})();`
         }} />
       </head>
