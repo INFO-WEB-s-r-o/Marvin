@@ -325,8 +325,9 @@ marvin_rebuild_web() {
         cp -a "${web_dir}/.next" "$backup_dir" 2>/dev/null || true
     fi
 
-    # Install deps if node_modules missing or package-lock changed
-    if [[ ! -d "${web_dir}/node_modules" ]]; then
+    # Install deps if node_modules missing or package-lock.json changed
+    if [[ ! -d "${web_dir}/node_modules" ]] || \
+       [[ "${web_dir}/package-lock.json" -nt "${web_dir}/node_modules" ]]; then
         marvin_log "INFO" "Installing web dependencies..."
         if ! (cd "$web_dir" && npm ci --production=false 2>&1 | tail -5); then
             marvin_log "ERROR" "npm ci failed — aborting rebuild (reason: ${reason})"
@@ -366,7 +367,25 @@ marvin_rebuild_web() {
         return 1
     fi
 
-    sleep 3
+    # Wait for the service to become responsive (polling loop instead of fixed sleep)
+    local _ready=false
+    for _i in $(seq 1 15); do
+        sleep 1
+        if curl -sf --max-time 2 "http://localhost:3000/" > /dev/null 2>&1; then
+            _ready=true
+            break
+        fi
+    done
+
+    if [[ "$_ready" != "true" ]]; then
+        marvin_log "ERROR" "Service not responding after restart — rolling back (reason: ${reason})"
+        if [[ -d "$backup_dir" ]]; then
+            rm -rf "${web_dir}/.next"
+            mv "$backup_dir" "${web_dir}/.next"
+            systemctl restart marvin-web 2>/dev/null || true
+        fi
+        return 1
+    fi
 
     # Health check: verify a JS chunk referenced in HTML is servable
     local site_url="http://localhost:3000"
