@@ -30,8 +30,9 @@
 # Exit codes:
 #   0 = success
 #   1 = build failed or pre-flight check failed
-#   2 = health check failed after deploy, rollback succeeded — service restored
-#   3 = health check failed, rollback failed or incomplete — manual intervention required
+#   2 = health check failed but rollback succeeded (service recovered)
+#   3 = manual intervention required (no backup, extraction failure,
+#       restart failure, or post-rollback health check failure)
 # =============================================================================
 
 set -euo pipefail
@@ -222,7 +223,7 @@ fi
 marvin_log "INFO" "Restarting marvin-web service..."
 if ! ${SUDO:+$SUDO} systemctl restart marvin-web; then
     marvin_log "ERROR" "Failed to restart marvin-web service"
-    exit 2
+    exit 3
 fi
 
 # ─── Health check ────────────────────────────────────────────────────────────
