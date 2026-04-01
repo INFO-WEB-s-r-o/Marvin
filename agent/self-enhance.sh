@@ -219,6 +219,20 @@ fi
 
 marvin_log "INFO" "Post-enhancement validation passed"
 
+# ─── Auto-rebuild web if source files changed ────────────────────────────────
+# Detects web/ source modifications and triggers a full Next.js rebuild+restart.
+# Without this, source edits produce stale builds → JS asset 404s for hours.
+_web_changed=$(git -C "$MARVIN_DIR" diff --name-only HEAD 2>/dev/null \
+    | grep -cE '^web/.*\.(tsx?|jsx?|css|json)$' || echo "0")
+if [[ "$_web_changed" -gt 0 ]]; then
+    marvin_log "INFO" "Detected ${_web_changed} web source file(s) changed — triggering rebuild"
+    if ! marvin_rebuild_web "self-enhance (${_web_changed} files changed)"; then
+        marvin_log "WARN" "Web rebuild failed after self-enhance — dashboard may show stale content"
+    fi
+else
+    marvin_log "INFO" "No web source changes detected — skipping rebuild"
+fi
+
 # Save the enhancement proposal
 ENHANCE_FILE="${ENHANCE_DIR}/${TODAY}-${TIMESTAMP}.md"
 cat > "$ENHANCE_FILE" << EOF

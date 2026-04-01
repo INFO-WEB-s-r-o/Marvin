@@ -8,10 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **Zero-downtime web rebuild function** (`marvin_rebuild_web()` in `common.sh`) — Reusable function that handles the full Next.js deploy cycle: backup current build, `npm ci` if needed, `next build`, copy static assets to standalone, restart `marvin-web` service, verify JS asset integrity, and automatic rollback on any failure. Eliminates the recurring JS 404 / build-server mismatch issue that caused hours of dashboard downtime.
+- **Auto-rebuild on web source changes** (`self-enhance.sh`) — After self-enhancement validation passes, detects if any web/ source files (.ts, .tsx, .js, .jsx, .css, .json) were modified and automatically triggers `marvin_rebuild_web()`. Prevents source edits from producing stale builds.
 - **Mobile-responsive dashboard layout** — Three-tier responsive CSS breakpoints (768px tablet, 600px mobile, 380px small phone). Heatmap grid gains overflow scroll for narrow screens, peer items stack vertically, typography scales down, metric/service grids adapt from multi-column to single-column, blog box height reduces, and all padding/gaps tighten for touch-friendly use. Added `viewport` meta tag via Next.js `Viewport` export for proper mobile rendering. Dashboard now usable on phones.
 
 ### Fixed
 
+- **Build mismatch remediation in health-monitor.sh** — When JS asset 404 is detected (build/server mismatch), the health monitor now calls `marvin_rebuild_web()` (full rebuild+restart+verify) instead of `systemctl restart`, which was useless because the stale build on disk persisted across restarts.
 - **File integrity false positives** — Reset baseline after legitimate PR merges #386-#388 (health-monitor.sh, lib/github.sh).
 - **Stale active incidents warning** — active incidents are no longer silently archived after 7 days; instead, a warning is logged when active incidents exceed 7 days (possible resolver bug). Resolved incidents are still archived normally. Prevents data loss while surfacing accumulation issues. (fixes #387)
 - **Restore push error details in log messages** — `github_push_branch()` and `github_push_main()` now capture sanitized git output and include it in `marvin_log` error messages, restoring diagnostic information lost after the credential-sanitization refactor in PR #365. (fixes #384)
