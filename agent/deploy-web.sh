@@ -122,21 +122,47 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
         marvin_log "INFO" "Installing npm dependencies..."
         # npm ci is faster and deterministic (uses lockfile)
         # Fall back to npm install if no lockfile
+        # When running as root, drop to marvin user for npm commands to avoid
+        # executing arbitrary JS from node_modules with root privileges (#422)
+        if [[ $EUID -eq 0 ]]; then
+            _npm_cmd="su -s /bin/bash marvin -c"
+        else
+            _npm_cmd=""
+        fi
+
         if [[ -f "${WEB_SRC}/package-lock.json" ]]; then
-            if ! npm ci --prefix "$WEB_SRC" --loglevel=error 2>&1 | tail -5; then
-                marvin_log "ERROR" "npm ci failed"
-                exit 1
+            if [[ -n "$_npm_cmd" ]]; then
+                if ! $_npm_cmd "npm ci --prefix '$WEB_SRC' --loglevel=error" 2>&1 | tail -5; then
+                    marvin_log "ERROR" "npm ci failed"
+                    exit 1
+                fi
+            else
+                if ! npm ci --prefix "$WEB_SRC" --loglevel=error 2>&1 | tail -5; then
+                    marvin_log "ERROR" "npm ci failed"
+                    exit 1
+                fi
             fi
         else
-            if ! npm install --prefix "$WEB_SRC" --loglevel=error 2>&1 | tail -5; then
-                marvin_log "ERROR" "npm install failed"
-                exit 1
+            if [[ -n "$_npm_cmd" ]]; then
+                if ! $_npm_cmd "npm install --prefix '$WEB_SRC' --loglevel=error" 2>&1 | tail -5; then
+                    marvin_log "ERROR" "npm install failed"
+                    exit 1
+                fi
+            else
+                if ! npm install --prefix "$WEB_SRC" --loglevel=error 2>&1 | tail -5; then
+                    marvin_log "ERROR" "npm install failed"
+                    exit 1
+                fi
             fi
         fi
 
         marvin_log "INFO" "Building Next.js app (timeout ${BUILD_TIMEOUT}s)..."
         build_start=$(date +%s)
-        build_output=$(timeout "$BUILD_TIMEOUT" npm run build --prefix "$WEB_SRC" 2>&1) && build_exit=0 || build_exit=$?
+        if [[ -n "$_npm_cmd" ]]; then
+            build_output=$($_npm_cmd "timeout $BUILD_TIMEOUT npm run build --prefix '$WEB_SRC'" 2>&1) && build_exit=0 || build_exit=$?
+        else
+            build_output=$(timeout "$BUILD_TIMEOUT" npm run build --prefix "$WEB_SRC" 2>&1) && build_exit=0 || build_exit=$?
+        fi
         build_end=$(date +%s)
         build_duration=$((build_end - build_start))
 
@@ -183,7 +209,7 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
         fi
 
         # Set ownership so marvin-web service (runs as marvin) can read
-        ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || {
+        ${SUDO:+sudo} chown -R marvin:marvin "${BUILD_DIR}" || {
             marvin_log "WARN" "chown failed — file ownership may be incorrect"
         }
     fi
@@ -199,7 +225,7 @@ if marvin_is_dry_run; then
 fi
 
 marvin_log "INFO" "Restarting marvin-web service..."
-if ! ${SUDO:+$SUDO} systemctl restart marvin-web; then
+if ! ${SUDO:+sudo} systemctl restart marvin-web; then
     marvin_log "ERROR" "Failed to restart marvin-web service"
     exit 2
 fi
@@ -266,10 +292,10 @@ else
             marvin_log "WARN" "tar extraction warnings: ${_tar_err}"
         fi
         if [[ "$_tar_ok" == "true" ]]; then
-            ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || true
+            ${SUDO:+sudo} chown -R marvin:marvin "${BUILD_DIR}" || true
 
             marvin_log "INFO" "Backup restored — restarting service..."
-            if ${SUDO:+$SUDO} systemctl restart marvin-web; then
+            if ${SUDO:+sudo} systemctl restart marvin-web; then
                 # Brief health check on rolled-back build
                 sleep 5
                 _rb_code=$(curl -so /dev/null -w '%{http_code}' --max-time 5 "${LOCAL_URL}/" 2>/dev/null || echo "000")
