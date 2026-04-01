@@ -30,8 +30,8 @@
 # Exit codes:
 #   0 = success
 #   1 = build failed or pre-flight check failed
-#   2 = health check failed after deploy (rollback succeeded — service restored)
-#   3 = rollback failed or no backup available — manual intervention required
+#   2 = health check failed after deploy, rollback succeeded — service restored
+#   3 = health check failed, rollback failed or incomplete — manual intervention required
 # =============================================================================
 
 set -euo pipefail
@@ -278,7 +278,7 @@ else
                     exit 2
                 else
                     marvin_log "WARN" "Rollback service started but health check returned HTTP ${_rb_code}"
-                    exit 2
+                    exit 3
                 fi
             else
                 marvin_log "ERROR" "Failed to restart service after rollback"
