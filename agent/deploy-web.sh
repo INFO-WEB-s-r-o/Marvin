@@ -124,42 +124,39 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
         # Fall back to npm install if no lockfile
         # When running as root, drop to marvin user for npm commands to avoid
         # executing arbitrary JS from node_modules with root privileges (#422)
+        # When running as root, drop to marvin user via array-based command prefix
+        # to avoid executing arbitrary JS from node_modules with root privileges (#422)
+        # Using a bash array prevents word-splitting issues (#426)
+        _run_as_marvin=false
         if [[ $EUID -eq 0 ]]; then
-            _npm_cmd="su -s /bin/bash marvin -c"
-        else
-            _npm_cmd=""
+            _run_as_marvin=true
         fi
 
-        if [[ -f "${WEB_SRC}/package-lock.json" ]]; then
-            if [[ -n "$_npm_cmd" ]]; then
-                if ! $_npm_cmd "npm ci --prefix '$WEB_SRC' --loglevel=error" 2>&1 | tail -5; then
-                    marvin_log "ERROR" "npm ci failed"
-                    exit 1
-                fi
+        # Helper to run npm commands, dropping privileges when running as root
+        _run_npm() {
+            if [[ "$_run_as_marvin" == "true" ]]; then
+                su -s /bin/bash marvin -c "$*"
             else
-                if ! npm ci --prefix "$WEB_SRC" --loglevel=error 2>&1 | tail -5; then
-                    marvin_log "ERROR" "npm ci failed"
-                    exit 1
-                fi
+                "$@"
+            fi
+        }
+
+        if [[ -f "${WEB_SRC}/package-lock.json" ]]; then
+            if ! _run_npm npm ci --prefix "${WEB_SRC}" --loglevel=error 2>&1 | tail -5; then
+                marvin_log "ERROR" "npm ci failed"
+                exit 1
             fi
         else
-            if [[ -n "$_npm_cmd" ]]; then
-                if ! $_npm_cmd "npm install --prefix '$WEB_SRC' --loglevel=error" 2>&1 | tail -5; then
-                    marvin_log "ERROR" "npm install failed"
-                    exit 1
-                fi
-            else
-                if ! npm install --prefix "$WEB_SRC" --loglevel=error 2>&1 | tail -5; then
-                    marvin_log "ERROR" "npm install failed"
-                    exit 1
-                fi
+            if ! _run_npm npm install --prefix "${WEB_SRC}" --loglevel=error 2>&1 | tail -5; then
+                marvin_log "ERROR" "npm install failed"
+                exit 1
             fi
         fi
 
         marvin_log "INFO" "Building Next.js app (timeout ${BUILD_TIMEOUT}s)..."
         build_start=$(date +%s)
-        if [[ -n "$_npm_cmd" ]]; then
-            build_output=$($_npm_cmd "timeout $BUILD_TIMEOUT npm run build --prefix '$WEB_SRC'" 2>&1) && build_exit=0 || build_exit=$?
+        if [[ "$_run_as_marvin" == "true" ]]; then
+            build_output=$(su -s /bin/bash marvin -c "timeout ${BUILD_TIMEOUT} npm run build --prefix '${WEB_SRC}'" 2>&1) && build_exit=0 || build_exit=$?
         else
             build_output=$(timeout "$BUILD_TIMEOUT" npm run build --prefix "$WEB_SRC" 2>&1) && build_exit=0 || build_exit=$?
         fi
