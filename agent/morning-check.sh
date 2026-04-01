@@ -115,9 +115,13 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
                     marvin_log "INFO" "Web source files changed — triggering deploy-web.sh"
                     deploy_script="${MARVIN_DIR}/agent/deploy-web.sh"
                     if [[ -x "$deploy_script" ]]; then
-                        bash "$deploy_script" 2>&1 && \
-                            marvin_log "INFO" "Web dashboard deployed successfully after git pull" || \
-                            marvin_log "WARN" "deploy-web.sh failed (exit $?) — health-monitor will retry"
+                        _deploy_exit=0
+                        bash "$deploy_script" 2>&1 || _deploy_exit=$?
+                        if [[ "$_deploy_exit" -eq 0 ]]; then
+                            marvin_log "INFO" "Web dashboard deployed successfully after git pull"
+                        else
+                            marvin_log "WARN" "deploy-web.sh failed (exit ${_deploy_exit}) — health-monitor will retry"
+                        fi
                     else
                         marvin_log "WARN" "deploy-web.sh not found or not executable — skipping auto-deploy"
                     fi

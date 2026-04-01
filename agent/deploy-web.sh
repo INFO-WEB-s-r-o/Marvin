@@ -30,8 +30,8 @@
 # Exit codes:
 #   0 = success
 #   1 = build failed or pre-flight check failed
-#   2 = health check failed after deploy (rollback attempted)
-#   3 = rollback failed
+#   2 = health check failed after deploy (rollback succeeded — service restored)
+#   3 = rollback failed or no backup available — manual intervention required
 # =============================================================================
 
 set -euo pipefail
@@ -170,6 +170,18 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
         _new_build_id=$(cat "${BUILD_DIR}/BUILD_ID" 2>/dev/null || echo "unknown")
         marvin_log "INFO" "Build validated: BUILD_ID ${_new_build_id}"
 
+        # Copy static assets into standalone directory — Next.js standalone
+        # output does NOT bundle static assets. Without this, the server
+        # serves HTML referencing JS chunks that don't exist on disk → 404s.
+        if [[ -d "${BUILD_DIR}/static" && -d "${STANDALONE_DIR}" ]]; then
+            mkdir -p "${STANDALONE_DIR}/.next/static"
+            if ! cp -a "${BUILD_DIR}/static/." "${STANDALONE_DIR}/.next/static/"; then
+                marvin_log "ERROR" "Failed to copy static assets to standalone — deploy would cause JS 404s"
+                exit 1
+            fi
+            marvin_log "INFO" "Static assets copied to standalone directory"
+        fi
+
         # Set ownership so marvin-web service (runs as marvin) can read
         ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || {
             marvin_log "WARN" "chown failed — file ownership may be incorrect"
@@ -277,8 +289,8 @@ else
             exit 3
         fi
     else
-        marvin_log "WARN" "No backup available for rollback — manual intervention required"
+        marvin_log "ERROR" "No backup available for rollback — manual intervention required"
         marvin_log "WARN" "health-monitor.sh will detect persistent failures (runs every 5 min)"
-        exit 2
+        exit 3
     fi
 fi
