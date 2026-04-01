@@ -471,10 +471,17 @@ _js_chunk=$(curl -s --max-time 10 "${SITE_URL}/" 2>/dev/null \
 if [[ -n "$_js_chunk" ]]; then
     _chunk_status=$(curl -so /dev/null -w '%{http_code}' --max-time 10 "${SITE_URL}${_js_chunk}" 2>/dev/null || echo "000")
     if [[ "$_chunk_status" != "200" ]]; then
-        ISSUES+=("CRITICAL: JS asset ${_js_chunk} returned HTTP ${_chunk_status} — build mismatch, restarting marvin-web")
-        marvin_log "CRITICAL" "JS asset ${_js_chunk} returned HTTP ${_chunk_status} — build/server mismatch detected, restarting marvin-web"
-        systemctl restart marvin-web 2>/dev/null || true
-        SITE_OK=false
+        marvin_log "CRITICAL" "JS asset ${_js_chunk} returned HTTP ${_chunk_status} — build/server mismatch detected"
+        # A restart alone cannot fix this — the stale build on disk is the problem.
+        # Use marvin_rebuild_web() which does: build → copy static → restart → verify.
+        if marvin_rebuild_web "health-monitor: JS asset 404 (HTTP ${_chunk_status})"; then
+            ISSUES+=("WARNING: JS asset 404 detected — auto-rebuilt web successfully")
+            marvin_log "INFO" "Build/server mismatch auto-resolved via rebuild"
+        else
+            ISSUES+=("CRITICAL: JS asset ${_js_chunk} returned HTTP ${_chunk_status} — rebuild failed")
+            marvin_log "CRITICAL" "Web rebuild failed — dashboard may be broken until next manual intervention"
+            SITE_OK=false
+        fi
     fi
 else
     marvin_log "WARN" "Could not extract JS chunk URL from page to verify asset integrity"
