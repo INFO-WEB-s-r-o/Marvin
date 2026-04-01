@@ -191,13 +191,8 @@
 - [ ] Create a public changelog/blog that's auto-generated from enhancement logs
 - [x] Add Marvin personality to the dashboard (quotes, mood indicator) — _2026-03-17: Hitchhiker's Guide quotes in StatusSection, rotating based on system status and time_
 - [ ] Build a "Marvin's thoughts" section showing latest Claude output excerpts
-<<<<<<< HEAD
-- [ ] Implement dark/light theme toggle
-- [x] Add mobile-responsive layout — _2026-03-31_
-=======
 - [x] Implement dark/light theme toggle — _2026-03-31: ThemeProvider context, data-theme attribute on html, light theme CSS variables, sun/moon toggle button in terminal header, localStorage persistence_
 - [x] Add mobile-responsive layout — _2026-03-31: 768px/600px/380px breakpoints with adjusted typography, grid columns, canvas height, and heatmap scrolling_
->>>>>>> 99a7b90 (feat: dark/light theme toggle, deploy-web.sh, fix CPU anomaly threshold)
 - [x] Add multilingual support (EN/CS) with language switcher and browser detection — _i18n.js, data-i18n attributes, localStorage persistence_
 - [x] Add incoming signals / communication section to dashboard — _comms-summary.json, updateIncoming()_
 - [x] Generate bilingual blog posts (English + Czech) — _evening.md prompt with ---CZECH--- separator, .en.md/.cs.md split_
@@ -399,14 +394,11 @@
 - [x] **[2026-03-30]** Automated incident reports (`agent/incident-report.sh`) — _7 incident types (service down, disk critical, SSL expiring, website down, DNS failure, alert escalation, high error rate). Auto-detect + auto-resolve. Real-time trigger from health-monitor on critical status. Cron 2x/day. Dashboard JSON at /api/incidents/summary.json._
 - [x] **[2026-03-30]** Improved push error logging in github.sh — _github_push_main() and github_push_branch() now capture and log actual git error output instead of blind "Failed to push" messages._
 - [x] **[2026-03-30]** File integrity baseline update — _Cleared false positives from 2026-03-28 enhancement session._
-<<<<<<< HEAD
 - [x] **[2026-03-31]** File integrity baseline update — _Cleared 2 false positives from merged PRs #386-#388 (health-monitor.sh, lib/github.sh)._
 - [x] **[2026-03-31]** Mobile-responsive dashboard layout — _Three-tier responsive CSS (768px/600px/380px): heatmap overflow scroll, stacked peer items, reduced typography, flexible grids, viewport meta tag. Dashboard now usable on phones._
-=======
 - [x] **[2026-03-31]** Fix CPU anomaly threshold (60→80%) — _Claude runs spike CPU to 70-80%, causing 62σ false positives. Raised min_threshold so only genuinely anomalous CPU >80% triggers alerts._
 - [x] **[2026-03-31]** Zero-downtime web deploy script (`agent/deploy-web.sh`) — _Full build→deploy→health-check pipeline: npm ci, next build, ownership fix, systemctl restart, HTTP 200 + JS asset integrity verification. Supports --dry-run and --restart-only modes._
 - [x] **[2026-03-31]** Dark/light theme toggle — _ThemeProvider context, CSS custom properties for light theme, sun/moon toggle in terminal header, localStorage persistence. Build verified, service restarted._
->>>>>>> 99a7b90 (feat: dark/light theme toggle, deploy-web.sh, fix CPU anomaly threshold)
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

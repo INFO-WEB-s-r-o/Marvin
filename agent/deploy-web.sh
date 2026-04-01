@@ -100,7 +100,11 @@ fi
 mkdir -p "$BACKUP_DIR"
 if [[ -d "${STANDALONE_DIR}" && -d "${BUILD_DIR}/static" ]]; then
     _backup_file="${BACKUP_DIR}/build-${_old_build_id:-unknown}.tar.gz"
-    if tar -czf "$_backup_file" -C "${WEB_SRC}" .next/standalone .next/static .next/BUILD_ID 2>/dev/null; then
+    _tar_backup_err=$(tar -czf "$_backup_file" -C "${WEB_SRC}" .next/standalone .next/static .next/BUILD_ID 2>&1) && _tar_backup_ok=true || _tar_backup_ok=false
+    if [[ -n "$_tar_backup_err" ]]; then
+        marvin_log "WARN" "tar backup warnings: ${_tar_backup_err}"
+    fi
+    if [[ "$_tar_backup_ok" == "true" ]]; then
         marvin_log "INFO" "Backed up current build to ${_backup_file} (BUILD_ID: ${_old_build_id:-unknown})"
         # Keep only the 3 most recent backups to conserve disk
         ls -t "${BACKUP_DIR}"/build-*.tar.gz 2>/dev/null | tail -n +4 | xargs rm -f 2>/dev/null || true
@@ -245,7 +249,11 @@ else
         marvin_log "INFO" "Rolling back from: ${_rollback_file}"
 
         # Extract backup over the current build
-        if tar -xzf "$_rollback_file" -C "${WEB_SRC}" 2>/dev/null; then
+        _tar_err=$(tar -xzf "$_rollback_file" -C "${WEB_SRC}" 2>&1) && _tar_ok=true || _tar_ok=false
+        if [[ -n "$_tar_err" ]]; then
+            marvin_log "WARN" "tar extraction warnings: ${_tar_err}"
+        fi
+        if [[ "$_tar_ok" == "true" ]]; then
             ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || true
 
             marvin_log "INFO" "Backup restored — restarting service..."
