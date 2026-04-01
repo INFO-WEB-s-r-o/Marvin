@@ -43,6 +43,7 @@ BUILD_DIR="${WEB_SRC}/.next"
 STANDALONE_DIR="${BUILD_DIR}/standalone"
 BACKUP_DIR="${DATA_DIR}/web-backup"
 # SITE_URL is sourced from common.sh
+LOCAL_URL="http://localhost:3000"  # direct to Node.js — avoids nginx/DNS dependency
 MAX_HEALTH_WAIT=60  # seconds to wait for health check
 BUILD_TIMEOUT=600   # seconds before killing a hung build
 
@@ -205,20 +206,20 @@ while [[ "$_waited" -lt "$MAX_HEALTH_WAIT" ]]; do
     sleep "$_sleep_interval"
     _waited=$((_waited + _sleep_interval))
 
-    # Check 1: HTTP 200 on main page
-    _http_code=$(curl -so /dev/null -w '%{http_code}' --max-time 5 "${SITE_URL}/" 2>/dev/null || echo "000")
+    # Check 1: HTTP 200 on main page (direct to Node.js, bypass nginx/DNS)
+    _http_code=$(curl -so /dev/null -w '%{http_code}' --max-time 5 "${LOCAL_URL}/" 2>/dev/null || echo "000")
     if [[ "$_http_code" != "200" ]]; then
         marvin_log "INFO" "Health check: HTTP ${_http_code} (waiting...)"
         continue
     fi
 
     # Check 2: JS asset integrity (the main build mismatch indicator)
-    _js_chunk=$(curl -s --max-time 5 "${SITE_URL}/" 2>/dev/null \
+    _js_chunk=$(curl -s --max-time 5 "${LOCAL_URL}/" 2>/dev/null \
         | grep -oP 'src="/_next/static/chunks/[^"]*"' | head -1 \
         | grep -oP '/_next/static/chunks/[^"]*' || true)
 
     if [[ -n "$_js_chunk" ]]; then
-        _chunk_status=$(curl -so /dev/null -w '%{http_code}' --max-time 5 "${SITE_URL}${_js_chunk}" 2>/dev/null || echo "000")
+        _chunk_status=$(curl -so /dev/null -w '%{http_code}' --max-time 5 "${LOCAL_URL}${_js_chunk}" 2>/dev/null || echo "000")
         if [[ "$_chunk_status" == "200" ]]; then
             _health_ok=true
             break
@@ -260,7 +261,7 @@ else
             if ${SUDO:+$SUDO} systemctl restart marvin-web; then
                 # Brief health check on rolled-back build
                 sleep 5
-                _rb_code=$(curl -so /dev/null -w '%{http_code}' --max-time 5 "${SITE_URL}/" 2>/dev/null || echo "000")
+                _rb_code=$(curl -so /dev/null -w '%{http_code}' --max-time 5 "${LOCAL_URL}/" 2>/dev/null || echo "000")
                 if [[ "$_rb_code" == "200" ]]; then
                     marvin_log "INFO" "Rollback successful — service restored (HTTP ${_rb_code})"
                     exit 2
