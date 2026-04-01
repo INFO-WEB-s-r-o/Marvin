@@ -30,8 +30,9 @@
 # Exit codes:
 #   0 = success
 #   1 = build failed or pre-flight check failed
-#   2 = health check failed after deploy (rollback attempted)
-#   3 = rollback failed
+#   2 = health check failed but rollback succeeded (service recovered)
+#   3 = manual intervention required (no backup, extraction failure,
+#       restart failure, or post-rollback health check failure)
 # =============================================================================
 
 set -euo pipefail
@@ -190,7 +191,7 @@ fi
 marvin_log "INFO" "Restarting marvin-web service..."
 if ! ${SUDO:+$SUDO} systemctl restart marvin-web; then
     marvin_log "ERROR" "Failed to restart marvin-web service"
-    exit 2
+    exit 3
 fi
 
 # ─── Health check ────────────────────────────────────────────────────────────
@@ -267,7 +268,7 @@ else
                     exit 2
                 else
                     marvin_log "WARN" "Rollback service started but health check returned HTTP ${_rb_code}"
-                    exit 2
+                    exit 3
                 fi
             else
                 marvin_log "ERROR" "Failed to restart service after rollback"
@@ -280,6 +281,6 @@ else
     else
         marvin_log "WARN" "No backup available for rollback — manual intervention required"
         marvin_log "WARN" "health-monitor.sh will detect persistent failures (runs every 5 min)"
-        exit 2
+        exit 3
     fi
 fi
