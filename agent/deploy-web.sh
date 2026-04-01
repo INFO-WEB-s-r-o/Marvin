@@ -260,14 +260,23 @@ else
 
             marvin_log "INFO" "Backup restored — restarting service..."
             if ${SUDO:+$SUDO} systemctl restart marvin-web; then
-                # Brief health check on rolled-back build
-                sleep 5
-                _rb_code=$(curl -so /dev/null -w '%{http_code}' --max-time 5 "${LOCAL_URL}/" 2>/dev/null || echo "000")
-                if [[ "$_rb_code" == "200" ]]; then
-                    marvin_log "INFO" "Rollback successful — service restored (HTTP ${_rb_code})"
+                # Retry health check on rolled-back build (up to 30s)
+                _rb_waited=0
+                _rb_ok=false
+                while [[ "${_rb_waited}" -lt 30 ]]; do
+                    sleep 3
+                    _rb_waited=$((_rb_waited + 3))
+                    _rb_code=$(curl -so /dev/null -w '%{http_code}' --max-time 5 "${LOCAL_URL}/" 2>/dev/null || echo "000")
+                    if [[ "${_rb_code}" == "200" ]]; then
+                        _rb_ok=true
+                        break
+                    fi
+                done
+                if [[ "${_rb_ok}" == "true" ]]; then
+                    marvin_log "INFO" "Rollback successful — service restored (HTTP ${_rb_code}) after ${_rb_waited}s"
                     exit 2
                 else
-                    marvin_log "WARN" "Rollback service started but health check returned HTTP ${_rb_code}"
+                    marvin_log "WARN" "Rollback service started but health check returned HTTP ${_rb_code} after ${_rb_waited}s"
                     exit 3
                 fi
             else
