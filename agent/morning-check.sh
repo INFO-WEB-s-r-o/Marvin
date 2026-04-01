@@ -107,6 +107,25 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
                 # Make new scripts executable
                 chmod +x "${MARVIN_DIR}/agent/"*.sh 2>/dev/null || true
                 chmod +x "${MARVIN_DIR}/setup/"*.sh 2>/dev/null || true
+
+                # Auto-deploy web dashboard if web/ source files changed
+                # Without this, new builds have different chunk hashes but the
+                # running server still serves old HTML — causing JS 404 loops.
+                if echo "$INCOMING_DIFF" | grep -q ' web/'; then
+                    marvin_log "INFO" "Web source files changed — triggering deploy-web.sh"
+                    deploy_script="${MARVIN_DIR}/agent/deploy-web.sh"
+                    if [[ -x "$deploy_script" ]]; then
+                        _deploy_exit=0
+                        bash "$deploy_script" 2>&1 || _deploy_exit=$?
+                        if [[ "$_deploy_exit" -eq 0 ]]; then
+                            marvin_log "INFO" "Web dashboard deployed successfully after git pull"
+                        else
+                            marvin_log "WARN" "deploy-web.sh failed (exit ${_deploy_exit}) — health-monitor will retry"
+                        fi
+                    else
+                        marvin_log "WARN" "deploy-web.sh not found or not executable — skipping auto-deploy"
+                    fi
+                fi
             else
                 PULL_SUMMARY="Already up to date — no new commits."
                 marvin_log "INFO" "$PULL_SUMMARY"

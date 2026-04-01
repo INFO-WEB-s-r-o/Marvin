@@ -63,6 +63,9 @@ if git -C "$MARVIN_DIR" log origin/main..main --oneline 2>/dev/null | head -5 | 
             # Branch pushed successfully — now safe to reset main to origin
             git -C "$MARVIN_DIR" checkout main 2>/dev/null || true
             git -C "$MARVIN_DIR" reset --hard origin/main 2>/dev/null || true
+            # Wait for GitHub to register the branch — PR creation can fail
+            # if the branch isn't yet visible via the API (eventual consistency).
+            sleep 5
             _pr_body="Auto-generated PR for commits that could not be pushed directly to main (branch protection)."
             _pr_response=$(github_api POST "/repos/${GITHUB_REPO}/pulls" \
                 "$(jq -n --arg t "$_commit_msg" --arg b "$_pr_body" --arg h "$_pr_branch" \
