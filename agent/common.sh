@@ -308,6 +308,12 @@ marvin_nginx_reload() {
 
 marvin_rebuild_web() {
     local reason="${1:-unspecified}"
+
+    if marvin_is_dry_run; then
+        marvin_log "INFO" "[DRY-RUN] Would rebuild web (reason: ${reason})"
+        return 0
+    fi
+
     local web_dir="${WEB_DIR}"
     local standalone_dir="${web_dir}/.next/standalone"
     local backup_dir="${web_dir}/.next-backup-$(date +%s)"

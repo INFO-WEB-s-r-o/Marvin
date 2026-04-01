@@ -222,7 +222,7 @@ marvin_log "INFO" "Post-enhancement validation passed"
 # ─── Auto-rebuild web if source files changed ────────────────────────────────
 # Detects web/ source modifications and triggers a full Next.js rebuild+restart.
 # Without this, source edits produce stale builds → JS asset 404s for hours.
-_web_changed=$(git -C "$MARVIN_DIR" diff --name-only HEAD 2>/dev/null \
+_web_changed=$(git -C "$MARVIN_DIR" diff --name-only HEAD~1 HEAD 2>/dev/null \
     | grep -cE '^web/.*\.(tsx?|jsx?|css|json)$' || echo "0")
 if [[ "$_web_changed" -gt 0 ]]; then
     marvin_log "INFO" "Detected ${_web_changed} web source file(s) changed — triggering rebuild"
