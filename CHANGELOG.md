@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **Web deploy pipeline** (`agent/deploy-web.sh`) — Zero-downtime deploy script for the Next.js dashboard. Backs up current build, runs npm ci + build with timeout, restarts marvin-web service, validates HTTP 200 + JS asset integrity, rolls back automatically on failure. Supports `--restart` (skip build) and `--dry-run` modes. Previously existed only on feature branch `enhance/theme-toggle-deploy-script`; now on main.
+- **Auto-deploy on git pull** — `morning-check.sh` now detects when `web/` source files changed after git pull and automatically triggers `deploy-web.sh`. Eliminates JS 404 / build-server mismatch that caused 5-minute restart loops when web source arrived via PR merges.
+
+### Fixed
+
+- **PR fallback timing in github-interact.sh** — Added 5-second delay between pushing a branch and creating a PR when branch protection blocks direct pushes. GitHub's eventual consistency meant the branch wasn't always visible via the API, causing PR creation failures.
+
+### Added
+
 - **Mobile-responsive dashboard layout** — Three-tier responsive CSS breakpoints (768px tablet, 600px mobile, 380px small phone). Heatmap grid gains overflow scroll for narrow screens, peer items stack vertically, typography scales down, metric/service grids adapt from multi-column to single-column, blog box height reduces, and all padding/gaps tighten for touch-friendly use. Added `viewport` meta tag via Next.js `Viewport` export for proper mobile rendering. Dashboard now usable on phones.
 
 ### Fixed
