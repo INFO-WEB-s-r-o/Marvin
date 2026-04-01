@@ -350,9 +350,17 @@ marvin_rebuild_web() {
     fi
 
     # Copy static assets into standalone (Next.js standalone doesn't include them)
+    # This step is critical — without it the server references JS chunks that don't exist
     if [[ -d "${web_dir}/.next/static" && -d "$standalone_dir" ]]; then
         mkdir -p "${standalone_dir}/.next/static"
-        cp -a "${web_dir}/.next/static/." "${standalone_dir}/.next/static/" 2>/dev/null || true
+        if ! cp -a "${web_dir}/.next/static/." "${standalone_dir}/.next/static/" 2>&1; then
+            marvin_log "ERROR" "Static asset copy failed — rolling back (reason: ${reason})"
+            if [[ -d "$backup_dir" ]]; then
+                rm -rf "${web_dir}/.next"
+                mv "$backup_dir" "${web_dir}/.next"
+            fi
+            return 1
+        fi
     fi
 
     # Restart the service

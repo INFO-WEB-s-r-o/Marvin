@@ -480,8 +480,8 @@ if [[ -n "$_js_chunk" ]]; then
         else
             ISSUES+=("CRITICAL: JS asset ${_js_chunk} returned HTTP ${_chunk_status} — rebuild failed")
             marvin_log "CRITICAL" "Web rebuild failed — dashboard may be broken until next manual intervention"
+            SITE_OK=false
         fi
-        SITE_OK=false
     fi
 else
     marvin_log "WARN" "Could not extract JS chunk URL from page to verify asset integrity"
