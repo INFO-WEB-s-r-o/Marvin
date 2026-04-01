@@ -20,7 +20,7 @@
 #
 # Privileges: This script requires root or a sudoers rule granting the
 # running user passwordless access to systemctl and chown. Example:
-#   marvin ALL=(ALL) NOPASSWD: /usr/bin/systemctl status marvin-web, /usr/bin/systemctl restart marvin-web, /usr/bin/chown
+#   marvin ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart marvin-web, /usr/bin/chown
 #
 # Usage:
 #   ./deploy-web.sh              # full build + deploy
@@ -78,9 +78,9 @@ fi
 
 # Privilege check: systemctl restart and chown require root or sudo
 if [[ $EUID -ne 0 ]]; then
-    if ! sudo -n systemctl status marvin-web &>/dev/null; then
-        marvin_log "ERROR" "deploy-web.sh requires root or passwordless sudo for systemctl."
-        marvin_log "ERROR" "Add a sudoers rule: marvin ALL=(ALL) NOPASSWD: /usr/bin/systemctl status marvin-web, /usr/bin/systemctl restart marvin-web, /usr/bin/chown"
+    if ! sudo -n -l systemctl restart marvin-web &>/dev/null; then
+        marvin_log "ERROR" "deploy-web.sh requires root or passwordless sudo for systemctl restart."
+        marvin_log "ERROR" "Add a sudoers rule: marvin ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart marvin-web, /usr/bin/chown"
         exit 1
     fi
     # We have sudo — use it for privileged commands
