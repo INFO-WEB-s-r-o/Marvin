@@ -325,6 +325,9 @@ marvin_rebuild_web() {
         cp -a "${web_dir}/.next" "$backup_dir" 2>/dev/null || true
     fi
 
+    # Prune old backups — keep only the 3 most recent
+    ls -dt "${web_dir}"/.next-backup-* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/null || true
+
     # Install deps if node_modules missing or package-lock.json changed
     if [[ ! -d "${web_dir}/node_modules" ]] || \
        [[ "${web_dir}/package-lock.json" -nt "${web_dir}/node_modules" ]]; then
