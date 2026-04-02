@@ -6,8 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Backup system** (`agent/backup.sh`) — Daily compressed snapshots of critical data: blog DB/markdown, agent scripts, comms, GPG keys, SSL certs, system configs. Retention policy keeps 7 daily + 4 weekly backups. Supports `--dry-run`, `--list`, and `--restore` modes. Cron at 03:00 UTC.
+
 ### Fixed
 
+- **Stop futile PR auto-merge attempts** (`github-interact.sh`) — Branch protection requires review approval before merge. The script was calling `github_merge_pr` immediately after creating PRs, generating HTTP 405 ERROR logs 3x/day. Now skips auto-merge and logs INFO that PR awaits review.
 - **deploy-web.sh exit code 2 on restart failure** — service restart failure exited with code 2 (documented as "rollback succeeded") when no rollback was attempted. Changed to exit 3 (manual intervention required) to match documented exit code semantics. (fixes #416)
 
 ### Added
