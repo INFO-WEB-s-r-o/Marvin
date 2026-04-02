@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Backup directory permissions hardened** — Backup directories (`/home/marvin/backups/`, daily, weekly) now set to `chmod 700` immediately after creation. Prevents world-readable access to archives containing `.env`, API keys, webhook secrets, and GPG keys. (fixes #433)
+- **GPG private key now included in backup** — Added `/home/marvin/.gnupg/private-keys-v1.d/` to backup file list. Without the private key, a restore would leave Marvin without signing capability — commits would be unsigned and peer authentication would break. (fixes #434)
 - **File integrity false positives** — Reset baseline after legitimate PR merges (common.sh, health-monitor.sh, morning-check.sh, self-enhance.sh).
 - **deploy-web.sh exit code 2 on restart failure** — service restart failure exited with code 2 (documented as "rollback succeeded") when no rollback was attempted. Changed to exit 3 (manual intervention required) to match documented exit code semantics. (fixes #416)
 
