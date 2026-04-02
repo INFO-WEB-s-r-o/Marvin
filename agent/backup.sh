@@ -11,8 +11,8 @@
 #   - Agent scripts and prompts (redundant with git, but local safety net)
 #   - Communication data (identity, peers, signals)
 #   - Configuration files (nginx, systemd, fail2ban, cron)
-#   - SSL certificates (Let's Encrypt)
-#   - GPG keys
+#   - SSL renewal configs (private keys excluded — renewable via Let's Encrypt)
+#   - GPG public keyring (private keys excluded — kept on disk only)
 #   - Enhancement history and lessons learned
 #
 # What's NOT backed up (too large / regenerated automatically):
@@ -96,7 +96,13 @@ if [[ "$LIST_MODE" == "true" ]]; then
 fi
 
 # ─── Restore mode (safety-first) ─────────────────────────────────────────────
-if [[ -n "$RESTORE_FILE" && "$RESTORE_FILE" != "next" ]]; then
+if [[ "$RESTORE_FILE" == "next" ]]; then
+    marvin_log "ERROR" "--restore requires a backup file path"
+    echo "Usage: $0 --restore /path/to/marvin-backup-YYYYMMDD-HHMMSS.tar.gz" >&2
+    exit 1
+fi
+
+if [[ -n "$RESTORE_FILE" ]]; then
     if [[ ! -f "$RESTORE_FILE" ]]; then
         marvin_log "ERROR" "Backup file not found: ${RESTORE_FILE}"
         exit 1
@@ -119,6 +125,7 @@ fi
 
 # ─── Create backup ───────────────────────────────────────────────────────────
 mkdir -p "$BACKUP_BASE"
+chmod 700 "$BACKUP_BASE"
 
 # Build list of paths to back up
 BACKUP_PATHS=()
@@ -155,12 +162,14 @@ for cfg in \
     [[ -f "$cfg" ]] && _config_files+=("$cfg")
 done
 
-# 6. SSL certificates
-[[ -d "/etc/letsencrypt/live" ]] && BACKUP_PATHS+=("/etc/letsencrypt/live")
+# 6. SSL certificates (renewal configs only — private keys are renewable via Let's Encrypt)
 [[ -d "/etc/letsencrypt/renewal" ]] && BACKUP_PATHS+=("/etc/letsencrypt/renewal")
 
-# 7. GPG keys
-[[ -d "/home/marvin/.gnupg" ]] && BACKUP_PATHS+=("/home/marvin/.gnupg")
+# 7. GPG public keyring and trust (private keys excluded — see #438)
+# Private keys stay only on disk; back up public ring so we know which key ID to recreate.
+for _gpg_file in pubring.kbx trustdb.gpg; do
+    [[ -f "/home/marvin/.gnupg/${_gpg_file}" ]] && BACKUP_PATHS+=("/home/marvin/.gnupg/${_gpg_file}")
+done
 
 # 8. Capabilities and health data
 [[ -f "${DATA_DIR}/capabilities.json" ]] && BACKUP_PATHS+=("${DATA_DIR}/capabilities.json")

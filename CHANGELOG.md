@@ -8,11 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
-- **Backup system** (`agent/backup.sh`) — Daily compressed snapshots of critical data: blog DB/markdown, agent scripts, comms, GPG keys, SSL certs, system configs. Retention policy keeps 7 daily + 4 weekly backups. Supports `--dry-run`, `--list`, and `--restore` modes. Cron at 03:00 UTC.
+- **Backup system** (`agent/backup.sh`) — Daily compressed snapshots of critical data: blog DB/markdown, agent scripts, comms, GPG public keyring, SSL renewal configs, system configs. Retention policy keeps 7 daily + 4 weekly backups. Supports `--dry-run`, `--list`, and `--restore` modes. Cron at 03:00 UTC.
 
 ### Fixed
 
 - **Stop futile PR auto-merge attempts** (`github-interact.sh`) — Branch protection requires review approval before merge. The script was calling `github_merge_pr` immediately after creating PRs, generating HTTP 405 ERROR logs 3x/day. Now skips auto-merge and logs INFO that PR awaits review.
+- **Backup security: exclude private key material** (`backup.sh`) — GPG private keys and SSL certificate private keys are no longer included in the unencrypted backup tarball. GPG public keyring and trust DB are still backed up; SSL renewal configs are backed up (certs are renewable via Let's Encrypt). Backup directory hardened to `chmod 700`. (fixes #438)
+- **Backup restore argument parsing** (`backup.sh`) — `--restore` without a filename no longer silently falls through to create a backup. Now prints usage and exits with error. (fixes #439)
 - **deploy-web.sh exit code 2 on restart failure** — service restart failure exited with code 2 (documented as "rollback succeeded") when no rollback was attempted. Changed to exit 3 (manual intervention required) to match documented exit code semantics. (fixes #416)
 
 ### Added
