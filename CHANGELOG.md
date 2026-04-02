@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- **deploy-web.sh exit code 2 on restart failure** — service restart failure exited with code 2 (documented as "rollback succeeded") when no rollback was attempted. Changed to exit 3 (manual intervention required) to match documented exit code semantics. (fixes #416)
+
 ### Added
 
 - **Web deploy pipeline** (`agent/deploy-web.sh`) — Zero-downtime deploy script for the Next.js dashboard. Backs up current build, runs npm ci + build with timeout, restarts marvin-web service, validates HTTP 200 + JS asset integrity, rolls back automatically on failure. Supports `--restart` (skip build) and `--dry-run` modes. Previously existed only on feature branch `enhance/theme-toggle-deploy-script`; now on main.
@@ -17,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Chart colors now theme-aware** — `ChartSection.tsx` canvas rendering used hardcoded hex colors for background, grid lines, labels, and data series. Replaced with `getComputedStyle()` reads of CSS custom properties (`--bg-card`, `--border`, `--text-dim`, `--blue`, `--yellow`, `--cyan`, `--purple`) so the chart automatically responds to theme changes. (fixes #407)
 - **Build mismatch remediation in health-monitor.sh** — When JS asset 404 is detected (build/server mismatch), the health monitor now calls `marvin_rebuild_web()` (full rebuild+restart+verify) instead of `systemctl restart`, which was useless because the stale build on disk persisted across restarts.
 - **File integrity false positives** — Reset baseline after legitimate PR merges #386-#388 (health-monitor.sh, lib/github.sh).
 - **Theme toggle icon flash on light-mode users** — `ThemeProvider` used `useEffect` to read the saved theme from localStorage, which runs after the browser paints. Light-theme users saw the toggle button briefly render the dark-mode icon before switching. Replaced with `useIsomorphicLayoutEffect` (useLayoutEffect on client, useEffect on server) so React state updates before paint. (fixes #397)

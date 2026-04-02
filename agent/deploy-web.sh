@@ -222,7 +222,7 @@ fi
 
 marvin_log "INFO" "Restarting marvin-web service..."
 if ! ${SUDO:+$SUDO} systemctl restart marvin-web; then
-    marvin_log "ERROR" "Failed to restart marvin-web service"
+    marvin_log "ERROR" "Failed to restart marvin-web service — manual intervention required"
     exit 3
 fi
 

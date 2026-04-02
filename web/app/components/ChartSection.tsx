@@ -41,12 +41,23 @@ export default function ChartSection() {
       p.load_average ? p.load_average['1min'] * 50 : 0  // scale: load 2.0 = 100%
     );
 
+    // Read theme colors from CSS custom properties so the chart
+    // responds to dark/light theme changes (fixes #407)
+    const styles = getComputedStyle(document.documentElement);
+    const bgCard = styles.getPropertyValue('--bg-card').trim() || '#141820';
+    const borderColor = styles.getPropertyValue('--border').trim() || '#2a2e34';
+    const textDim = styles.getPropertyValue('--text-dim').trim() || '#6b7280';
+    const colorBlue = styles.getPropertyValue('--blue').trim() || '#61afef';
+    const colorYellow = styles.getPropertyValue('--yellow').trim() || '#e5c07b';
+    const colorCyan = styles.getPropertyValue('--cyan').trim() || '#56b6c2';
+    const colorPurple = styles.getPropertyValue('--purple').trim() || '#c678dd';
+
     // Clear
-    ctx.fillStyle = '#141820';
+    ctx.fillStyle = bgCard;
     ctx.fillRect(0, 0, w, h);
 
     // Grid
-    ctx.strokeStyle = '#2a2e34';
+    ctx.strokeStyle = borderColor;
     ctx.lineWidth = 1;
     for (let i = 0; i <= 4; i++) {
       const y = padding.top + (drawH / 4) * i;
@@ -55,7 +66,7 @@ export default function ChartSection() {
       ctx.lineTo(w - padding.right, y);
       ctx.stroke();
 
-      ctx.fillStyle = '#6b7280';
+      ctx.fillStyle = textDim;
       ctx.font = '10px JetBrains Mono';
       ctx.textAlign = 'right';
       ctx.fillText(`${100 - i * 25}%`, padding.left - 8, y + 4);
@@ -77,18 +88,18 @@ export default function ChartSection() {
       ctx!.globalAlpha = 1.0;
     }
 
-    drawLine(diskData, '#c678dd', 0.5);   // purple, faint — slow-moving
-    drawLine(loadData, '#56b6c2', 0.7);   // cyan
-    drawLine(cpuData, '#61afef');          // blue
-    drawLine(memData, '#e5c07b');          // yellow
+    drawLine(diskData, colorPurple, 0.5);   // purple, faint — slow-moving
+    drawLine(loadData, colorCyan, 0.7);     // cyan
+    drawLine(cpuData, colorBlue);           // blue
+    drawLine(memData, colorYellow);         // yellow
 
     // Legend
     ctx.font = '11px JetBrains Mono';
     const legends = [
-      { label: t('chart_cpu'), color: '#61afef' },
-      { label: t('chart_memory'), color: '#e5c07b' },
-      { label: t('chart_load'), color: '#56b6c2' },
-      { label: t('chart_disk'), color: '#c678dd' },
+      { label: t('chart_cpu'), color: colorBlue },
+      { label: t('chart_memory'), color: colorYellow },
+      { label: t('chart_load'), color: colorCyan },
+      { label: t('chart_disk'), color: colorPurple },
     ];
     let legendX = padding.left;
     for (const { label, color } of legends) {
@@ -100,7 +111,7 @@ export default function ChartSection() {
 
     // Time labels
     if (points.length > 0) {
-      ctx.fillStyle = '#6b7280';
+      ctx.fillStyle = textDim;
       ctx.font = '10px JetBrains Mono';
       ctx.textAlign = 'center';
       const first = new Date(points[0].timestamp);
