@@ -46,6 +46,7 @@ WEEKLY_RETENTION=4
 marvin_parse_args "$@"
 
 # ─── Parse arguments ─────────────────────────────────────────────────────────
+# marvin_parse_args above handles --dry-run; this loop handles backup-specific modes
 MODE="backup"
 RESTORE_FILE=""
 for arg in "$@"; do
@@ -112,10 +113,14 @@ if [[ "$MODE" == "restore" ]]; then
     echo ""
     echo "WARNING: Restoring will overwrite existing files."
     echo "The backup has been extracted to: ${restore_tmp}"
-    echo "To apply, run: cp -a ${restore_tmp}/. /"
+    echo "To apply, run: cp -a \"${restore_tmp}/.\" /"
     echo "Then restart affected services: systemctl restart nginx postfix dovecot fail2ban"
+    echo ""
+    echo "IMPORTANT: After applying, remove the temp directory (contains sensitive files):"
+    echo "  rm -rf \"${restore_tmp}\""
 
     marvin_log "INFO" "Backup extracted to ${restore_tmp} — manual application required for safety"
+    marvin_log "WARN" "Restore temp dir ${restore_tmp} contains sensitive files — clean up after applying"
     exit 0
 fi
 
@@ -197,8 +202,8 @@ if marvin_is_dry_run; then
     exit 0
 fi
 
-# Create the backup archive
-BACKUP_FILE="${DAILY_DIR}/marvin-backup-${TODAY}.tar.gz"
+# Create the backup archive (include epoch to prevent same-day overwrites on re-runs)
+BACKUP_FILE="${DAILY_DIR}/marvin-backup-${TODAY}-$(date +%s).tar.gz"
 
 # Use tar with absolute paths, stripping the leading /
 if tar -czf "${BACKUP_FILE}" --warning=no-file-changed "${BACKUP_FILES[@]}" 2>&1; then
