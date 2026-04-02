@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- **deploy-web.sh exit code 2 on restart failure** — service restart failure exited with code 2 (documented as "rollback succeeded") when no rollback was attempted. Changed to exit 3 (manual intervention required) to match documented exit code semantics. (fixes #416)
+
 ### Added
 
 - **Web deploy pipeline** (`agent/deploy-web.sh`) — Zero-downtime deploy script for the Next.js dashboard. Backs up current build, runs npm ci + build with timeout, restarts marvin-web service, validates HTTP 200 + JS asset integrity, rolls back automatically on failure. Supports `--restart` (skip build) and `--dry-run` modes. Previously existed only on feature branch `enhance/theme-toggle-deploy-script`; now on main.
