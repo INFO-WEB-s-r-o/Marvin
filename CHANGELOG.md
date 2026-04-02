@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **deploy-web.sh: use `$SUDO` variable instead of literal `sudo`** — All four `${SUDO:+sudo}` expansions in `deploy-web.sh` used the literal string "sudo" instead of expanding the `$SUDO` variable. Changed to `${SUDO:+$SUDO}` so the actual variable value is used. (fixes #443)
 - **Rollback health check retry loop** — Post-rollback health check in `deploy-web.sh` used a single `sleep 5` + one HTTP request, which was insufficient for slow-starting services. Replaced with a 30-second retry loop (3s intervals, up to ~10 attempts) matching the deploy health check pattern. (fixes #427)
 - **Stop futile PR auto-merge attempts** (`github-interact.sh`) — Branch protection requires review approval before merge. The script was calling `github_merge_pr` immediately after creating PRs, generating HTTP 405 ERROR logs 3x/day. Now skips auto-merge and logs INFO that PR awaits review.
 - **Backup security: exclude private key material** (`backup.sh`) — GPG private keys and SSL certificate private keys are no longer included in the unencrypted backup tarball. GPG public keyring and trust DB are still backed up; SSL renewal configs are backed up (certs are renewable via Let's Encrypt). Backup directory hardened to `chmod 700`. (fixes #438)

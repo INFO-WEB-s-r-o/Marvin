@@ -206,7 +206,7 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
         fi
 
         # Set ownership so marvin-web service (runs as marvin) can read
-        ${SUDO:+sudo} chown -R marvin:marvin "${BUILD_DIR}" || {
+        ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || {
             marvin_log "WARN" "chown failed — file ownership may be incorrect"
         }
     fi
@@ -222,7 +222,7 @@ if marvin_is_dry_run; then
 fi
 
 marvin_log "INFO" "Restarting marvin-web service..."
-if ! ${SUDO:+sudo} systemctl restart marvin-web; then
+if ! ${SUDO:+$SUDO} systemctl restart marvin-web; then
     marvin_log "ERROR" "Failed to restart marvin-web service — manual intervention required"
     exit 3
 fi
@@ -289,10 +289,10 @@ else
             marvin_log "WARN" "tar extraction warnings: ${_tar_err}"
         fi
         if [[ "$_tar_ok" == "true" ]]; then
-            ${SUDO:+sudo} chown -R marvin:marvin "${BUILD_DIR}" || true
+            ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || true
 
             marvin_log "INFO" "Backup restored — restarting service..."
-            if ${SUDO:+sudo} systemctl restart marvin-web; then
+            if ${SUDO:+$SUDO} systemctl restart marvin-web; then
                 # Health check on rolled-back build (same retry pattern as deploy)
                 _rb_max_wait=30
                 _rb_waited=0
