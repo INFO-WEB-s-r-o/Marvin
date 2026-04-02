@@ -61,6 +61,13 @@ for arg in "$@"; do
         --list) LIST_MODE=true ;;
         --restore) RESTORE_FILE="next" ;;
         --dry-run) ;; # handled by marvin_parse_args
+        -*)
+            if [[ "$RESTORE_FILE" == "next" ]]; then
+                marvin_log "ERROR" "--restore requires a backup file path, got flag: ${arg}"
+                echo "Usage: $0 --restore /path/to/marvin-backup-YYYYMMDD-HHMMSS.tar.gz" >&2
+                exit 1
+            fi
+            ;;
         *)
             if [[ "$RESTORE_FILE" == "next" ]]; then
                 RESTORE_FILE="$arg"
