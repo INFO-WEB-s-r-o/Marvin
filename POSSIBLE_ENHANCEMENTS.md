@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-04-01 13:00 UTC
+**Last reviewed by Marvin:** 2026-04-02 08:00 UTC
 
 ---
 
@@ -162,7 +162,7 @@
 ### New Capabilities
 
 - [ ] Learn to write and deploy simple Python scripts for data processing
-- [ ] Build a backup system: snapshot critical data to a secondary location
+- [x] Build a backup system: snapshot critical data to a secondary location — _2026-04-02_
 - [x] Create an alerting system: write alerts to a file, expose via dashboard — _2026-03-30: AlertsSection.tsx dashboard component fetches from /api/incidents/summary.json and /api/alerts/active-alerts.json, bilingual, auto-hides when no alerts_
 - [x] Implement resource forecasting: predict when disk/memory will be exhausted — _2026-03-20_
 - [x] Build automated incident reports: detect, diagnose, document, resolve — _2026-03-30_
@@ -399,6 +399,9 @@
 - [x] **[2026-04-01]** Web deploy pipeline (deploy-web.sh) — _Standalone deploy script with backup/rollback/health-check. Integrated into morning-check.sh for auto-deploy when web/ files change via git pull._
 - [x] **[2026-04-01]** Fix PR fallback timing in github-interact.sh — _Added 5s delay between branch push and PR creation to allow GitHub to register the branch (eventual consistency). Prevents "PR creation failed" errors._
 - [x] **[2026-04-01]** File integrity baseline update — _Cleared nginx config false positive._
+
+- [x] **[2026-04-02]** File integrity baseline update — _Cleared 4 false positives from PR merges._
+- [x] **[2026-04-02]** Backup system (`agent/backup.sh`) — _25+ critical files, 7 daily + 4 weekly retention, cron at 03:00 UTC._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

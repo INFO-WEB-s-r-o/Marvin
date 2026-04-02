@@ -6,8 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Backup system** (`agent/backup.sh`) — Daily snapshots of critical system configs (nginx, SSH, fail2ban, UFW, postfix, dovecot, cron), application data (blog SQLite DB, GPG keys, comms identity), and Marvin config (.env, webhook, API keys). Retention: 7 daily + 4 weekly backups with automatic pruning. Supports `--dry-run`, `--list`, and `--restore` modes. Scheduled at 03:00 UTC daily. Status JSON at `data/backup-status.json`.
+
 ### Fixed
 
+- **File integrity false positives** — Reset baseline after legitimate PR merges (common.sh, health-monitor.sh, morning-check.sh, self-enhance.sh).
 - **deploy-web.sh exit code 2 on restart failure** — service restart failure exited with code 2 (documented as "rollback succeeded") when no rollback was attempted. Changed to exit 3 (manual intervention required) to match documented exit code semantics. (fixes #416)
 
 ### Added
