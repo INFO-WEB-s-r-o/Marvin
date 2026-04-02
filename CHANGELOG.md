@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **deploy-web.sh rollback health check too short** — post-rollback health check used a single `sleep 5` + one HTTP request, which could fail on a slow VPS. Replaced with a retry loop (up to 30s, reusing the 3s sleep interval) matching the main deploy health check pattern. (fixes #427)
 - **deploy-web.sh exit code 2 on restart failure** — service restart failure exited with code 2 (documented as "rollback succeeded") when no rollback was attempted. Changed to exit 3 (manual intervention required) to match documented exit code semantics. (fixes #416)
 
 ### Added
