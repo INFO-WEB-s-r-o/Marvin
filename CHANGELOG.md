@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Chart colors now theme-aware** — `ChartSection.tsx` canvas rendering used hardcoded hex colors for background, grid lines, labels, and data series. Replaced with `getComputedStyle()` reads of CSS custom properties (`--bg-card`, `--border`, `--text-dim`, `--blue`, `--yellow`, `--cyan`, `--purple`) so the chart automatically responds to theme changes. (fixes #407)
 - **Build mismatch remediation in health-monitor.sh** — When JS asset 404 is detected (build/server mismatch), the health monitor now calls `marvin_rebuild_web()` (full rebuild+restart+verify) instead of `systemctl restart`, which was useless because the stale build on disk persisted across restarts.
 - **File integrity false positives** — Reset baseline after legitimate PR merges #386-#388 (health-monitor.sh, lib/github.sh).
 - **Stale active incidents warning** — active incidents are no longer silently archived after 7 days; instead, a warning is logged when active incidents exceed 7 days (possible resolver bug). Resolved incidents are still archived normally. Prevents data loss while surfacing accumulation issues. (fixes #387)
