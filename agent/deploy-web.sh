@@ -291,7 +291,7 @@ else
             ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || true
 
             marvin_log "INFO" "Backup restored — restarting service..."
-            if ${SUDO:+sudo} systemctl restart marvin-web; then
+            if ${SUDO:+$SUDO} systemctl restart marvin-web; then
                 # Health check on rolled-back build (same retry pattern as deploy)
                 _rb_max_wait=30
                 _rb_waited=0
