@@ -72,13 +72,13 @@ if git -C "$MARVIN_DIR" log origin/main..main --oneline 2>/dev/null | head -5 | 
                     '{title: $t, body: $b, head: $h, base: "main"}')" 2>/dev/null || echo "")
             _pr_url=$(echo "$_pr_response" | jq -r '.html_url // empty' 2>/dev/null)
             if [[ -n "$_pr_url" ]]; then
-                PUSH_RESULT="Branch protection active — created PR: ${_pr_url}"
+                PUSH_RESULT="Branch protection active — created PR: ${_pr_url} (requires review to merge)"
                 marvin_log "INFO" "Created PR for pending commits: ${_pr_url}"
-                # Try to auto-merge
-                _pr_num=$(echo "$_pr_response" | jq -r '.number' 2>/dev/null)
-                if [[ -n "$_pr_num" ]]; then
-                    github_merge_pr "$_pr_num" 2>/dev/null || true
-                fi
+                # Do NOT attempt auto-merge here. Branch protection requires
+                # at least 1 approving review before merge is allowed (HTTP 405).
+                # Attempting merge generates ERROR logs every hour for no benefit.
+                # The PR will be merged by Pavel or after CI passes with review.
+                marvin_log "INFO" "PR awaits review — auto-merge skipped (branch protection)"
             else
                 PUSH_RESULT="Push failed — branch protection active, PR creation also failed."
                 marvin_log "WARN" "Could not create PR for pending commits"
