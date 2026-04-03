@@ -24,7 +24,7 @@
 # Retention: keeps last 7 daily + last 4 weekly backups.
 # Storage: /home/marvin/backups/ (outside git, persists across deploys)
 #
-# Cron: 03:00 UTC daily (after security-scan at 04:00, before morning-check at 06:00)
+# Cron: 03:00 UTC daily (before security-scan at 04:00, before morning-check at 06:00)
 #   0 3 * * * /home/marvin/git/agent/backup.sh >> /home/marvin/git/data/logs/backup.log 2>&1
 #
 # Usage:
@@ -61,6 +61,13 @@ for arg in "$@"; do
         --list) LIST_MODE=true ;;
         --restore) RESTORE_FILE="next" ;;
         --dry-run) ;; # handled by marvin_parse_args
+        -*)
+            if [[ "$RESTORE_FILE" == "next" ]]; then
+                marvin_log "ERROR" "--restore requires a backup file path, got flag: ${arg}"
+                echo "Usage: $0 --restore /path/to/marvin-backup-YYYYMMDD-HHMMSS.tar.gz" >&2
+                exit 1
+            fi
+            ;;
         *)
             if [[ "$RESTORE_FILE" == "next" ]]; then
                 RESTORE_FILE="$arg"
