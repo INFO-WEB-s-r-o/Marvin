@@ -20,10 +20,6 @@ interface ChangelogData {
   entries: ChangelogEntry[];
 }
 
-function escapeHtml(str: string): string {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00Z');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -90,7 +86,7 @@ export default function ChangelogSection() {
                 <div className="changelog-changes">
                   {entry.changes.map((change, i) => (
                     <div key={i} className="changelog-change">
-                      {escapeHtml(change)}
+                      {change}
                     </div>
                   ))}
                 </div>

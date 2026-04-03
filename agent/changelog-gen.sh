@@ -34,6 +34,7 @@ declare -A day_sessions   # date → session count
 declare -A day_changes    # date → newline-separated changes
 declare -A day_prs        # date → comma-separated PR numbers
 declare -A day_risk       # date → highest risk level
+declare -A risk_rank=([none]=0 [low]=1 [medium]=2 [high]=3)
 
 # Parse each enhancement report
 while IFS= read -r report_file; do
@@ -112,8 +113,6 @@ while IFS= read -r report_file; do
     risk=$(grep -oiP '(?:risk|Risk)[:\s]*\**(none|low|medium|high)\**' "$report_file" 2>/dev/null | tail -1 | grep -oiP '(none|low|medium|high)' | tr '[:upper:]' '[:lower:]' || true)
     if [[ -n "$risk" ]]; then
         current_risk="${day_risk["$report_date"]:-none}"
-        # Rank: none=0, low=1, medium=2, high=3
-        declare -A risk_rank=([none]=0 [low]=1 [medium]=2 [high]=3)
         if [[ ${risk_rank["$risk"]:-0} -gt ${risk_rank["$current_risk"]:-0} ]]; then
             day_risk["$report_date"]="$risk"
         fi
@@ -172,7 +171,7 @@ for d in ${sorted_dates}; do
     changes_json="[]"
     if [[ -n "${day_changes["$d"]:-}" ]]; then
         # Deduplicate and convert to JSON array
-        changes_json=$(printf '%b' "${day_changes["$d"]}" | sort -u | grep -v '^$' | head -10 | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]")
+        changes_json=$(printf '%s' "${day_changes["$d"]}" | sed 's/\\n/\n/g' | sort -u | grep -v '^$' | head -10 | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]")
     fi
 
     # Build PR numbers array
