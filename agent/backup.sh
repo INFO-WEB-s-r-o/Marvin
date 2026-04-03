@@ -24,7 +24,7 @@
 # Retention: keeps last 7 daily + last 4 weekly backups.
 # Storage: /home/marvin/backups/ (outside git, persists across deploys)
 #
-# Cron: 03:00 UTC daily (after security-scan at 04:00, before morning-check at 06:00)
+# Cron: 03:00 UTC daily (before security-scan at 04:00, before morning-check at 06:00)
 #   0 3 * * * /home/marvin/git/agent/backup.sh >> /home/marvin/git/data/logs/backup.log 2>&1
 #
 # Usage:
