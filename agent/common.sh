@@ -211,7 +211,14 @@ ${prompt}"
     # Root cause: log data can contain binary/malformed bytes that produce
     # "no low surrogate in string" JSON encoding errors in the Claude API.
     # iconv round-trip through UTF-8 drops any byte sequences that aren't valid UTF-8.
-    full_prompt=$(printf '%s' "$full_prompt" | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || printf '%s' "$full_prompt")
+    # Guard: if iconv produces empty output from non-empty input, keep the original (#454).
+    local sanitized
+    sanitized=$(printf '%s' "$full_prompt" | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || true)
+    if [[ -z "${sanitized}" && -n "${full_prompt}" ]]; then
+        marvin_log "WARN" "UTF-8 sanitization produced empty prompt — using original" >&2
+    else
+        full_prompt="${sanitized}"
+    fi
 
     # Run Claude Code in non-interactive mode
     # Use stdin pipe to avoid "Argument list too long" with large prompts
