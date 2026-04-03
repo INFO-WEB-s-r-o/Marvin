@@ -414,7 +414,8 @@ if command -v geoiplookup &>/dev/null; then
     _geo_ips_file=$(mktemp)
     _geo_ips_uniq=$(mktemp)
     _geo_results=$(mktemp)
-    trap 'rm -f "$_geo_ips_file" "$_geo_ips_uniq" "$_geo_results"' EXIT
+    _geo_prev_trap=$(trap -p EXIT || true)
+    trap 'rm -f "$_geo_ips_file" "$_geo_ips_uniq" "$_geo_results"; eval "$_geo_prev_trap"' EXIT
 
     # Source 1: Top connecting IPs (from section 3c above)
     echo "$top_sources_json" | jq -r '.[].ip' 2>/dev/null >> "$_geo_ips_file" || true
@@ -454,7 +455,7 @@ if command -v geoiplookup &>/dev/null; then
                 count=$1; code=substr($2, 1, 2);
                 $1=""; $2="";
                 name=$0; gsub(/^[, ]+/, "", name);
-                gsub(/"/, "\\\"", name); gsub(/\\/, "\\\\", name);
+                gsub(/\\/, "\\\\", name); gsub(/"/, "\\\"", name);
                 pct=(total>0) ? sprintf("%.1f", count*100/total) : "0.0";
                 printf "{\"code\":\"%s\",\"name\":\"%s\",\"count\":%d,\"percent\":%s}\n", code, name, count, pct
             }' | jq -s '.' 2>/dev/null || echo "[]")
@@ -463,7 +464,7 @@ if command -v geoiplookup &>/dev/null; then
     fi
 
     rm -f "$_geo_ips_file" "$_geo_ips_uniq" "$_geo_results"
-    trap - EXIT
+    eval "$_geo_prev_trap"
 fi
 
 # Save geographic analysis
