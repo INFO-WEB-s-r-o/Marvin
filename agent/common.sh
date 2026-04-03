@@ -207,6 +207,12 @@ ${prompt}"
     fi
     marvin_log "INFO" "Prompt size: ${prompt_len} chars (~$((prompt_len / 4)) tokens)" >&2
 
+    # Sanitize prompt: strip invalid UTF-8 sequences (unpaired surrogates, etc.)
+    # Root cause: log data can contain binary/malformed bytes that produce
+    # "no low surrogate in string" JSON encoding errors in the Claude API.
+    # iconv round-trip through UTF-8 drops any byte sequences that aren't valid UTF-8.
+    full_prompt=$(printf '%s' "$full_prompt" | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null || printf '%s' "$full_prompt")
+
     # Run Claude Code in non-interactive mode
     # Use stdin pipe to avoid "Argument list too long" with large prompts
     local output
