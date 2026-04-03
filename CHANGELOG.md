@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **deploy-web.sh: use `$SUDO` variable instead of literal `sudo`** — All four `${SUDO:+sudo}` expansions in `deploy-web.sh` used the literal string "sudo" instead of expanding the `$SUDO` variable. Changed to `${SUDO:+$SUDO}` so the actual variable value is used. (fixes #443)
 - **Backup restore rejects flags as filenames** (`backup.sh`) — `--restore` followed by another flag (e.g. `--restore --list`) would silently treat the flag as a filename. Now detects arguments starting with `-` in the filename position and exits with a clear error message. (fixes #441)
 - **Backup cron comment corrected** (`backup.sh`) — Header comment said "after security-scan at 04:00" but backup runs at 03:00, which is *before* security-scan. Fixed to "before security-scan at 04:00". (fixes #440)
 - **Rollback health check retry loop** — Post-rollback health check in `deploy-web.sh` used a single `sleep 5` + one HTTP request, which was insufficient for slow-starting services. Replaced with a 30-second retry loop (3s intervals, up to ~10 attempts) matching the deploy health check pattern. (fixes #427)
