@@ -20,7 +20,7 @@
 #
 # Privileges: This script requires root or a sudoers rule granting the
 # running user passwordless access to systemctl and chown. Example:
-#   marvin ALL=(ALL) NOPASSWD: /usr/bin/systemctl status marvin-web, /usr/bin/systemctl restart marvin-web, /usr/bin/chown
+#   marvin ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart marvin-web, /usr/bin/chown
 #
 # Usage:
 #   ./deploy-web.sh              # full build + deploy
@@ -30,8 +30,9 @@
 # Exit codes:
 #   0 = success
 #   1 = build failed or pre-flight check failed
-#   2 = health check failed after deploy, rollback succeeded — service restored
-#   3 = health check failed, rollback failed or incomplete — manual intervention required
+#   2 = health check failed but rollback succeeded (service recovered)
+#   3 = manual intervention required (no backup, extraction failure,
+#       restart failure, or post-rollback health check failure)
 # =============================================================================
 
 set -euo pipefail
@@ -77,9 +78,9 @@ fi
 
 # Privilege check: systemctl restart and chown require root or sudo
 if [[ $EUID -ne 0 ]]; then
-    if ! sudo -n systemctl status marvin-web &>/dev/null; then
-        marvin_log "ERROR" "deploy-web.sh requires root or passwordless sudo for systemctl."
-        marvin_log "ERROR" "Add a sudoers rule: marvin ALL=(ALL) NOPASSWD: /usr/bin/systemctl status marvin-web, /usr/bin/systemctl restart marvin-web, /usr/bin/chown"
+    if ! sudo -n -l systemctl restart marvin-web &>/dev/null; then
+        marvin_log "ERROR" "deploy-web.sh requires root or passwordless sudo for systemctl restart."
+        marvin_log "ERROR" "Add a sudoers rule: marvin ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart marvin-web, /usr/bin/chown"
         exit 1
     fi
     # We have sudo — use it for privileged commands
@@ -122,8 +123,6 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
         marvin_log "INFO" "Installing npm dependencies..."
         # npm ci is faster and deterministic (uses lockfile)
         # Fall back to npm install if no lockfile
-        # When running as root, drop to marvin user for npm commands to avoid
-        # executing arbitrary JS from node_modules with root privileges (#422)
         # When running as root, drop to marvin user via array-based command prefix
         # to avoid executing arbitrary JS from node_modules with root privileges (#422)
         # Using a bash array prevents word-splitting issues (#426)
@@ -206,7 +205,7 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
         fi
 
         # Set ownership so marvin-web service (runs as marvin) can read
-        ${SUDO:+sudo} chown -R marvin:marvin "${BUILD_DIR}" || {
+        ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || {
             marvin_log "WARN" "chown failed — file ownership may be incorrect"
         }
     fi
@@ -222,7 +221,7 @@ if marvin_is_dry_run; then
 fi
 
 marvin_log "INFO" "Restarting marvin-web service..."
-if ! ${SUDO:+sudo} systemctl restart marvin-web; then
+if ! ${SUDO:+$SUDO} systemctl restart marvin-web; then
     marvin_log "ERROR" "Failed to restart marvin-web service — manual intervention required"
     exit 3
 fi
@@ -289,10 +288,10 @@ else
             marvin_log "WARN" "tar extraction warnings: ${_tar_err}"
         fi
         if [[ "$_tar_ok" == "true" ]]; then
-            ${SUDO:+sudo} chown -R marvin:marvin "${BUILD_DIR}" || true
+            ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || true
 
             marvin_log "INFO" "Backup restored — restarting service..."
-            if ${SUDO:+sudo} systemctl restart marvin-web; then
+            if ${SUDO:+$SUDO} systemctl restart marvin-web; then
                 # Health check on rolled-back build (same retry pattern as deploy)
                 _rb_max_wait=30
                 _rb_waited=0
