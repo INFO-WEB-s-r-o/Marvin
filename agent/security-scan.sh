@@ -412,6 +412,9 @@ if command -v geoiplookup &>/dev/null; then
     geo_available=true
 
     _geo_ips_file=$(mktemp)
+    _geo_ips_uniq=$(mktemp)
+    _geo_results=$(mktemp)
+    trap 'rm -f "$_geo_ips_file" "$_geo_ips_uniq" "$_geo_results"' EXIT
 
     # Source 1: Top connecting IPs (from section 3c above)
     echo "$top_sources_json" | jq -r '.[].ip' 2>/dev/null >> "$_geo_ips_file" || true
@@ -421,20 +424,20 @@ if command -v geoiplookup &>/dev/null; then
         fail2ban-client status "$_jail" 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' >> "$_geo_ips_file" || true
     done
 
-    # Source 3: Top nginx access log sources (by request count)
+    # Source 3: Top nginx access log sources (last 50k lines to avoid scanning huge logs)
     if [[ -f /var/log/nginx/access.log ]]; then
-        awk '{print $1}' /var/log/nginx/access.log 2>/dev/null \
+        tail -n 50000 /var/log/nginx/access.log 2>/dev/null \
+            | awk '{print $1}' \
             | sort | uniq -c | sort -rn | head -100 | awk '{print $2}' >> "$_geo_ips_file" || true
     fi
 
     # Deduplicate and exclude private/loopback IPs
     sort -u "$_geo_ips_file" \
         | grep -vE '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|0\.|::)' \
-        > "${_geo_ips_file}.uniq" || true
-    geo_total=$(wc -l < "${_geo_ips_file}.uniq" | tr -d ' ')
+        > "$_geo_ips_uniq" || true
+    geo_total=$(wc -l < "$_geo_ips_uniq" | tr -d ' ')
 
-    # GeoIP lookup for each IP, aggregate by country
-    _geo_results=$(mktemp)
+    # GeoIP lookup for each IP, aggregate by country (cap at 200 IPs to bound runtime)
     while IFS= read -r _ip; do
         [[ -z "$_ip" ]] && continue
         _country=$(geoiplookup "$_ip" 2>/dev/null | head -1 | sed 's/GeoIP Country Edition: //' || echo "??, Unknown")
@@ -442,7 +445,7 @@ if command -v geoiplookup &>/dev/null; then
             _country="??, Unknown"
         fi
         echo "$_country"
-    done < "${_geo_ips_file}.uniq" > "$_geo_results"
+    done < <(head -200 "$_geo_ips_uniq") > "$_geo_results"
 
     # Build country JSON array sorted by count
     if [[ -s "$_geo_results" ]]; then
@@ -451,6 +454,7 @@ if command -v geoiplookup &>/dev/null; then
                 count=$1; code=substr($2, 1, 2);
                 $1=""; $2="";
                 name=$0; gsub(/^[, ]+/, "", name);
+                gsub(/"/, "\\\"", name); gsub(/\\/, "\\\\", name);
                 pct=(total>0) ? sprintf("%.1f", count*100/total) : "0.0";
                 printf "{\"code\":\"%s\",\"name\":\"%s\",\"count\":%d,\"percent\":%s}\n", code, name, count, pct
             }' | jq -s '.' 2>/dev/null || echo "[]")
@@ -458,7 +462,8 @@ if command -v geoiplookup &>/dev/null; then
         geo_top_country=$(echo "$geo_json" | jq -r '.[0].name // "Unknown"' 2>/dev/null || echo "Unknown")
     fi
 
-    rm -f "$_geo_ips_file" "${_geo_ips_file}.uniq" "$_geo_results"
+    rm -f "$_geo_ips_file" "$_geo_ips_uniq" "$_geo_results"
+    trap - EXIT
 fi
 
 # Save geographic analysis
