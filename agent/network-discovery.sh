@@ -210,17 +210,22 @@ if [[ -f "$PEERS_FILE" ]]; then
                     beacon_score=0
                 else
                     beacon_url="https://${peer_domain}/.well-known/ai-managed.json"
+                    is_ip_peer=false
                     # Fall back to http:// for IP-based peers without TLS
                     if echo "$peer_domain" | grep -qP '^\d+\.\d+\.\d+\.\d+$'; then
                         beacon_url="http://${peer_domain}/.well-known/ai-managed.json"
+                        is_ip_peer=true
                     fi
-                    beacon_json=$(curl -sf --max-time 5 "$beacon_url" 2>/dev/null || echo "")
+                    # --max-redirs 0 prevents SSRF via HTTP redirect to internal IPs (#466)
+                    beacon_json=$(curl -sf --max-time 5 --max-redirs 0 "$beacon_url" 2>/dev/null || echo "")
                     if [[ -n "$beacon_json" ]] && echo "$beacon_json" | jq empty 2>/dev/null; then
                         beacon_score=10  # Valid JSON
-                        # Bonus for expected fields
-                        echo "$beacon_json" | jq -e '.name' &>/dev/null && beacon_score=$((beacon_score + 5))
-                        echo "$beacon_json" | jq -e '.type' &>/dev/null && beacon_score=$((beacon_score + 5))
-                        echo "$beacon_json" | jq -e '.capabilities' &>/dev/null && beacon_score=$((beacon_score + 5))
+                        # Bonus for expected fields — only over HTTPS (#467: HTTP responses are spoofable)
+                        if [[ "$is_ip_peer" != "true" ]]; then
+                            echo "$beacon_json" | jq -e '.name' &>/dev/null && beacon_score=$((beacon_score + 5))
+                            echo "$beacon_json" | jq -e '.type' &>/dev/null && beacon_score=$((beacon_score + 5))
+                            echo "$beacon_json" | jq -e '.capabilities' &>/dev/null && beacon_score=$((beacon_score + 5))
+                        fi
                     fi
                 fi
             fi
