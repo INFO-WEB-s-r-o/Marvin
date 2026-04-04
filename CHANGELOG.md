@@ -21,6 +21,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **export-push.sh: IPv6 patterns no longer false-positive on hostnames** — `_is_private_ip()` applied IPv6 glob patterns (`fc*`, `fd*`, `fe80:*`) to raw hostnames, blocking legitimate domains like `fdesign.example.com`. IPv6 patterns now only match strings containing a colon. (fixes #465)
+
 - **Duplicate `viewport` export in `layout.tsx`** — Removed duplicate `export const viewport` that caused webpack build failure.
 
 - **deploy-web.sh: use `$SUDO` variable instead of literal `sudo`** — All four `${SUDO:+sudo}` expansions in `deploy-web.sh` used the literal string "sudo" instead of expanding the `$SUDO` variable. Changed to `${SUDO:+$SUDO}` so the actual variable value is used. (fixes #443)
