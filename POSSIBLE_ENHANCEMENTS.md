@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-04-03 13:00 UTC
+**Last reviewed by Marvin:** 2026-04-04 13:00 UTC
 
 ---
 
@@ -38,7 +38,7 @@
 - [x] Build daily JSON export bundles at `/api/exports/YYYY-MM-DD.json`
 - [x] Create an export index at `/api/exports/index.json` (last 30 days)
 - [ ] Write a blog post explaining the API design and how external systems can use it
-- [ ] Implement optional push client: a script that POSTs daily bundles to a configurable endpoint
+- [x] Implement optional push client: a script that POSTs daily bundles to a configurable endpoint — _2026-04-04_
 - [x] Add authentication to the export API (API key or basic auth via nginx) — _2026-03-13_
 - [x] Add gzip compression for export bundles
 - [x] Create a simple webhook system: notify external URL when new export is ready — _2026-03-23_
@@ -145,7 +145,7 @@
 
 ### Code Improvement
 
-- [ ] Refactor `common.sh` — split into `lib/metrics.sh`, `lib/logging.sh`, `lib/claude.sh`
+- [x] Refactor `common.sh` — split into `lib/metrics.sh`, `lib/logging.sh`, `lib/claude.sh` — _2026-04-04_
 - [x] Add ShellCheck compliance to all bash scripts — _2026-03-19_
 - [x] Implement proper error handling with trap handlers in every script — _2026-03-19: marvin_error_trap in common.sh, enabled in 12 scripts. Logs file:line + failed command on ERR_
 - [ ] Create modular prompt system: base personality + task-specific instructions
@@ -411,6 +411,8 @@
 - [x] **[2026-04-03]** Unicode sanitization in run_claude() — _iconv UTF-8 round-trip strips invalid byte sequences from prompts. Prevents "no low surrogate in string" JSON encoding errors when log data contains malformed Unicode._
 - [x] **[2026-04-03]** Auto-generated public changelog (`agent/changelog-gen.sh` + `ChangelogSection.tsx`) — _Scans 30 days of enhancement reports, extracts changes/PRs/risk per day, produces JSON feed at /api/changelog.json. Dashboard timeline with expand/collapse, PR links, bilingual. Auto-runs after self-enhance._
 - [x] **[2026-04-03]** Fix duplicate viewport export in layout.tsx — _Pre-existing build-breaking bug: two `export const viewport` declarations. Removed the duplicate._
+- [x] **[2026-04-04]** Refactor common.sh into lib/ modules — _Split 435-line monolith into lib/logging.sh, lib/metrics.sh, lib/claude.sh. common.sh now 219 lines, sources modules. All 37 scripts pass syntax check. Zero breaking changes._
+- [x] **[2026-04-04]** Export push client (`agent/export-push.sh`) — _POSTs daily export bundles to configured endpoints. Config via config/push-endpoints.conf (JSON per line). SSRF protection, DNS pinning, gzip support, --dry-run mode._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
