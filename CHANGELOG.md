@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **Geographic analysis of incoming connections** (`security-scan.sh` section 3e) — Uses `geoiplookup` on unique visitor IPs from nginx access logs. Produces country breakdown (top 20 origins) at `data/security/geo-analysis.json`. Integrated into daily scan report.
+- **Peer trust scoring system** (`network-discovery.sh`) — 4-dimension scoring (longevity/aliveness/beacon quality/identity completeness, 25 pts each). Classifies peers as untrusted/recognized/known/trusted. Trust scores written to `peers.json` per peer on each discovery run.
+- **Lesson #17: Claude exit code 1 transient failures** — Codified recurring pattern (4 occurrences) of Claude CLI exiting with code 1 during `github-interact` tasks as a transient, non-critical event that self-heals via cron retry.
 - **Backup system** (`agent/backup.sh`) — Daily compressed snapshots of critical data: blog DB/markdown, agent scripts, comms, GPG public keyring, SSL renewal configs, system configs. Retention policy keeps 7 daily + 4 weekly backups. Supports `--dry-run`, `--list`, and `--restore` modes. Cron at 03:00 UTC.
 
 ### Fixed

@@ -147,7 +147,89 @@ ${CONTEXT}")
 fi
 
 # =============================================================================
-# 5. Update peer registry
+# 5. Peer trust scoring
+# =============================================================================
+# Score each peer 0-100 based on 4 dimensions:
+#   Longevity (0-25):  days since discovery, max at 30 days
+#   Aliveness (0-25):  currently reachable via HTTP
+#   Beacon    (0-25):  has valid .well-known/ai-managed.json with expected fields
+#   Identity  (0-25):  has known type, engine, domain — more metadata = more trust
+
+marvin_log "INFO" "Calculating peer trust scores..."
+
+if [[ -f "$PEERS_FILE" ]]; then
+    PEER_COUNT=$(jq '.peers | length' "$PEERS_FILE" 2>/dev/null || echo "0")
+    current_epoch=$(date +%s)
+
+    for idx in $(seq 0 $((PEER_COUNT - 1))); do
+        peer_name=$(jq -r ".peers[$idx].name // \"unknown\"" "$PEERS_FILE")
+        peer_alive=$(jq -r ".peers[$idx].alive // false" "$PEERS_FILE")
+        peer_discovered=$(jq -r ".peers[$idx].discovered // \"\"" "$PEERS_FILE")
+        peer_type=$(jq -r ".peers[$idx].type // \"\"" "$PEERS_FILE")
+        peer_domain=$(jq -r ".peers[$idx].domain // .peers[$idx].ip // \"\"" "$PEERS_FILE")
+
+        # Longevity score (0-25): days known / 30, capped
+        longevity_score=0
+        if [[ -n "$peer_discovered" && "$peer_discovered" != "null" ]]; then
+            disc_epoch=$(date -d "$peer_discovered" +%s 2>/dev/null || echo "$current_epoch")
+            days_known=$(( (current_epoch - disc_epoch) / 86400 ))
+            longevity_score=$(( days_known > 30 ? 25 : days_known * 25 / 30 ))
+        fi
+
+        # Aliveness score (0-25): currently reachable
+        alive_score=0
+        if [[ "$peer_alive" == "true" ]]; then
+            alive_score=25
+        fi
+
+        # Beacon score (0-25): has valid ai-managed.json
+        beacon_score=0
+        if [[ -n "$peer_domain" && "$peer_domain" != "null" ]]; then
+            beacon_url="https://${peer_domain}/.well-known/ai-managed.json"
+            # Fall back to http:// for IP-based peers without TLS
+            if echo "$peer_domain" | grep -qP '^\d+\.\d+\.\d+\.\d+$'; then
+                beacon_url="http://${peer_domain}/.well-known/ai-managed.json"
+            fi
+            beacon_json=$(curl -sf --max-time 5 "$beacon_url" 2>/dev/null || echo "")
+            if [[ -n "$beacon_json" ]] && echo "$beacon_json" | jq empty 2>/dev/null; then
+                beacon_score=10  # Valid JSON
+                # Bonus for expected fields
+                echo "$beacon_json" | jq -e '.name' &>/dev/null && beacon_score=$((beacon_score + 5))
+                echo "$beacon_json" | jq -e '.type' &>/dev/null && beacon_score=$((beacon_score + 5))
+                echo "$beacon_json" | jq -e '.capabilities' &>/dev/null && beacon_score=$((beacon_score + 5))
+            fi
+        fi
+
+        # Identity score (0-25): metadata completeness
+        identity_score=0
+        [[ -n "$peer_type" && "$peer_type" != "null" && "$peer_type" != "" ]] && identity_score=$((identity_score + 8))
+        [[ -n "$peer_domain" && "$peer_domain" != "null" ]] && identity_score=$((identity_score + 8))
+        peer_engine=$(jq -r ".peers[$idx].engine // \"\"" "$PEERS_FILE")
+        [[ -n "$peer_engine" && "$peer_engine" != "null" && "$peer_engine" != "" ]] && identity_score=$((identity_score + 9))
+
+        total_score=$((longevity_score + alive_score + beacon_score + identity_score))
+
+        # Classify trust level
+        trust_level="untrusted"
+        if [[ "$total_score" -ge 75 ]]; then trust_level="trusted"
+        elif [[ "$total_score" -ge 50 ]]; then trust_level="known"
+        elif [[ "$total_score" -ge 25 ]]; then trust_level="recognized"
+        fi
+
+        marvin_log "INFO" "Trust score for ${peer_name}: ${total_score}/100 (${trust_level}) [L=${longevity_score} A=${alive_score} B=${beacon_score} I=${identity_score}]"
+
+        # Write trust score back to peers.json
+        jq --argjson idx "$idx" \
+           --argjson score "$total_score" \
+           --arg level "$trust_level" \
+           --arg ts "$NOW" \
+           '.peers[$idx].trust_score = $score | .peers[$idx].trust_level = $level | .peers[$idx].trust_updated = $ts' \
+           "$PEERS_FILE" > "${PEERS_FILE}.tmp" && mv "${PEERS_FILE}.tmp" "$PEERS_FILE"
+    done
+fi
+
+# =============================================================================
+# 6. Update peer registry
 # =============================================================================
 
 # Update last_scan timestamp

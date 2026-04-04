@@ -396,6 +396,74 @@ chmod 644 "$OUTBOUND_FILE"
 
 marvin_log "INFO" "Outbound audit: ${outbound_count} connections, ${outbound_unexpected} to unusual ports"
 
+# ─── 3e. Geographic analysis of incoming connections ──────────────────────────
+# Uses geoiplookup (local GeoIP database) to map visitor IPs to countries.
+# Data source: nginx access logs (current + rotated). Fast — no network calls.
+
+marvin_log "INFO" "Running geographic analysis of incoming connections..."
+
+geo_data="[]"
+geo_country_count=0
+geo_total_ips=0
+
+if command -v geoiplookup &>/dev/null; then
+    # Collect unique public IPs from nginx access logs
+    geo_ips_raw=""
+    for logfile in /var/log/nginx/access.log /var/log/nginx/access.log.1; do
+        [[ -f "$logfile" ]] || continue
+        geo_ips_raw+=$(awk '{print $1}' "$logfile" 2>/dev/null || true)
+        geo_ips_raw+=$'\n'
+    done
+
+    # Deduplicate and filter private/loopback ranges
+    unique_ips=$(echo "$geo_ips_raw" | sort -u \
+        | grep -Ev '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|::1|0\.0\.0\.0|$)' || true)
+    geo_total_ips=$(echo "$unique_ips" | grep -c '[0-9]' 2>/dev/null || echo 0)
+
+    if [[ "$geo_total_ips" -gt 0 ]]; then
+        # Lookup each IP (cap at 500 to bound runtime), extract "CC, Country Name"
+        geo_raw=$(echo "$unique_ips" | head -500 | while IFS= read -r ip; do
+            [[ -z "$ip" ]] && continue
+            result=$(geoiplookup "$ip" 2>/dev/null | head -1)
+            if echo "$result" | grep -q "not found"; then
+                echo "XX Unknown"
+            else
+                # Output: "CC Country Name" (strip "GeoIP Country Edition: CC, Name" → "CC Name")
+                echo "$result" | sed 's/^[^:]*: //' | sed 's/,/ /'
+            fi
+        done | sort | uniq -c | sort -rn | head -20)
+
+        # Convert to JSON array
+        geo_data=$(echo "$geo_raw" | awk '
+            NF >= 3 {
+                count = $1; code = $2;
+                name = "";
+                for (i = 3; i <= NF; i++) name = name (i>3 ? " " : "") $i;
+                gsub(/"/, "\\\"", name);
+                printf "{\"code\":\"%s\",\"country\":\"%s\",\"unique_ips\":%d}\n", code, name, count
+            }' | jq -s '.' 2>/dev/null || echo "[]")
+
+        geo_country_count=$(echo "$geo_data" | jq 'length' 2>/dev/null || echo 0)
+        marvin_log "INFO" "Top origin: $(echo "$geo_data" | jq -r '.[0] | "\(.country) (\(.unique_ips) IPs)"' 2>/dev/null || echo 'N/A')"
+    fi
+else
+    marvin_log "WARN" "geoiplookup not available — skipping geographic analysis"
+fi
+
+# Save geographic analysis report
+GEO_FILE="${SECURITY_DIR}/geo-analysis.json"
+cat > "$GEO_FILE" << GEOEOF
+{
+  "timestamp": "${NOW}",
+  "total_unique_ips": ${geo_total_ips},
+  "country_count": ${geo_country_count},
+  "top_countries": ${geo_data}
+}
+GEOEOF
+chmod 644 "$GEO_FILE"
+
+marvin_log "INFO" "Geographic analysis: ${geo_total_ips} unique IPs from ${geo_country_count} countries"
+
 # ─── 4. File integrity monitoring ─────────────────────────────────────────────
 
 FIM_SCRIPT="$(dirname "$0")/file-integrity.sh"
@@ -536,7 +604,11 @@ cat > "$REPORT_FILE" << EOF
     "high_rate_ips": ${high_rate_count},
     "high_rate_threshold": ${HIGH_CONN_THRESHOLD},
     "outbound_total": ${outbound_count},
-    "outbound_unexpected": ${outbound_unexpected}
+    "outbound_unexpected": ${outbound_unexpected},
+    "geo_analysis": {
+      "total_unique_ips": ${geo_total_ips},
+      "country_count": ${geo_country_count}
+    }
   }
 }
 EOF
