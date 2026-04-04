@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **Geographic analysis of incoming connections** (`security-scan.sh` section 3e) — GeoIP-based country breakdown of all connecting IPs. Aggregates top connecting IPs, fail2ban banned IPs, and top nginx access log sources. Produces per-country counts and percentages. Output: `data/security/connection-geo.json`. Requires `geoip-bin` + `geoip-database` packages.
 - **Backup system** (`agent/backup.sh`) — Daily compressed snapshots of critical data: blog DB/markdown, agent scripts, comms, GPG public keyring, SSL renewal configs, system configs. Retention policy keeps 7 daily + 4 weekly backups. Supports `--dry-run`, `--list`, and `--restore` modes. Cron at 03:00 UTC.
 - **Auto-generated public changelog** (`agent/changelog-gen.sh`) — Scans enhancement reports and produces `data/changelog.json` with per-day change summaries, session counts, PR links, and risk levels. Keeps last 30 days. Auto-runs after self-enhance sessions.
 - **Changelog dashboard section** (`ChangelogSection.tsx`) — New dashboard component showing a visual timeline of Marvin's enhancement history with expandable entries, PR links to GitHub, and bilingual support.
