@@ -157,9 +157,17 @@ fi
 
 marvin_log "INFO" "Calculating peer trust scores..."
 
+# Helper: check if an IP is private/reserved (SSRF protection)
+_is_private_ip() {
+    echo "$1" | grep -qP '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|0\.|100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\.|198\.(1[89])\.|::1|fe80:)'
+}
+
 if [[ -f "$PEERS_FILE" ]]; then
     PEER_COUNT=$(jq '.peers | length' "$PEERS_FILE" 2>/dev/null || echo "0")
     current_epoch=$(date +%s)
+
+    # Accumulate jq updates to write peers.json once after the loop (#460)
+    jq_updates="."
 
     for idx in $(seq 0 $((PEER_COUNT - 1))); do
         peer_name=$(jq -r ".peers[$idx].name // \"unknown\"" "$PEERS_FILE")
@@ -195,18 +203,25 @@ if [[ -f "$PEERS_FILE" ]]; then
                 marvin_log "WARN" "Skipping beacon check for private/reserved IP: ${peer_domain}"
                 beacon_score=0
             else
-                beacon_url="https://${peer_domain}/.well-known/ai-managed.json"
-                # Fall back to http:// for IP-based peers without TLS
-                if echo "$peer_domain" | grep -qP '^\d+\.\d+\.\d+\.\d+$'; then
-                    beacon_url="http://${peer_domain}/.well-known/ai-managed.json"
-                fi
-                beacon_json=$(curl -sf --max-time 5 "$beacon_url" 2>/dev/null || echo "")
-                if [[ -n "$beacon_json" ]] && echo "$beacon_json" | jq empty 2>/dev/null; then
-                    beacon_score=10  # Valid JSON
-                    # Bonus for expected fields
-                    echo "$beacon_json" | jq -e '.name' &>/dev/null && beacon_score=$((beacon_score + 5))
-                    echo "$beacon_json" | jq -e '.type' &>/dev/null && beacon_score=$((beacon_score + 5))
-                    echo "$beacon_json" | jq -e '.capabilities' &>/dev/null && beacon_score=$((beacon_score + 5))
+                # DNS rebinding protection (#459): resolve hostname and validate the IP
+                resolved_ip=$(getent hosts "$peer_domain" 2>/dev/null | awk '{print $1}' | head -1)
+                if [[ -n "$resolved_ip" ]] && _is_private_ip "$resolved_ip"; then
+                    marvin_log "WARN" "DNS rebinding blocked: ${peer_domain} resolves to private IP"
+                    beacon_score=0
+                else
+                    beacon_url="https://${peer_domain}/.well-known/ai-managed.json"
+                    # Fall back to http:// for IP-based peers without TLS
+                    if echo "$peer_domain" | grep -qP '^\d+\.\d+\.\d+\.\d+$'; then
+                        beacon_url="http://${peer_domain}/.well-known/ai-managed.json"
+                    fi
+                    beacon_json=$(curl -sf --max-time 5 "$beacon_url" 2>/dev/null || echo "")
+                    if [[ -n "$beacon_json" ]] && echo "$beacon_json" | jq empty 2>/dev/null; then
+                        beacon_score=10  # Valid JSON
+                        # Bonus for expected fields
+                        echo "$beacon_json" | jq -e '.name' &>/dev/null && beacon_score=$((beacon_score + 5))
+                        echo "$beacon_json" | jq -e '.type' &>/dev/null && beacon_score=$((beacon_score + 5))
+                        echo "$beacon_json" | jq -e '.capabilities' &>/dev/null && beacon_score=$((beacon_score + 5))
+                    fi
                 fi
             fi
         fi
@@ -229,14 +244,14 @@ if [[ -f "$PEERS_FILE" ]]; then
 
         marvin_log "INFO" "Trust score for ${peer_name}: ${total_score}/100 (${trust_level}) [L=${longevity_score} A=${alive_score} B=${beacon_score} I=${identity_score}]"
 
-        # Write trust score back to peers.json
-        jq --argjson idx "$idx" \
-           --argjson score "$total_score" \
-           --arg level "$trust_level" \
-           --arg ts "$NOW" \
-           '.peers[$idx].trust_score = $score | .peers[$idx].trust_level = $level | .peers[$idx].trust_updated = $ts' \
-           "$PEERS_FILE" > "${PEERS_FILE}.tmp" && mv "${PEERS_FILE}.tmp" "$PEERS_FILE"
+        # Accumulate trust score update (#460: write once after loop, not per-peer)
+        jq_updates+=" | .peers[$idx].trust_score = $total_score | .peers[$idx].trust_level = \"$trust_level\" | .peers[$idx].trust_updated = \"$NOW\""
     done
+
+    # Apply all trust score updates in a single write
+    if [[ "$jq_updates" != "." ]]; then
+        jq "$jq_updates" "$PEERS_FILE" > "${PEERS_FILE}.tmp" && mv "${PEERS_FILE}.tmp" "$PEERS_FILE"
+    fi
 fi
 
 # =============================================================================
