@@ -9,11 +9,12 @@
 # The push client sends the ACTUAL bundle content, allowing external systems
 # to ingest Marvin's daily logs without polling the export API.
 #
-# Config: /home/marvin/git/config/push-endpoints.conf
+# Config: /home/marvin/git/config/push-endpoints.conf (chmod 600 recommended)
 #   Format: one endpoint per line, JSON object with url and optional auth:
 #     {"url": "https://example.com/ingest", "auth": "Bearer TOKEN"}
 #     {"url": "https://other.com/api/logs", "auth": "ApiKey SECRET"}
 #   Lines starting with # are comments. Blank lines are skipped.
+#   IMPORTANT: Auth tokens require HTTPS — HTTP endpoints with auth are rejected.
 #
 # Usage:
 #   export-push.sh                  # Push yesterday's bundle
@@ -56,6 +57,13 @@ if [[ ! -f "$PUSH_CONF" ]]; then
     marvin_log "INFO" "No push-endpoints.conf — nothing to push (create ${PUSH_CONF} to enable)"
     marvin_log "INFO" "=== EXPORT PUSH CLIENT COMPLETE (no endpoints configured) ==="
     exit 0
+fi
+
+# Check config file permissions — it may contain auth tokens (#464)
+conf_perms=$(stat -c "%a" "$PUSH_CONF" 2>/dev/null || echo "unknown")
+if [[ "$conf_perms" != "unknown" && "$conf_perms" != "600" && "$conf_perms" != "640" ]]; then
+    marvin_log "WARN" "push-endpoints.conf has permissions ${conf_perms} — should be 600 or 640 (contains auth tokens)"
+    marvin_log "WARN" "Fix with: chmod 600 ${PUSH_CONF}"
 fi
 
 if [[ ! -f "$BUNDLE_FILE" && ! -f "$BUNDLE_GZ" ]]; then
@@ -156,8 +164,13 @@ while IFS= read -r line; do
         curl_args+=(-H "Content-Encoding: gzip")
     fi
 
-    # Add auth header if configured
+    # Add auth header if configured — reject cleartext HTTP with auth (#463)
     if [[ -n "$endpoint_auth" ]]; then
+        if [[ "$endpoint_url" =~ ^http:// ]]; then
+            marvin_log "WARN" "Skipping endpoint — auth token over plaintext HTTP is not allowed: ${endpoint_url:0:60}"
+            push_fail=$((push_fail + 1))
+            continue
+        fi
         curl_args+=(-H "Authorization: ${endpoint_auth}")
     fi
 
