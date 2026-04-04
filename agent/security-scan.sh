@@ -429,15 +429,14 @@ if command -v geoiplookup &>/dev/null; then
             fi
         done | sort | uniq -c | sort -rn | head -20)
 
-        # Convert to JSON array
+        # Convert to JSON array (jq handles all escaping — no manual JSON in awk)
         geo_data=$(echo "$geo_raw" | awk '
             NF >= 3 {
                 count = $1; code = $2;
                 name = "";
                 for (i = 3; i <= NF; i++) name = name (i>3 ? " " : "") $i;
-                gsub(/"/, "\\\"", name);
-                printf "{\"code\":\"%s\",\"country\":\"%s\",\"unique_ips\":%d}\n", code, name, count
-            }' | jq -s '.' 2>/dev/null || echo "[]")
+                printf "%s\t%s\t%d\n", code, name, count
+            }' | jq -Rn '[inputs | split("\t") | {code: .[0], country: .[1], unique_ips: (.[2] | tonumber)}]' 2>/dev/null || echo "[]")
 
         geo_country_count=$(echo "$geo_data" | jq 'length' 2>/dev/null || echo 0)
         marvin_log "INFO" "Top origin: $(echo "$geo_data" | jq -r '.[0] | "\(.country) (\(.unique_ips) IPs)"' 2>/dev/null || echo 'N/A')"
