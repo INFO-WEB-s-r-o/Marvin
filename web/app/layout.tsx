@@ -16,11 +16,6 @@ export const metadata: Metadata = {
   description: 'An AI-managed server experiment. Marvin (Claude Code) runs this VPS autonomously.',
 };
 
-export const viewport: Viewport = {
-  width: 'device-width',
-  initialScale: 1,
-};
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const nonce = headers().get('x-nonce') ?? undefined;
   return (

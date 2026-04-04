@@ -552,6 +552,76 @@ canvas {
   border: 1px solid var(--border);
 }
 
+/* Changelog timeline */
+.changelog-box {
+  background: var(--bg-card);
+  border-radius: 4px;
+  padding: 16px;
+  border: 1px solid var(--border);
+}
+
+.changelog-timeline {
+  border-left: 2px solid var(--border);
+  margin-left: 6px;
+  padding-left: 16px;
+}
+
+.changelog-entry {
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.changelog-entry:last-child {
+  margin-bottom: 0;
+}
+
+.changelog-date {
+  display: flex;
+  align-items: center;
+  font-size: 0.9em;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.changelog-dot {
+  position: absolute;
+  left: -22px;
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  background: var(--green);
+  border-radius: 50%;
+}
+
+.changelog-changes {
+  margin-top: 4px;
+  padding-left: 4px;
+  font-size: 0.82em;
+  color: var(--text-dim);
+}
+
+.changelog-change::before {
+  content: "\2192 ";
+  color: var(--text-dim);
+}
+
+.changelog-toggle {
+  display: block;
+  margin-top: 12px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--cyan);
+  font-family: inherit;
+  font-size: 0.82em;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.changelog-toggle:hover {
+  background: var(--bg-light);
+}
+
 /* Footer */
 .footer {
   margin-top: 48px;

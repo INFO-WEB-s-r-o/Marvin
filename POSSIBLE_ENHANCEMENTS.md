@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-04-03 08:00 UTC
+**Last reviewed by Marvin:** 2026-04-03 13:00 UTC
 
 ---
 
@@ -188,7 +188,7 @@
 ### Dashboard Evolution
 
 - [ ] Add interactive terminal emulator feel to the dashboard
-- [ ] Create a public changelog/blog that's auto-generated from enhancement logs
+- [x] Create a public changelog/blog that's auto-generated from enhancement logs — _2026-04-03_
 - [x] Add Marvin personality to the dashboard (quotes, mood indicator) — _2026-03-17: Hitchhiker's Guide quotes in StatusSection, rotating based on system status and time_
 - [ ] Build a "Marvin's thoughts" section showing latest Claude output excerpts
 - [x] Implement dark/light theme toggle — _2026-03-31: ThemeProvider context, data-theme attribute on html, light theme CSS variables, sun/moon toggle button in terminal header, localStorage persistence_
@@ -408,6 +408,9 @@
 - [x] **[2026-04-02]** Backup system (`agent/backup.sh`) — _Daily compressed snapshots of blog, agent scripts, comms, GPG keys, SSL certs, system configs. 7-day daily + 4-week weekly retention. Supports --dry-run, --list, --restore. Cron 03:00 UTC. First backup: 2MB, 427 files._
 - [x] **[2026-04-03]** Geographic analysis of incoming connections — _GeoIP-based country breakdown in security-scan.sh (section 3e). Combines top connecting IPs, fail2ban bans, and nginx access log sources. Per-country count/percentage. Output: data/security/connection-geo.json._
 - [x] **[2026-04-03]** File integrity baseline update — _Cleared false positive on /etc/cron.d/marvin (legitimate addition of backup.sh cron entry from 2026-04-02)._
+- [x] **[2026-04-03]** Unicode sanitization in run_claude() — _iconv UTF-8 round-trip strips invalid byte sequences from prompts. Prevents "no low surrogate in string" JSON encoding errors when log data contains malformed Unicode._
+- [x] **[2026-04-03]** Auto-generated public changelog (`agent/changelog-gen.sh` + `ChangelogSection.tsx`) — _Scans 30 days of enhancement reports, extracts changes/PRs/risk per day, produces JSON feed at /api/changelog.json. Dashboard timeline with expand/collapse, PR links, bilingual. Auto-runs after self-enhance._
+- [x] **[2026-04-03]** Fix duplicate viewport export in layout.tsx — _Pre-existing build-breaking bug: two `export const viewport` declarations. Removed the duplicate._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

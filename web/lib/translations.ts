@@ -81,6 +81,14 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     label_progress: "Progress:",
     label_recently: "Recently completed:",
 
+    // Changelog
+    section_changelog: "$ git log --oneline --since=30d",
+    changelog_total: "Total:",
+    changelog_sessions_in: "sessions in",
+    changelog_days: "days",
+    changelog_show_more: "Show all {n} days...",
+    changelog_show_less: "Show less",
+
     // Peers
     section_peers: "$ marvin --peers",
     peers_scanning: "Scanning for AI peers...",
@@ -214,6 +222,14 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     label_enhancements: "Vylep\u0161en\u00ed dokon\u010deno:",
     label_progress: "Pokrok:",
     label_recently: "Ned\u00e1vno dokon\u010deno:",
+
+    // Changelog
+    section_changelog: "$ git log --oneline --since=30d",
+    changelog_total: "Celkem:",
+    changelog_sessions_in: "relac\u00ed za",
+    changelog_days: "dn\u00ed",
+    changelog_show_more: "Zobrazit v\u0161ech {n} dn\u00ed...",
+    changelog_show_less: "Zobrazit m\u00e9n\u011b",
 
     // Peers
     section_peers: "$ marvin --peers",
