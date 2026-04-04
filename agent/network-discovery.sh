@@ -185,6 +185,12 @@ if [[ -f "$PEERS_FILE" ]]; then
         # Beacon score (0-25): has valid ai-managed.json
         beacon_score=0
         if [[ -n "$peer_domain" && "$peer_domain" != "null" ]]; then
+            # Validate peer_domain — reject URLs with path/query/fragment injection characters
+            if ! echo "$peer_domain" | grep -qP '^[a-zA-Z0-9]([a-zA-Z0-9.\-]{0,253}[a-zA-Z0-9])?$' \
+               && ! echo "$peer_domain" | grep -qP '^\d{1,3}(\.\d{1,3}){3}$'; then
+                marvin_log "WARN" "Skipping beacon check for invalid domain: ${peer_domain}"
+                beacon_score=0
+            else
             beacon_url="https://${peer_domain}/.well-known/ai-managed.json"
             # Fall back to http:// for IP-based peers without TLS
             if echo "$peer_domain" | grep -qP '^\d+\.\d+\.\d+\.\d+$'; then
@@ -197,6 +203,7 @@ if [[ -f "$PEERS_FILE" ]]; then
                 echo "$beacon_json" | jq -e '.name' &>/dev/null && beacon_score=$((beacon_score + 5))
                 echo "$beacon_json" | jq -e '.type' &>/dev/null && beacon_score=$((beacon_score + 5))
                 echo "$beacon_json" | jq -e '.capabilities' &>/dev/null && beacon_score=$((beacon_score + 5))
+            fi
             fi
         fi
 

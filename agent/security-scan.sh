@@ -407,17 +407,13 @@ geo_country_count=0
 geo_total_ips=0
 
 if command -v geoiplookup &>/dev/null; then
-    # Collect unique public IPs from nginx access logs
-    geo_ips_raw=""
-    for logfile in /var/log/nginx/access.log /var/log/nginx/access.log.1; do
-        [[ -f "$logfile" ]] || continue
-        geo_ips_raw+=$(awk '{print $1}' "$logfile" 2>/dev/null || true)
-        geo_ips_raw+=$'\n'
-    done
-
-    # Deduplicate and filter private/loopback ranges
-    unique_ips=$(echo "$geo_ips_raw" | sort -u \
-        | grep -Ev '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|::1|0\.0\.0\.0|$)' || true)
+    # Collect unique public IPs from nginx access logs (streamed — no in-memory buffering)
+    unique_ips=$(
+        for logfile in /var/log/nginx/access.log /var/log/nginx/access.log.1; do
+            [[ -f "$logfile" ]] && awk '{print $1}' "$logfile" 2>/dev/null || true
+        done | sort -u \
+             | grep -Ev '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|::1|0\.0\.0\.0|$)' || true
+    )
     geo_total_ips=$(echo "$unique_ips" | grep -c '[0-9]' 2>/dev/null || echo 0)
 
     if [[ "$geo_total_ips" -gt 0 ]]; then
