@@ -396,6 +396,94 @@ chmod 644 "$OUTBOUND_FILE"
 
 marvin_log "INFO" "Outbound audit: ${outbound_count} connections, ${outbound_unexpected} to unusual ports"
 
+# ─── 3e. Geographic analysis of incoming connections ─────────────────────────
+# Uses GeoIP database to map connecting IPs to countries. Combines:
+# top source IPs (3c), fail2ban banned IPs, and top nginx access log sources.
+# Output: connection-geo.json with per-country breakdown.
+
+marvin_log "INFO" "Analyzing geographic origin of connections..."
+
+geo_json="[]"
+geo_total=0
+geo_top_country="Unknown"
+geo_available=false
+
+if command -v geoiplookup &>/dev/null; then
+    geo_available=true
+
+    _geo_ips_file=$(mktemp)
+    _geo_ips_uniq=$(mktemp)
+    _geo_results=$(mktemp)
+    _geo_prev_trap=$(trap -p EXIT || true)
+    trap 'rm -f "$_geo_ips_file" "$_geo_ips_uniq" "$_geo_results"; eval "$_geo_prev_trap"' EXIT
+
+    # Source 1: Top connecting IPs (from section 3c above)
+    echo "$top_sources_json" | jq -r '.[].ip' 2>/dev/null >> "$_geo_ips_file" || true
+
+    # Source 2: Fail2ban banned IPs (all active jails)
+    for _jail in $(fail2ban-client status 2>/dev/null | grep "Jail list" | sed 's/.*://;s/,/ /g' || true); do
+        fail2ban-client status "$_jail" 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' >> "$_geo_ips_file" || true
+    done
+
+    # Source 3: Top nginx access log sources (last 50k lines to avoid scanning huge logs)
+    if [[ -f /var/log/nginx/access.log ]]; then
+        tail -n 50000 /var/log/nginx/access.log 2>/dev/null \
+            | awk '{print $1}' \
+            | sort | uniq -c | sort -rn | head -100 | awk '{print $2}' >> "$_geo_ips_file" || true
+    fi
+
+    # Deduplicate and exclude private/loopback IPs
+    sort -u "$_geo_ips_file" \
+        | grep -vE '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|0\.|::)' \
+        > "$_geo_ips_uniq" || true
+    geo_total=$(wc -l < "$_geo_ips_uniq" | tr -d ' ')
+
+    # GeoIP lookup for each IP, aggregate by country (cap at 200 IPs to bound runtime)
+    while IFS= read -r _ip; do
+        [[ -z "$_ip" ]] && continue
+        _country=$(geoiplookup "$_ip" 2>/dev/null | head -1 | sed 's/GeoIP Country Edition: //' || echo "??, Unknown")
+        if [[ "$_country" == *"can't resolve"* || "$_country" == *"not found"* ]]; then
+            _country="??, Unknown"
+        fi
+        echo "$_country"
+    done < <(head -200 "$_geo_ips_uniq") > "$_geo_results"
+
+    # Build country JSON array sorted by count
+    if [[ -s "$_geo_results" ]]; then
+        geo_json=$(sort "$_geo_results" | uniq -c | sort -rn | head -30 \
+            | awk -v total="$geo_total" '{
+                count=$1; code=substr($2, 1, 2);
+                $1=""; $2="";
+                name=$0; gsub(/^[, ]+/, "", name);
+                gsub(/\\/, "\\\\", name); gsub(/"/, "\\\"", name);
+                pct=(total>0) ? sprintf("%.1f", count*100/total) : "0.0";
+                printf "{\"code\":\"%s\",\"name\":\"%s\",\"count\":%d,\"percent\":%s}\n", code, name, count, pct
+            }' | jq -s '.' 2>/dev/null || echo "[]")
+
+        geo_top_country=$(echo "$geo_json" | jq -r '.[0].name // "Unknown"' 2>/dev/null || echo "Unknown")
+    fi
+
+    rm -f "$_geo_ips_file" "$_geo_ips_uniq" "$_geo_results"
+    eval "$_geo_prev_trap"
+fi
+
+# Save geographic analysis
+GEO_FILE="${SECURITY_DIR}/connection-geo.json"
+geo_country_count=$(echo "$geo_json" | jq 'length' 2>/dev/null || echo 0)
+cat > "$GEO_FILE" << GEOEOF
+{
+  "timestamp": "${NOW}",
+  "geo_available": ${geo_available},
+  "total_unique_ips": ${geo_total},
+  "country_count": ${geo_country_count},
+  "top_country": $(echo "$geo_top_country" | jq -Rs '.' 2>/dev/null || echo '"Unknown"'),
+  "countries": ${geo_json}
+}
+GEOEOF
+chmod 644 "$GEO_FILE"
+
+marvin_log "INFO" "Geographic analysis: ${geo_total} unique IPs from ${geo_country_count} countries (top: ${geo_top_country})"
+
 # ─── 4. File integrity monitoring ─────────────────────────────────────────────
 
 FIM_SCRIPT="$(dirname "$0")/file-integrity.sh"
@@ -536,7 +624,11 @@ cat > "$REPORT_FILE" << EOF
     "high_rate_ips": ${high_rate_count},
     "high_rate_threshold": ${HIGH_CONN_THRESHOLD},
     "outbound_total": ${outbound_count},
-    "outbound_unexpected": ${outbound_unexpected}
+    "outbound_unexpected": ${outbound_unexpected},
+    "geo_available": ${geo_available},
+    "geo_unique_ips": ${geo_total},
+    "geo_countries": ${geo_country_count},
+    "geo_top_country": $(echo "$geo_top_country" | jq -Rs '.' 2>/dev/null || echo '"Unknown"')
   }
 }
 EOF

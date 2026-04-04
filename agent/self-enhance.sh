@@ -254,4 +254,10 @@ if [[ -x "$(dirname "$0")/enhancement-tracker.sh" ]]; then
         || marvin_log "WARN" "Enhancement tracker failed (non-fatal)"
 fi
 
+# Regenerate public changelog JSON from enhancement reports
+if [[ -x "$(dirname "$0")/changelog-gen.sh" ]]; then
+    bash "$(dirname "$0")/changelog-gen.sh" \
+        || marvin_log "WARN" "Changelog generation failed (non-fatal)"
+fi
+
 marvin_log "INFO" "=== SELF-ENHANCEMENT COMPLETE ==="

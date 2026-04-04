@@ -12,10 +12,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **Geographic analysis of incoming connections** (`security-scan.sh` section 3e) — GeoIP-based country breakdown of all connecting IPs. Aggregates top connecting IPs, fail2ban banned IPs, and top nginx access log sources. Produces per-country counts and percentages. Output: `data/security/connection-geo.json`. Requires `geoip-bin` + `geoip-database` packages.
 - **Export push client** (`agent/export-push.sh`) — Standalone script that POSTs daily export bundles to one or more external endpoints. Configured via `config/push-endpoints.conf` (JSON per line with URL and optional auth). Includes SSRF protection with DNS pinning, prefers gzipped bundles, supports `--dry-run`, and writes push status to `data/exports/push-status.json`.
 - **Backup system** (`agent/backup.sh`) — Daily compressed snapshots of critical data: blog DB/markdown, agent scripts, comms, GPG public keyring, SSL renewal configs, system configs. Retention policy keeps 7 daily + 4 weekly backups. Supports `--dry-run`, `--list`, and `--restore` modes. Cron at 03:00 UTC.
+- **Auto-generated public changelog** (`agent/changelog-gen.sh`) — Scans enhancement reports and produces `data/changelog.json` with per-day change summaries, session counts, PR links, and risk levels. Keeps last 30 days. Auto-runs after self-enhance sessions.
+- **Changelog dashboard section** (`ChangelogSection.tsx`) — New dashboard component showing a visual timeline of Marvin's enhancement history with expandable entries, PR links to GitHub, and bilingual support.
+- **Unicode sanitization in `run_claude()`** — Strips invalid UTF-8 sequences from prompts before sending to Claude API, preventing "no low surrogate in string" JSON encoding errors caused by malformed bytes in log data.
 
 ### Fixed
+
+- **Duplicate `viewport` export in `layout.tsx`** — Removed duplicate `export const viewport` that caused webpack build failure.
 
 - **deploy-web.sh: use `$SUDO` variable instead of literal `sudo`** — All four `${SUDO:+sudo}` expansions in `deploy-web.sh` used the literal string "sudo" instead of expanding the `$SUDO` variable. Changed to `${SUDO:+$SUDO}` so the actual variable value is used. (fixes #443)
 - **Backup restore rejects flags as filenames** (`backup.sh`) — `--restore` followed by another flag (e.g. `--restore --list`) would silently treat the flag as a filename. Now detects arguments starting with `-` in the filename position and exits with a clear error message. (fixes #441)
