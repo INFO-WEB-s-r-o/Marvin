@@ -2,6 +2,13 @@
 # =============================================================================
 # Marvin — Common utilities shared across all agent scripts
 # =============================================================================
+# This file is the single entry point sourced by all agent scripts.
+# Functions are organized into lib/ modules:
+#   lib/logging.sh  — marvin_log(), marvin_log_json(), marvin_error_trap()
+#   lib/metrics.sh  — collect_metrics(), append_metrics()
+#   lib/claude.sh   — run_claude(), check_claude()
+#   lib/github.sh   — GitHub API, GPG signing (sourced separately by scripts)
+# =============================================================================
 
 MARVIN_DIR="/home/marvin/git"
 DATA_DIR="${MARVIN_DIR}/data"
@@ -53,229 +60,15 @@ marvin_is_dry_run() {
 # Ensure directories exist
 mkdir -p "$LOGS_DIR" "$METRICS_DIR" "$BLOG_DIR" "$COMMS_DIR" "$ENHANCE_DIR"
 
-# Logging
-marvin_log() {
-    local level="${1:-INFO}"
-    local message="${2:-}"
-    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] [${level}] ${message}" | tee -a "${LOGS_DIR}/${TODAY}.log"
-}
+# ─── Source library modules ───────────────────────────────────────────────────
+# Order matters: logging first (used by metrics and claude), then metrics
+# (used by claude's collect_metrics), then claude.
+_MARVIN_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" && pwd)"
+source "${_MARVIN_LIB_DIR}/logging.sh"
+source "${_MARVIN_LIB_DIR}/metrics.sh"
+source "${_MARVIN_LIB_DIR}/claude.sh"
 
-# ─── Structured JSON logging ─────────────────────────────────────────────────
-# Outputs JSON log lines to data/logs/YYYY-MM-DD-structured.jsonl.
-# Also calls marvin_log() for backward compatibility with text log consumers.
-#
-# Usage:
-#   marvin_log_json "INFO" "component" "message" '{"key":"value"}'
-#
-# Fields: timestamp, level, component, message, data (optional JSON object)
-# The component field identifies which script/subsystem emitted the log.
-
-marvin_log_json() {
-    local level="${1:-INFO}"
-    local component="${2:-unknown}"
-    local message="${3:-}"
-    local extra_data="${4:-}"
-
-    # Also emit text log for backward compat
-    marvin_log "$level" "[${component}] ${message}"
-
-    # Build structured JSON line
-    local json_file="${LOGS_DIR}/${TODAY}-structured.jsonl"
-    local json_line
-    if [[ -n "$extra_data" ]] && echo "$extra_data" | jq empty 2>/dev/null; then
-        json_line=$(jq -nc \
-            --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg lvl "$level" \
-            --arg comp "$component" \
-            --arg msg "$message" \
-            --argjson data "$extra_data" \
-            '{timestamp: $ts, level: $lvl, component: $comp, message: $msg, data: $data}' 2>/dev/null)
-    else
-        json_line=$(jq -nc \
-            --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg lvl "$level" \
-            --arg comp "$component" \
-            --arg msg "$message" \
-            '{timestamp: $ts, level: $lvl, component: $comp, message: $msg}' 2>/dev/null)
-    fi
-
-    if [[ -n "$json_line" ]]; then
-        echo "$json_line" >> "$json_file" 2>/dev/null || true
-    fi
-}
-
-# ─── Reusable trap error handler ─────────────────────────────────────────────
-# Logs file:line and failed command when a command fails under `set -e`.
-# Scripts can enable it alongside their existing EXIT traps:
-#   trap marvin_error_trap ERR
-# The ERR trap fires first, logs the error, then the EXIT trap runs for cleanup.
-marvin_error_trap() {
-    local exit_code=$?
-    local line_no="${BASH_LINENO[0]:-?}"
-    local script_name
-    script_name=$(basename "${BASH_SOURCE[1]:-unknown}" 2>/dev/null || echo "unknown")
-    local failed_cmd="${BASH_COMMAND:-unknown}"
-    marvin_log "ERROR" "${script_name}:${line_no} — command failed (exit ${exit_code}): ${failed_cmd}" 2>/dev/null || true
-}
-
-# Collect current system metrics as JSON
-collect_metrics() {
-    local cpu_usage
-    cpu_usage=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' 2>/dev/null || echo "0")
-    
-    local mem_info
-    mem_info=$(free -m | awk 'NR==2{printf "{\"total\":%s,\"used\":%s,\"free\":%s,\"available\":%s}", $2, $3, $4, $7}')
-    
-    local swap_info
-    swap_info=$(free -m | awk 'NR==3{printf "{\"total\":%s,\"used\":%s,\"free\":%s}", $2, $3, $4}')
-    
-    local disk_info
-    disk_info=$(df -m / | awk 'NR==2{printf "{\"total\":%s,\"used\":%s,\"available\":%s,\"percent\":\"%s\"}", $2, $3, $4, $5}')
-    
-    local load_avg
-    load_avg=$(cat /proc/loadavg | awk '{printf "{\"1min\":%s,\"5min\":%s,\"15min\":%s}", $1, $2, $3}')
-    
-    local uptime_seconds
-    uptime_seconds=$(cat /proc/uptime | cut -d' ' -f1 | cut -d'.' -f1)
-    
-    local process_count
-    process_count=$(ps aux | wc -l)
-    
-    local fail2ban_banned
-    fail2ban_banned=$(fail2ban-client status sshd 2>/dev/null | grep "Currently banned" | awk '{print $NF}' || echo "0")
-
-    # Network I/O: bytes received/transmitted on primary interface
-    local net_iface net_info
-    net_iface=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $5; exit}' || echo "")
-    if [[ -n "$net_iface" ]]; then
-        net_info=$(awk -v iface="${net_iface}:" -v name="${net_iface}" \
-            '$1==iface {printf "{\"interface\":\"%s\",\"rx_bytes\":%s,\"tx_bytes\":%s,\"rx_packets\":%s,\"tx_packets\":%s}", name, $2, $10, $3, $11}' \
-            /proc/net/dev 2>/dev/null || echo '{}')
-    else
-        net_info='{}'
-    fi
-
-    cat << EOF
-{
-  "timestamp": "${NOW}",
-  "uptime_seconds": ${uptime_seconds},
-  "cpu_percent": ${cpu_usage},
-  "memory": ${mem_info},
-  "swap": ${swap_info},
-  "disk": ${disk_info},
-  "load_average": ${load_avg},
-  "process_count": ${process_count},
-  "fail2ban_banned": ${fail2ban_banned},
-  "network": ${net_info},
-  "kernel": "$(uname -r | cut -d'-' -f1)"
-}
-EOF
-}
-
-# Run Claude Code with a prompt file and context
-run_claude() {
-    local task_name="$1"
-    local prompt="$2"
-    local run_log="${LOGS_DIR}/${TODAY}-${task_name}-${TIMESTAMP}.md"
-    
-    # Use >&2 for log calls so they don't leak into captured stdout
-    marvin_log "INFO" "Starting Claude run: ${task_name}" >&2
-
-    # Collect system context to prepend
-    local system_context
-    system_context=$(collect_metrics)
-    
-    local full_prompt="## Current System State
-\`\`\`json
-${system_context}
-\`\`\`
-
-## Today's Date: ${TODAY}
-
-## Task: ${task_name}
-
-${prompt}"
-
-    # Guard against context overflow: truncate if prompt exceeds ~400K chars (~100K tokens)
-    local prompt_len=${#full_prompt}
-    local max_chars=400000
-    if [[ "$prompt_len" -gt "$max_chars" ]]; then
-        marvin_log "WARN" "Prompt too large (${prompt_len} chars) — truncating to ${max_chars}" >&2
-        full_prompt="${full_prompt:0:$max_chars}
-
---- TRUNCATED: prompt exceeded ${max_chars} char limit (was ${prompt_len}) ---"
-    fi
-    marvin_log "INFO" "Prompt size: ${prompt_len} chars (~$((prompt_len / 4)) tokens)" >&2
-
-    # Run Claude Code in non-interactive mode
-    # Use stdin pipe to avoid "Argument list too long" with large prompts
-    local output
-    local exit_code
-    local start_time
-    start_time=$(date +%s)
-
-    # Capture exit code properly — the old `|| true` pattern masked failures,
-    # making exit_code always 0. This pattern preserves the real exit code
-    # while preventing set -e from killing the script.
-    output=$(printf '%s' "${full_prompt}" | claude -p 2>&1) && exit_code=$? || exit_code=$?
-    local end_time
-    end_time=$(date +%s)
-    local duration=$((end_time - start_time))
-
-    if [[ "$exit_code" -ne 0 ]]; then
-        marvin_log "WARN" "Claude exited with code ${exit_code} for task: ${task_name}" >&2
-    fi
-    
-    # Log the full interaction
-    cat > "$run_log" << EOF
-# Marvin Run: ${task_name}
-- **Date**: ${NOW}
-- **Duration**: ${duration}s
-- **Exit Code**: ${exit_code}
-
-## Prompt
-\`\`\`
-${full_prompt}
-\`\`\`
-
-## Response
-${output}
-
----
-*Run ID: ${TIMESTAMP} | Task: ${task_name}*
-EOF
-    
-    marvin_log "INFO" "Claude run complete: ${task_name} (${duration}s, exit=${exit_code})" >&2
-
-    # Track Claude API usage for analytics (Phase 2 roadmap)
-    # Date-sharded files prevent unbounded growth (one file per day)
-    local output_len=${#output}
-    local usage_file="${METRICS_DIR}/claude-usage-${TODAY}.jsonl"
-    jq -nc \
-        --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-        --arg task "$task_name" \
-        --argjson duration "$duration" \
-        --argjson prompt_chars "$prompt_len" \
-        --argjson output_chars "$output_len" \
-        --argjson exit_code "$exit_code" \
-        '{timestamp: $ts, task: $task, duration_s: $duration, prompt_chars: $prompt_chars, output_chars: $output_chars, exit_code: $exit_code}' \
-        >> "$usage_file" 2>/dev/null || true
-
-    echo "$output"
-}
-
-# Append to daily metrics history
-append_metrics() {
-    local metrics="$1"
-    local history_file="${METRICS_DIR}/${TODAY}.jsonl"
-    # Compact to single line for JSONL format (one JSON object per line)
-    echo "$metrics" | jq -c '.' >> "$history_file" 2>/dev/null || \
-        echo "$metrics" | tr -d '\n' >> "$history_file"
-
-    # Also update latest.json
-    echo "$metrics" | jq '.' > "${METRICS_DIR}/latest.json" 2>/dev/null || \
-        echo "$metrics" > "${METRICS_DIR}/latest.json"
-}
+# ─── Service management ──────────────────────────────────────────────────────
 
 # Graceful nginx reload — validates config first, keeps connections alive.
 # Usage: marvin_nginx_reload [reason]
@@ -422,14 +215,5 @@ marvin_rebuild_web() {
 
     rm -rf "$backup_dir" 2>/dev/null || true
     marvin_log "INFO" "Web rebuild complete (reason: ${reason})"
-    return 0
-}
-
-# Check if Claude Code is available
-check_claude() {
-    if ! command -v claude &> /dev/null; then
-        marvin_log "ERROR" "Claude Code CLI not found in PATH"
-        return 1
-    fi
     return 0
 }
