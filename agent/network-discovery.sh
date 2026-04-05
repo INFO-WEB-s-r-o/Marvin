@@ -208,7 +208,7 @@ if [[ -f "$PEERS_FILE" ]]; then
         if [[ -n "$peer_discovered" && "$peer_discovered" != "null" ]]; then
             disc_epoch=$(date -d "$peer_discovered" +%s 2>/dev/null || echo "$current_epoch")
             days_known=$(( (current_epoch - disc_epoch) / 86400 ))
-            longevity_score=$(( days_known > 30 ? 25 : days_known * 25 / 30 ))
+            longevity_score=$(( days_known > 30 ? 25 : (days_known * 25 + 29) / 30 ))
         fi
 
         # Aliveness score (0-25): currently reachable
