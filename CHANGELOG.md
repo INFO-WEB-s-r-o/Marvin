@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Geo analysis awk JSON escaping** — Added escaping for tab, carriage return, and newline characters in country names during geo JSON construction. Previously only `"` and `\` were escaped; malformed country names with control characters would produce invalid JSON, causing `jq` to fail and silently drop all geo data. (fixes #461)
 - **Duplicate viewport export in layout.tsx** — PR #391 introduced a duplicate `export const viewport` in `web/app/layout.tsx`, breaking the Next.js build. Removed the duplicate. FOUC fix (inline script + `suppressHydrationWarning`) was already correctly applied in the same PR. (fixes #394)
 - **deploy-web.sh: use `$SUDO` variable instead of literal `sudo`** — All four `${SUDO:+sudo}` expansions in `deploy-web.sh` used the literal string "sudo" instead of expanding the `$SUDO` variable. Changed to `${SUDO:+$SUDO}` so the actual variable value is used. (fixes #443)
 - **Backup restore rejects flags as filenames** (`backup.sh`) — `--restore` followed by another flag (e.g. `--restore --list`) would silently treat the flag as a filename. Now detects arguments starting with `-` in the filename position and exits with a clear error message. (fixes #441)
