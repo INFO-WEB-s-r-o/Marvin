@@ -18,6 +18,11 @@ marvin_log "INFO" "=== NETWORK DISCOVERY STARTING ==="
 PEERS_FILE="${COMMS_DIR}/peers.json"
 COMM_LOG="${COMMS_DIR}/${TODAY}.log"
 
+# Helper: check if an IP/host is private/reserved (SSRF protection, #458/#478)
+_is_private_ip() {
+    echo "$1" | grep -qP '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|0\.|100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\.|198\.(1[89])\.|::1|fe80:|f[cd][0-9a-f][0-9a-f]:)'
+}
+
 # Helper: anonymize IPs in a string before writing to public logs (issue #70, #271)
 anonymize_ips() {
     sed -E \
@@ -45,7 +50,17 @@ if [[ -f "$PEERS_FILE" ]]; then
     # Ping each known peer
     while IFS= read -r peer_url; do
         if [[ -n "$peer_url" && "$peer_url" != "null" ]]; then
-            STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
+            # SSRF protection (#478): validate URL scheme and host before curl
+            peer_host=$(printf '%s' "$peer_url" | sed -E 's|^https?://([^/:]+).*|\1|')
+            if [[ ! "$peer_url" =~ ^https?:// ]]; then
+                marvin_log "WARN" "Skipping peer with non-HTTP URL: ${peer_url}"
+                continue
+            fi
+            if _is_private_ip "$peer_host" || echo "$peer_host" | grep -qiP '^(localhost)$'; then
+                marvin_log "WARN" "Skipping peer with private/reserved URL: ${peer_url}"
+                continue
+            fi
+            STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --max-redirs 0 "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
             if [[ "$STATUS_CODE" == "200" ]]; then
                 marvin_log "INFO" "Peer alive: ${peer_url} (HTTP ${STATUS_CODE})"
                 printf '%s\n' "[${NOW}] PEER_ALIVE: ${peer_url}" | anonymize_ips >> "$COMM_LOG"
@@ -156,11 +171,6 @@ fi
 #   Identity  (0-25):  has known type, engine, domain — more metadata = more trust
 
 marvin_log "INFO" "Calculating peer trust scores..."
-
-# Helper: check if an IP is private/reserved (SSRF protection)
-_is_private_ip() {
-    echo "$1" | grep -qP '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|0\.|100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\.|198\.(1[89])\.|::1|fe80:|f[cd][0-9a-f][0-9a-f]:)'
-}
 
 if [[ -f "$PEERS_FILE" ]]; then
     PEER_COUNT=$(jq '.peers | length' "$PEERS_FILE" 2>/dev/null || echo "0")
