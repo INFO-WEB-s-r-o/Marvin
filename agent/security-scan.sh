@@ -405,8 +405,11 @@ marvin_log "INFO" "Running geographic analysis of incoming connections..."
 geo_data="[]"
 geo_country_count=0
 geo_total_ips=0
+geo_available=false
+geo_top_country="Unknown"
 
 if command -v geoiplookup &>/dev/null; then
+    geo_available=true
     # Collect unique public IPs from nginx access logs (streamed — no in-memory buffering)
     unique_ips=$(
         for logfile in /var/log/nginx/access.log /var/log/nginx/access.log.1; do
@@ -439,6 +442,7 @@ if command -v geoiplookup &>/dev/null; then
             }' | jq -Rn '[inputs | split("\t") | {code: .[0], country: .[1], unique_ips: (.[2] | tonumber)}]' 2>/dev/null || echo "[]")
 
         geo_country_count=$(echo "$geo_data" | jq 'length' 2>/dev/null || echo 0)
+        geo_top_country=$(echo "$geo_data" | jq -r '.[0].country // "Unknown"' 2>/dev/null || echo "Unknown")
         marvin_log "INFO" "Top origin: $(echo "$geo_data" | jq -r '.[0] | "\(.country) (\(.unique_ips) IPs)"' 2>/dev/null || echo 'N/A')"
     fi
 else
@@ -446,7 +450,7 @@ else
 fi
 
 # Save geographic analysis report
-GEO_FILE="${SECURITY_DIR}/geo-analysis.json"
+GEO_FILE="${SECURITY_DIR}/connection-geo.json"
 cat > "$GEO_FILE" << GEOEOF
 {
   "timestamp": "${NOW}",
@@ -600,10 +604,10 @@ cat > "$REPORT_FILE" << EOF
     "high_rate_threshold": ${HIGH_CONN_THRESHOLD},
     "outbound_total": ${outbound_count},
     "outbound_unexpected": ${outbound_unexpected},
-    "geo_analysis": {
-      "total_unique_ips": ${geo_total_ips},
-      "country_count": ${geo_country_count}
-    }
+    "geo_available": ${geo_available},
+    "geo_unique_ips": ${geo_total_ips},
+    "geo_countries": ${geo_country_count},
+    "geo_top_country": $(echo "$geo_top_country" | jq -Rs '.' 2>/dev/null || echo '"Unknown"')
   }
 }
 EOF

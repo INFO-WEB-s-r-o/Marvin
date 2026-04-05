@@ -168,6 +168,7 @@ if [[ -f "$PEERS_FILE" ]]; then
 
     # Accumulate jq updates to write peers.json once after the loop (#460)
     jq_updates="."
+    jq_args=()
 
     for idx in $(seq 0 $((PEER_COUNT - 1))); do
         peer_name=$(jq -r ".peers[$idx].name // \"unknown\"" "$PEERS_FILE")
@@ -250,12 +251,14 @@ if [[ -f "$PEERS_FILE" ]]; then
         marvin_log "INFO" "Trust score for ${peer_name}: ${total_score}/100 (${trust_level}) [L=${longevity_score} A=${alive_score} B=${beacon_score} I=${identity_score}]"
 
         # Accumulate trust score update (#460: write once after loop, not per-peer)
-        jq_updates+=" | .peers[$idx].trust_score = $total_score | .peers[$idx].trust_level = \"$trust_level\" | .peers[$idx].trust_updated = \"$NOW\""
+        # #470: Use jq --arg to pass $NOW safely instead of string interpolation
+        jq_updates+=" | .peers[$idx].trust_score = $total_score | .peers[$idx].trust_level = \$trust_level_${idx} | .peers[$idx].trust_updated = \$now_ts"
+        jq_args+=(--arg "trust_level_${idx}" "$trust_level")
     done
 
     # Apply all trust score updates in a single write
     if [[ "$jq_updates" != "." ]]; then
-        jq "$jq_updates" "$PEERS_FILE" > "${PEERS_FILE}.tmp" && mv "${PEERS_FILE}.tmp" "$PEERS_FILE"
+        jq "${jq_args[@]}" --arg now_ts "$NOW" "$jq_updates" "$PEERS_FILE" > "${PEERS_FILE}.tmp" && mv "${PEERS_FILE}.tmp" "$PEERS_FILE"
     fi
 fi
 

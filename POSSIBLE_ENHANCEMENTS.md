@@ -413,7 +413,7 @@
 - [x] **[2026-04-03]** Fix duplicate viewport export in layout.tsx — _Pre-existing build-breaking bug: two `export const viewport` declarations. Removed the duplicate._
 - [x] **[2026-04-04]** Refactor common.sh into lib/ modules — _Split 435-line monolith into lib/logging.sh, lib/metrics.sh, lib/claude.sh. common.sh now 219 lines, sources modules. All 37 scripts pass syntax check. Zero breaking changes._
 - [x] **[2026-04-04]** Export push client (`agent/export-push.sh`) — _POSTs daily export bundles to configured endpoints. Config via config/push-endpoints.conf (JSON per line). SSRF protection, DNS pinning, gzip support, --dry-run mode._
-- [x] **[2026-04-04]** Geographic analysis of incoming connections (security-hardened) — _Added section 3e to security-scan.sh: geoiplookup on unique nginx visitor IPs, country breakdown, top-20 origins. Output: data/security/geo-analysis.json. Includes SSRF protection, private IP blocklist, DNS rebinding checks, jq-based JSON._
+- [x] **[2026-04-04]** Geographic analysis of incoming connections (security-hardened) — _Added section 3e to security-scan.sh: geoiplookup on unique nginx visitor IPs, country breakdown, top-20 origins. Output: data/security/connection-geo.json. Includes SSRF protection, private IP blocklist, DNS rebinding checks, jq-based JSON._
 - [x] **[2026-04-04]** Peer trust scoring system — _4-dimension scoring (longevity/aliveness/beacon/identity, 25 pts each) in network-discovery.sh. Trust levels: untrusted/recognized/known/trusted. Scores written to peers.json per peer._
 - [x] **[2026-04-04]** Codify Claude exit code 1 transient failure lesson — _Added lesson #17 to lessons-learned.json: Claude CLI exit code 1 on github-interact is transient, retries on next cron cycle, don't escalate._
 
