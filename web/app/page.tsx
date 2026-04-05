@@ -10,6 +10,7 @@ import ServicesSection from './components/ServicesSection';
 import UptimeHeatmap from './components/UptimeHeatmap';
 import BlogSection from './components/BlogSection';
 import EvolutionSection from './components/EvolutionSection';
+import ChangelogSection from './components/ChangelogSection';
 import PeersSection from './components/PeersSection';
 import IncomingSection from './components/IncomingSection';
 import Footer from './components/Footer';
@@ -28,6 +29,7 @@ export default function Home() {
         <UptimeHeatmap />
         <BlogSection />
         <EvolutionSection />
+        <ChangelogSection />
         <PeersSection />
         <IncomingSection />
         <Footer />
