@@ -45,7 +45,7 @@ if [[ -f "$PEERS_FILE" ]]; then
     # Ping each known peer
     while IFS= read -r peer_url; do
         if [[ -n "$peer_url" && "$peer_url" != "null" ]]; then
-            STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
+            STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --max-redirs 0 "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
             if [[ "$STATUS_CODE" == "200" ]]; then
                 marvin_log "INFO" "Peer alive: ${peer_url} (HTTP ${STATUS_CODE})"
                 printf '%s\n' "[${NOW}] PEER_ALIVE: ${peer_url}" | anonymize_ips >> "$COMM_LOG"
