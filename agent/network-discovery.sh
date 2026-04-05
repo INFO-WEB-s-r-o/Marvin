@@ -66,6 +66,16 @@ if [[ -f "$PEERS_FILE" ]]; then
                 marvin_log "WARN" "Skipping peer with private/reserved URL: ${peer_url}"
                 continue
             fi
+            # DNS rebinding protection (#482): resolve hostname and block if it points to private IP
+            # Skip for bare IPs — already validated by _is_private_ip above
+            if ! printf '%s' "$peer_host" | grep -qP '^\d+\.\d+\.\d+\.\d+$' \
+               && ! printf '%s' "$peer_host" | grep -qP '^[0-9a-fA-F:]+$'; then
+                resolved_ip=$(getent hosts "$peer_host" 2>/dev/null | awk '{print $1}' | head -1)
+                if [[ -z "$resolved_ip" ]] || _is_private_ip "$resolved_ip"; then
+                    marvin_log "WARN" "DNS rebinding blocked in ping loop: ${peer_host} (resolved: ${resolved_ip:-empty})"
+                    continue
+                fi
+            fi
             STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --max-redirs 0 "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
             if [[ "$STATUS_CODE" == "200" ]]; then
                 marvin_log "INFO" "Peer alive: ${peer_url} (HTTP ${STATUS_CODE})"
@@ -227,7 +237,8 @@ if [[ -f "$PEERS_FILE" ]]; then
                 # since the private IP blocklist above already validated the literal IP
                 is_ip_peer=false
                 beacon_blocked=false
-                if echo "$peer_domain" | grep -qP '^\d+\.\d+\.\d+\.\d+$'; then
+                if echo "$clean_domain" | grep -qP '^\d+\.\d+\.\d+\.\d+$' \
+                   || echo "$clean_domain" | grep -qP '^[0-9a-fA-F:]+$'; then
                     is_ip_peer=true
                 fi
 

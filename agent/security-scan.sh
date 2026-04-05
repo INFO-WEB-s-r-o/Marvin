@@ -425,7 +425,7 @@ if command -v geoiplookup &>/dev/null; then
                 fail2ban-client status "$_jail" 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' || true
             done
         } | sort -u \
-          | grep -Ev '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|::1|0\.0\.0\.0|$)' || true
+          | grep -Ev '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|::1|0\.0\.0\.0|$)' || true
     )
     geo_total_ips=$(echo "$unique_ips" | grep -c '[0-9]' 2>/dev/null || echo 0)
 
