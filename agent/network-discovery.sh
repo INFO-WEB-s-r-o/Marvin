@@ -206,8 +206,8 @@ if [[ -f "$PEERS_FILE" ]]; then
             else
                 # DNS rebinding protection (#459): resolve hostname and validate the IP
                 resolved_ip=$(getent hosts "$peer_domain" 2>/dev/null | awk '{print $1}' | head -1)
-                if [[ -n "$resolved_ip" ]] && _is_private_ip "$resolved_ip"; then
-                    marvin_log "WARN" "DNS rebinding blocked: ${peer_domain} resolves to private IP"
+                if [[ -z "$resolved_ip" ]] || _is_private_ip "$resolved_ip"; then
+                    marvin_log "WARN" "DNS rebinding blocked or resolution failed: ${peer_domain} (resolved: ${resolved_ip:-empty})"
                     beacon_score=0
                 else
                     beacon_url="https://${peer_domain}/.well-known/ai-managed.json"
