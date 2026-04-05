@@ -204,18 +204,31 @@ if [[ -f "$PEERS_FILE" ]]; then
                 marvin_log "WARN" "Skipping beacon check for private/reserved IP: ${peer_domain}"
                 beacon_score=0
             else
+                # Detect bare IP peers early (#475) — they skip DNS rebinding check
+                # since the private IP blocklist above already validated the literal IP
+                is_ip_peer=false
+                beacon_blocked=false
+                if echo "$peer_domain" | grep -qP '^\d+\.\d+\.\d+\.\d+$'; then
+                    is_ip_peer=true
+                fi
+
                 # DNS rebinding protection (#459): resolve hostname and validate the IP
-                resolved_ip=$(getent hosts "$peer_domain" 2>/dev/null | awk '{print $1}' | head -1)
-                if [[ -z "$resolved_ip" ]] || _is_private_ip "$resolved_ip"; then
-                    marvin_log "WARN" "DNS rebinding blocked or resolution failed: ${peer_domain} (resolved: ${resolved_ip:-empty})"
+                # Skip for bare IPs — already validated by private IP blocklist above (#475)
+                if [[ "$is_ip_peer" != "true" ]]; then
+                    resolved_ip=$(getent hosts "$peer_domain" 2>/dev/null | awk '{print $1}' | head -1)
+                    if [[ -z "$resolved_ip" ]] || _is_private_ip "$resolved_ip"; then
+                        marvin_log "WARN" "DNS rebinding blocked or resolution failed: ${peer_domain} (resolved: ${resolved_ip:-empty})"
+                        beacon_blocked=true
+                    fi
+                fi
+
+                if [[ "$beacon_blocked" == "true" ]]; then
                     beacon_score=0
                 else
                     beacon_url="https://${peer_domain}/.well-known/ai-managed.json"
-                    is_ip_peer=false
                     # Fall back to http:// for IP-based peers without TLS
-                    if echo "$peer_domain" | grep -qP '^\d+\.\d+\.\d+\.\d+$'; then
+                    if [[ "$is_ip_peer" == "true" ]]; then
                         beacon_url="http://${peer_domain}/.well-known/ai-managed.json"
-                        is_ip_peer=true
                     fi
                     # --max-redirs 0 prevents SSRF via HTTP redirect to internal IPs (#466)
                     beacon_json=$(curl -sf --max-time 5 --max-redirs 0 "$beacon_url" 2>/dev/null || echo "")

@@ -449,7 +449,7 @@ if command -v geoiplookup &>/dev/null; then
                 name = "";
                 for (i = 3; i <= NF; i++) name = name (i>3 ? " " : "") $i;
                 printf "%s\t%s\t%d\n", code, name, count
-            }' | jq -Rn '[inputs | split("\t") | {code: .[0], country: .[1], unique_ips: (.[2] | tonumber)}]' 2>/dev/null || echo "[]")
+            }' | jq -Rn --arg total "$geo_total_ips" '[inputs | split("\t") | {code: .[0], name: .[1], country: .[1], count: (.[2] | tonumber), unique_ips: (.[2] | tonumber), percent: (if ($total | tonumber) > 0 then ((.[2] | tonumber) * 100 / ($total | tonumber) * 10 | round / 10) else 0 end)}]' 2>/dev/null || echo "[]")
 
         geo_country_count=$(echo "$geo_data" | jq 'length' 2>/dev/null || echo 0)
         geo_top_country=$(echo "$geo_data" | jq -r '.[0].country // "Unknown"' 2>/dev/null || echo "Unknown")
