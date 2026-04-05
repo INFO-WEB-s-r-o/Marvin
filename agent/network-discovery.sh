@@ -18,9 +18,10 @@ marvin_log "INFO" "=== NETWORK DISCOVERY STARTING ==="
 PEERS_FILE="${COMMS_DIR}/peers.json"
 COMM_LOG="${COMMS_DIR}/${TODAY}.log"
 
-# Helper: check if an IP/host is private/reserved (SSRF protection, #458/#478)
+# Helper: check if an IP/host is private/reserved (SSRF protection, #458/#478/#480)
 _is_private_ip() {
-    echo "$1" | grep -qP '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|0\.|100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\.|198\.(1[89])\.|::1|fe80:|f[cd][0-9a-f][0-9a-f]:)'
+    local host="${1#[}"; host="${host%]}"   # strip IPv6 URL brackets (#480)
+    printf '%s\n' "$host" | grep -qP '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|0\.|100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\.|198\.(1[89])\.|::1$|fe[89ab][0-9a-f]:|f[cd][0-9a-f]{2}:)'
 }
 
 # Helper: anonymize IPs in a string before writing to public logs (issue #70, #271)
@@ -50,8 +51,13 @@ if [[ -f "$PEERS_FILE" ]]; then
     # Ping each known peer
     while IFS= read -r peer_url; do
         if [[ -n "$peer_url" && "$peer_url" != "null" ]]; then
-            # SSRF protection (#478): validate URL scheme and host before curl
-            peer_host=$(printf '%s' "$peer_url" | sed -E 's|^https?://([^/:]+).*|\1|')
+            # SSRF protection (#478/#480): validate URL scheme and host before curl
+            # Handle bracketed IPv6 URLs like http://[::1]:8080/path
+            if printf '%s' "$peer_url" | grep -qP '^https?://\['; then
+                peer_host=$(printf '%s' "$peer_url" | sed -E 's|^https?://\[([^]]+)\].*|\1|')
+            else
+                peer_host=$(printf '%s' "$peer_url" | sed -E 's|^https?://([^/:]+).*|\1|')
+            fi
             if [[ ! "$peer_url" =~ ^https?:// ]]; then
                 marvin_log "WARN" "Skipping peer with non-HTTP URL: ${peer_url}"
                 continue
@@ -204,13 +210,16 @@ if [[ -f "$PEERS_FILE" ]]; then
         # Beacon score (0-25): has valid ai-managed.json
         beacon_score=0
         if [[ -n "$peer_domain" && "$peer_domain" != "null" ]]; then
+            # Strip IPv6 brackets if present (#480), then validate
+            local clean_domain="${peer_domain#[}"; clean_domain="${clean_domain%]}"
             # Validate peer_domain — reject URLs with path/query/fragment injection characters
-            if ! echo "$peer_domain" | grep -qP '^[a-zA-Z0-9]([a-zA-Z0-9.\-]{0,253}[a-zA-Z0-9])?$' \
-               && ! echo "$peer_domain" | grep -qP '^\d{1,3}(\.\d{1,3}){3}$'; then
+            if ! echo "$clean_domain" | grep -qP '^[a-zA-Z0-9]([a-zA-Z0-9.\-]{0,253}[a-zA-Z0-9])?$' \
+               && ! echo "$clean_domain" | grep -qP '^\d{1,3}(\.\d{1,3}){3}$' \
+               && ! echo "$clean_domain" | grep -qP '^[0-9a-fA-F:]+$'; then
                 marvin_log "WARN" "Skipping beacon check for invalid domain: ${peer_domain}"
                 beacon_score=0
-            # Block private/reserved IPs and localhost to prevent SSRF (#458)
-            elif echo "$peer_domain" | grep -qiP '^(localhost|127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|0\.|100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\.|198\.(1[89])\.)'; then
+            # Block private/reserved IPs, IPv6, and localhost to prevent SSRF (#458/#480)
+            elif echo "$clean_domain" | grep -qiP '^(localhost)$' || _is_private_ip "$clean_domain"; then
                 marvin_log "WARN" "Skipping beacon check for private/reserved IP: ${peer_domain}"
                 beacon_score=0
             else
