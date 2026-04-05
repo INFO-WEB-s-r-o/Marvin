@@ -456,6 +456,7 @@ if command -v geoiplookup &>/dev/null; then
                 $1=""; $2="";
                 name=$0; gsub(/^[, ]+/, "", name);
                 gsub(/\\/, "\\\\", name); gsub(/"/, "\\\"", name);
+                gsub(/\t/, " ", name); gsub(/\r/, "", name); gsub(/\n/, " ", name);
                 pct=(total>0) ? sprintf("%.1f", count*100/total) : "0.0";
                 printf "{\"code\":\"%s\",\"name\":\"%s\",\"count\":%d,\"percent\":%s}\n", code, name, count, pct
             }' | jq -s '.' 2>/dev/null || echo "[]")
