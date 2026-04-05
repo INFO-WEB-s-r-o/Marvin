@@ -398,7 +398,8 @@ marvin_log "INFO" "Outbound audit: ${outbound_count} connections, ${outbound_une
 
 # ─── 3e. Geographic analysis of incoming connections ──────────────────────────
 # Uses geoiplookup (local GeoIP database) to map visitor IPs to countries.
-# Data source: nginx access logs (current + rotated). Fast — no network calls.
+# Data sources: nginx access logs, top connecting IPs (3c), fail2ban banned IPs.
+# Fast — no network calls, all local lookups.
 
 marvin_log "INFO" "Running geographic analysis of incoming connections..."
 
@@ -410,12 +411,21 @@ geo_top_country="Unknown"
 
 if command -v geoiplookup &>/dev/null; then
     geo_available=true
-    # Collect unique public IPs from nginx access logs (streamed — no in-memory buffering)
+    # Collect unique public IPs from three sources (streamed — no large in-memory buffering)
     unique_ips=$(
-        for logfile in /var/log/nginx/access.log /var/log/nginx/access.log.1; do
-            [[ -f "$logfile" ]] && awk '{print $1}' "$logfile" 2>/dev/null || true
-        done | sort -u \
-             | grep -Ev '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|::1|0\.0\.0\.0|$)' || true
+        {
+            # Source 1: nginx access logs (current + rotated, capped at 50k lines each)
+            for logfile in /var/log/nginx/access.log /var/log/nginx/access.log.1; do
+                [[ -f "$logfile" ]] && tail -n 50000 "$logfile" 2>/dev/null | awk '{print $1}' || true
+            done
+            # Source 2: top connecting IPs from section 3c
+            echo "${top_sources_json}" | jq -r '.[].ip' 2>/dev/null || true
+            # Source 3: fail2ban banned IPs (all active jails)
+            for _jail in $(fail2ban-client status 2>/dev/null | grep "Jail list" | sed 's/.*://;s/,/ /g' || true); do
+                fail2ban-client status "$_jail" 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' || true
+            done
+        } | sort -u \
+          | grep -Ev '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|::1|0\.0\.0\.0|$)' || true
     )
     geo_total_ips=$(echo "$unique_ips" | grep -c '[0-9]' 2>/dev/null || echo 0)
 
