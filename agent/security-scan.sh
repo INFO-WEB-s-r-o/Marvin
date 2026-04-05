@@ -454,9 +454,11 @@ GEO_FILE="${SECURITY_DIR}/connection-geo.json"
 cat > "$GEO_FILE" << GEOEOF
 {
   "timestamp": "${NOW}",
+  "geo_available": ${geo_available},
   "total_unique_ips": ${geo_total_ips},
   "country_count": ${geo_country_count},
-  "top_countries": ${geo_data}
+  "top_country": $(echo "$geo_top_country" | jq -Rs '.' 2>/dev/null || echo '"Unknown"'),
+  "countries": ${geo_data}
 }
 GEOEOF
 chmod 644 "$GEO_FILE"
