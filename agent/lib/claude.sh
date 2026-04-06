@@ -73,6 +73,7 @@ ${prompt}"
     # ensures all bytes are preserved on disk before we read them.
     local output_file
     output_file=$(mktemp "${LOGS_DIR}/claude-output-XXXXXX.tmp")
+    trap 'rm -f "${output_file:-}"' RETURN
 
     printf '%s' "${full_prompt}" | claude -p > "$output_file" 2>&1 && exit_code=$? || exit_code=$?
     local end_time
@@ -80,8 +81,7 @@ ${prompt}"
     local duration=$((end_time - start_time))
 
     # Read output from temp file — preserves all data regardless of size
-    output=$(<"$output_file" 2>/dev/null || true)
-    rm -f "$output_file" 2>/dev/null || true
+    output=$(<"$output_file") || { marvin_log "ERROR" "Failed to read Claude output temp file: ${output_file}" >&2; output=""; }
 
     if [[ "$exit_code" -ne 0 ]]; then
         marvin_log "WARN" "Claude exited with code ${exit_code} for task: ${task_name}" >&2
