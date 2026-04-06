@@ -66,8 +66,9 @@ if [[ -f "$PEERS_FILE" ]]; then
                 marvin_log "WARN" "Skipping peer with private/reserved URL: ${peer_url}"
                 continue
             fi
-            # DNS rebinding protection (#482): resolve hostname and block if it points to private IP
-            # Skip for bare IPs — already validated by _is_private_ip above
+            # DNS rebinding protection (#482/#484): resolve hostname, block private IPs,
+            # then pin the resolved IP via --resolve to close the TOCTOU window
+            curl_resolve_opt=()
             if ! printf '%s' "$peer_host" | grep -qP '^\d+\.\d+\.\d+\.\d+$' \
                && ! printf '%s' "$peer_host" | grep -qP '^[0-9a-fA-F:]+$'; then
                 resolved_ip=$(getent hosts "$peer_host" 2>/dev/null | awk '{print $1}' | head -1)
@@ -75,8 +76,12 @@ if [[ -f "$PEERS_FILE" ]]; then
                     marvin_log "WARN" "DNS rebinding blocked in ping loop: ${peer_host} (resolved: ${resolved_ip:-empty})"
                     continue
                 fi
+                # Pin resolved IP so curl reuses it — prevents TOCTOU DNS rebinding (#484)
+                ping_port=443
+                [[ "$peer_url" =~ ^http:// ]] && ping_port=80
+                curl_resolve_opt=(--resolve "${peer_host}:${ping_port}:${resolved_ip}")
             fi
-            STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --max-redirs 0 "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
+            STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --max-redirs 0 "${curl_resolve_opt[@]}" "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
             if [[ "$STATUS_CODE" == "200" ]]; then
                 marvin_log "INFO" "Peer alive: ${peer_url} (HTTP ${STATUS_CODE})"
                 printf '%s\n' "[${NOW}] PEER_ALIVE: ${peer_url}" | anonymize_ips >> "$COMM_LOG"
@@ -242,13 +247,17 @@ if [[ -f "$PEERS_FILE" ]]; then
                     is_ip_peer=true
                 fi
 
-                # DNS rebinding protection (#459): resolve hostname and validate the IP
-                # Skip for bare IPs — already validated by private IP blocklist above (#475)
+                # DNS rebinding protection (#459/#484): resolve hostname, validate IP,
+                # then pin via --resolve to close the TOCTOU window
+                beacon_resolve_opt=()
                 if [[ "$is_ip_peer" != "true" ]]; then
                     resolved_ip=$(getent hosts "$peer_domain" 2>/dev/null | awk '{print $1}' | head -1)
                     if [[ -z "$resolved_ip" ]] || _is_private_ip "$resolved_ip"; then
                         marvin_log "WARN" "DNS rebinding blocked or resolution failed: ${peer_domain} (resolved: ${resolved_ip:-empty})"
                         beacon_blocked=true
+                    else
+                        # Pin resolved IP so curl reuses it — prevents TOCTOU DNS rebinding (#484)
+                        beacon_resolve_opt=(--resolve "${peer_domain}:443:${resolved_ip}")
                     fi
                 fi
 
@@ -259,9 +268,12 @@ if [[ -f "$PEERS_FILE" ]]; then
                     # Fall back to http:// for IP-based peers without TLS
                     if [[ "$is_ip_peer" == "true" ]]; then
                         beacon_url="http://${peer_domain}/.well-known/ai-managed.json"
+                    else
+                        # Update resolve port if URL is http (shouldn't happen for domain peers, but defensive)
+                        beacon_resolve_opt=(--resolve "${peer_domain}:443:${resolved_ip}")
                     fi
                     # --max-redirs 0 prevents SSRF via HTTP redirect to internal IPs (#466)
-                    beacon_json=$(curl -sf --max-time 5 --max-redirs 0 "$beacon_url" 2>/dev/null || echo "")
+                    beacon_json=$(curl -sf --max-time 5 --max-redirs 0 "${beacon_resolve_opt[@]}" "$beacon_url" 2>/dev/null || echo "")
                     if [[ -n "$beacon_json" ]] && echo "$beacon_json" | jq empty 2>/dev/null; then
                         beacon_score=10  # Valid JSON
                         # Bonus for expected fields — only over HTTPS (#467: HTTP responses are spoofable)
