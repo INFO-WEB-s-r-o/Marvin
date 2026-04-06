@@ -18,11 +18,20 @@ marvin_log "INFO" "=== NETWORK DISCOVERY STARTING ==="
 PEERS_FILE="${COMMS_DIR}/peers.json"
 COMM_LOG="${COMMS_DIR}/${TODAY}.log"
 
-# Helper: check if an IP/host is private/reserved (SSRF protection, #458/#478/#480)
+# ─── SSRF protection (reused pattern from export-push.sh) ────────────────────
+
 _is_private_ip() {
-    local host="${1#[}"; host="${host%]}"   # strip IPv6 URL brackets (#480)
-    # IPv4 patterns require full dotted-quad to avoid false positives on hostnames (#489)
-    printf '%s\n' "$host" | grep -qP '^(127\.\d+\.\d+\.\d+$|10\.\d+\.\d+\.\d+$|172\.(1[6-9]|2[0-9]|3[01])\.\d+\.\d+$|192\.168\.\d+\.\d+$|169\.254\.\d+\.\d+$|0\.\d+\.\d+\.\d+$|100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\.\d+\.\d+$|198\.(1[89])\.\d+\.\d+$|::1$|::$|::ffff:(127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|0\.\d+\.\d+\.\d+|100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\.\d+\.\d+)$|fe[89ab][0-9a-f]:.*$|f[cd][0-9a-f]{2}:.*$)'
+    local ip="$1"
+    case "$ip" in
+        10.*|172.1[6-9].*|172.2[0-9].*|172.3[0-1].*|192.168.*) return 0 ;;
+        127.*|0.*|169.254.*|localhost) return 0 ;;
+        *:*)
+            case "$ip" in
+                ::1|::|fc*|fd*|fe80:*|::ffff:*) return 0 ;;
+            esac
+            return 1 ;;
+        *) return 1 ;;
+    esac
 }
 
 # Helper: anonymize IPs in a string before writing to public logs (issue #70, #271)
@@ -52,41 +61,49 @@ if [[ -f "$PEERS_FILE" ]]; then
     # Ping each known peer
     while IFS= read -r peer_url; do
         if [[ -n "$peer_url" && "$peer_url" != "null" ]]; then
-            # SSRF protection (#478/#480): validate URL scheme first, then extract host
-            if [[ ! "$peer_url" =~ ^https?:// ]]; then
-                marvin_log "WARN" "Skipping peer with non-HTTP URL: ${peer_url}"
-                continue
-            fi
-            # Handle bracketed IPv6 URLs like http://[::1]:8080/path
-            if printf '%s' "$peer_url" | grep -qP '^https?://\['; then
-                peer_host=$(printf '%s' "$peer_url" | sed -E 's|^https?://\[([^]]+)\].*|\1|')
+            # SSRF / DNS rebinding protection: resolve hostname and reject private IPs
+            # IPv6 bracket-notation needs dedicated extraction (#488):
+            #   http://[2001:db8::1]:8080/path → 2001:db8::1
+            # Regular hostnames use the standard %%[/:]* strip.
+            if [[ "$peer_url" =~ ://\[([^\]]+)\] ]]; then
+                peer_host_lower="${BASH_REMATCH[1],,}"
             else
-                peer_host=$(printf '%s' "$peer_url" | sed -E 's|^https?://([^/:]+).*|\1|')
+                peer_host_lower="${peer_url#http://}"
+                peer_host_lower="${peer_host_lower#https://}"
+                peer_host_lower="${peer_host_lower%%[/:]*}"
+                peer_host_lower="${peer_host_lower,,}"
             fi
-            if _is_private_ip "$peer_host" || echo "$peer_host" | grep -qiP '^(localhost)$'; then
-                marvin_log "WARN" "Skipping peer with private/reserved URL: ${peer_url}"
+
+            if _is_private_ip "$peer_host_lower"; then
+                marvin_log "WARN" "Skipping peer with private address (SSRF protection): ${peer_host_lower}"
                 continue
             fi
-            # DNS rebinding protection (#482/#484): resolve hostname, block private IPs,
-            # then pin the resolved IP via --resolve to close the TOCTOU window
-            curl_resolve_opt=()
-            if ! printf '%s' "$peer_host" | grep -qP '^\d+\.\d+\.\d+\.\d+$' \
-               && ! printf '%s' "$peer_host" | grep -qP '^[0-9a-fA-F:]+$'; then
-                resolved_ip=$(getent hosts "$peer_host" 2>/dev/null | awk '{print $1}' | head -1)
-                if [[ -z "$resolved_ip" ]] || _is_private_ip "$resolved_ip"; then
-                    marvin_log "WARN" "DNS rebinding blocked in ping loop: ${peer_host} (resolved: ${resolved_ip:-empty})"
-                    continue
-                fi
-                # Pin resolved IP so curl reuses it — prevents TOCTOU DNS rebinding (#484)
-                # Extract actual port from URL to prevent non-standard port bypass (#485)
-                ping_port=443
-                [[ "$peer_url" =~ ^http:// ]] && ping_port=80
-                if [[ "$peer_url" =~ ://[^/]*:([0-9]+) ]]; then
-                    ping_port="${BASH_REMATCH[1]}"
-                fi
-                curl_resolve_opt=(--resolve "${peer_host}:${ping_port}:${resolved_ip}")
+
+            resolved_ip=$(getent hosts "$peer_host_lower" 2>/dev/null | awk '{print $1; exit}')
+            if [[ -z "$resolved_ip" ]]; then
+                marvin_log "WARN" "Could not resolve peer hostname, skipping: ${peer_host_lower}"
+                continue
             fi
-            STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --max-redirs 0 "${curl_resolve_opt[@]}" "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
+            if _is_private_ip "$resolved_ip"; then
+                marvin_log "WARN" "Skipping peer — hostname resolves to private IP (DNS rebinding): ${peer_host_lower}"
+                continue
+            fi
+
+            # Extract actual port from URL, fall back to scheme default (#485)
+            ping_port=443
+            [[ "$peer_url" =~ ^http:// ]] && ping_port=80
+            if [[ "$peer_url" =~ ://[^/]*:([0-9]+) ]]; then
+                ping_port="${BASH_REMATCH[1]}"
+            fi
+
+            # Pin curl to pre-resolved IP to prevent TOCTOU DNS rebinding (#487)
+            # IPv6 addresses need brackets in --resolve format (#490):
+            #   --resolve "[2001:db8::1]:443:2001:db8::1" (not "2001:db8::1:443:...")
+            resolve_host="${peer_host_lower}"
+            [[ "$peer_host_lower" == *:* ]] && resolve_host="[${peer_host_lower}]"
+            STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --max-redirs 0 \
+                --resolve "${resolve_host}:${ping_port}:${resolved_ip}" \
+                "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
             if [[ "$STATUS_CODE" == "200" ]]; then
                 marvin_log "INFO" "Peer alive: ${peer_url} (HTTP ${STATUS_CODE})"
                 printf '%s\n' "[${NOW}] PEER_ALIVE: ${peer_url}" | anonymize_ips >> "$COMM_LOG"

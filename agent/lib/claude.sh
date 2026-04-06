@@ -67,13 +67,21 @@ ${prompt}"
     local start_time
     start_time=$(date +%s)
 
-    # Capture exit code properly — the old `|| true` pattern masked failures,
-    # making exit_code always 0. This pattern preserves the real exit code
-    # while preventing set -e from killing the script.
-    output=$(printf '%s' "${full_prompt}" | claude -p 2>&1) && exit_code=$? || exit_code=$?
+    # Capture output via temp file instead of $() to prevent silent data loss.
+    # Root cause: bash $() variable capture can lose large outputs or fail when
+    # Claude writes partial data / exits unexpectedly. The temp file approach
+    # ensures all bytes are preserved on disk before we read them.
+    local output_file
+    output_file=$(mktemp "${LOGS_DIR}/claude-output-XXXXXX.tmp")
+    trap 'rm -f "${output_file:-}"' RETURN
+
+    printf '%s' "${full_prompt}" | claude -p > "$output_file" 2>&1 && exit_code=$? || exit_code=$?
     local end_time
     end_time=$(date +%s)
     local duration=$((end_time - start_time))
+
+    # Read output from temp file — preserves all data regardless of size
+    output=$(<"$output_file") || { marvin_log "ERROR" "Failed to read Claude output temp file: ${output_file}" >&2; output=""; }
 
     if [[ "$exit_code" -ne 0 ]]; then
         marvin_log "WARN" "Claude exited with code ${exit_code} for task: ${task_name}" >&2
