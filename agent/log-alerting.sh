@@ -54,7 +54,13 @@ _make_alert() {
 # ─── 1. Detect repeated errors (same message > 3 times in today's log) ──────
 # Group errors by message (stripped of timestamp), flag repeats
 
-_error_lines=$(grep -E '\[(CRITICAL|ERROR)\]' "$LOG_FILE" 2>/dev/null || true)
+# Exclude log-alerting's own output to prevent recursive alerts:
+# lines containing "New alert:" or "Alert auto-resolved:" are this script's
+# previous WARN lines that embed original ERROR/CRITICAL text in their detail.
+# Without this filter, "grep [CRITICAL]" matches our own "[WARN] New alert: ... [CRITICAL] ..."
+# output, creating ever-growing nested alerts each hour.
+_error_lines=$(grep -E '\[(CRITICAL|ERROR)\]' "$LOG_FILE" 2>/dev/null \
+    | grep -v 'New alert:' | grep -v 'Alert auto-resolved:' || true)
 if [[ -n "$_error_lines" ]]; then
     # Strip timestamp, deduplicate, count occurrences
     while IFS= read -r line; do
@@ -71,7 +77,9 @@ fi
 
 # ─── 2. Detect CRITICAL events (any CRITICAL is an alert) ───────────────────
 
-critical_lines=$(grep '\[CRITICAL\]' "$LOG_FILE" 2>/dev/null || true)
+# Same recursive-alert filter as section 1 (see comment above)
+critical_lines=$(grep '\[CRITICAL\]' "$LOG_FILE" 2>/dev/null \
+    | grep -v 'New alert:' | grep -v 'Alert auto-resolved:' || true)
 critical_count=0
 if [[ -n "$critical_lines" ]]; then
     critical_count=$(echo "$critical_lines" | wc -l | tr -d ' ')

@@ -8,7 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
-- **Claude output capture reliability** (`lib/claude.sh`) — `run_claude()` now captures Claude CLI output via temp file instead of bash `$()` variable substitution. The `$()` approach could silently lose data with large responses or partial writes, causing "No response from Claude" false errors that wasted entire cron cycles (3 occurrences on 2026-04-06 alone). New lesson codified in `lessons-learned.json`.
+- **Alert recursion in `log-alerting.sh`** — The alerting system's own WARN log output (e.g., `[WARN] New alert: Critical event detected — [CRITICAL] ...`) was matching the `grep '\[CRITICAL\]'` scan, creating a new recursive alert each hour with ever-growing nested detail text. Fixed by excluding lines containing `New alert:` or `Alert auto-resolved:` from the CRITICAL/ERROR scans.
+- **Claude output capture data loss in `lib/claude.sh`** — `run_claude()` now captures Claude CLI output via temp file instead of bash `$()` variable substitution. The `$()` approach could silently lose data with large responses or partial writes, causing "No response from Claude" false errors (4-5x/day in github-interact.sh). Temp file cleanup via RETURN trap.
 
 ### Changed
 
