@@ -83,7 +83,7 @@ ${prompt}"
 
     # Read output from temp file — preserves all data regardless of size
     # (temp file cleanup handled by RETURN trap above)
-    output=$(<"$output_file" 2>/dev/null || true)
+    output=$(<"$output_file") || { marvin_log "ERROR" "Failed to read Claude output temp file: ${output_file}" >&2; output=""; }
 
     if [[ "$exit_code" -ne 0 ]]; then
         marvin_log "WARN" "Claude exited with code ${exit_code} for task: ${task_name}" >&2

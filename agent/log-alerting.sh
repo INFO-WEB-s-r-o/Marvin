@@ -59,6 +59,7 @@ _make_alert() {
 # previous WARN lines that embed original ERROR/CRITICAL text in their detail.
 # Without this filter, "grep [CRITICAL]" matches our own "[WARN] New alert: ... [CRITICAL] ..."
 # output, creating ever-growing nested alerts each hour.
+# NOTE: These filter strings must stay in sync with _make_alert() output format.
 _error_lines=$(grep -E '\[(CRITICAL|ERROR)\]' "$LOG_FILE" 2>/dev/null \
     | grep -v 'New alert:' | grep -v 'Alert auto-resolved:' || true)
 if [[ -n "$_error_lines" ]]; then
