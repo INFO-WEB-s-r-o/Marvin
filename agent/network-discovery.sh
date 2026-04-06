@@ -18,6 +18,22 @@ marvin_log "INFO" "=== NETWORK DISCOVERY STARTING ==="
 PEERS_FILE="${COMMS_DIR}/peers.json"
 COMM_LOG="${COMMS_DIR}/${TODAY}.log"
 
+# ─── SSRF protection (reused pattern from export-push.sh) ────────────────────
+
+_is_private_ip() {
+    local ip="$1"
+    case "$ip" in
+        10.*|172.1[6-9].*|172.2[0-9].*|172.3[0-1].*|192.168.*) return 0 ;;
+        127.*|0.*|169.254.*|localhost) return 0 ;;
+        *:*)
+            case "$ip" in
+                ::1|fc*|fd*|fe80:*|::ffff:*) return 0 ;;
+            esac
+            return 1 ;;
+        *) return 1 ;;
+    esac
+}
+
 # Helper: anonymize IPs in a string before writing to public logs (issue #70, #271)
 anonymize_ips() {
     sed -E \
@@ -45,6 +61,23 @@ if [[ -f "$PEERS_FILE" ]]; then
     # Ping each known peer
     while IFS= read -r peer_url; do
         if [[ -n "$peer_url" && "$peer_url" != "null" ]]; then
+            # SSRF / DNS rebinding protection: resolve hostname and reject private IPs
+            peer_host="${peer_url#http://}"
+            peer_host="${peer_host#https://}"
+            peer_host="${peer_host%%[/:]*}"
+            peer_host_lower="${peer_host,,}"
+
+            if _is_private_ip "$peer_host_lower"; then
+                marvin_log "WARN" "Skipping peer with private address (SSRF protection): ${peer_host}"
+                continue
+            fi
+
+            resolved_ip=$(getent hosts "$peer_host_lower" 2>/dev/null | awk '{print $1; exit}')
+            if [[ -n "$resolved_ip" ]] && _is_private_ip "$resolved_ip"; then
+                marvin_log "WARN" "Skipping peer — hostname resolves to private IP (DNS rebinding): ${peer_host}"
+                continue
+            fi
+
             STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --max-redirs 0 "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
             if [[ "$STATUS_CODE" == "200" ]]; then
                 marvin_log "INFO" "Peer alive: ${peer_url} (HTTP ${STATUS_CODE})"

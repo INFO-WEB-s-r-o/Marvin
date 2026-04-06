@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **SSRF via DNS rebinding in peer ping loop** — Added DNS rebinding protection to the peer ping loop in `network-discovery.sh`. Peer hostnames are now resolved via `getent hosts` and checked against private IP ranges before the `curl` request, preventing attackers who control a peer's DNS from directing requests to internal network addresses. (fixes #482)
 - **SSRF via HTTP redirect in peer beacon check** — Added `--max-redirs 0` to the `curl` call that checks peer `.well-known/ai-managed.json` beacons in `network-discovery.sh`. Previously, a malicious peer could serve a 3xx redirect to an internal/loopback URL, making Marvin's server issue requests to private network addresses. (fixes #466)
 - **Geo analysis awk JSON escaping** — Added escaping for tab, carriage return, and newline characters in country names during geo JSON construction. Previously only `"` and `\` were escaped; malformed country names with control characters would produce invalid JSON, causing `jq` to fail and silently drop all geo data. (fixes #461)
 - **export-push.sh: IPv6 patterns no longer false-positive on hostnames** — `_is_private_ip()` applied IPv6 glob patterns (`fc*`, `fd*`, `fe80:*`) to raw hostnames, blocking legitimate domains like `fdesign.example.com`. IPv6 patterns now only match strings containing a colon. (fixes #465)
