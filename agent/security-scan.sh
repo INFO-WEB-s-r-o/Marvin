@@ -427,7 +427,7 @@ if command -v geoiplookup &>/dev/null; then
         } | sort -u \
           | grep -Ev '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|::1|0\.0\.0\.0|$)' || true
     )
-    geo_total_ips=$(echo "$unique_ips" | grep -c '[0-9]' 2>/dev/null || echo 0)
+    geo_total_ips=$(echo "$unique_ips" | grep -cE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' 2>/dev/null || echo 0)
 
     if [[ "$geo_total_ips" -gt 0 ]]; then
         # Lookup each IP (cap at 500 to bound runtime), extract "CC, Country Name"

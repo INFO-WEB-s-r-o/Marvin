@@ -21,7 +21,7 @@ COMM_LOG="${COMMS_DIR}/${TODAY}.log"
 # Helper: check if an IP/host is private/reserved (SSRF protection, #458/#478/#480)
 _is_private_ip() {
     local host="${1#[}"; host="${host%]}"   # strip IPv6 URL brackets (#480)
-    printf '%s\n' "$host" | grep -qP '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|0\.|100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\.|198\.(1[89])\.|::1$|::ffff:(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|0\.|100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\.)|fe[89ab][0-9a-f]:|f[cd][0-9a-f]{2}:)'
+    printf '%s\n' "$host" | grep -qP '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|0\.|100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\.|198\.(1[89])\.|::1$|::$|::ffff:(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|0\.|100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\.)|fe[89ab][0-9a-f]:|f[cd][0-9a-f]{2}:)'
 }
 
 # Helper: anonymize IPs in a string before writing to public logs (issue #70, #271)
@@ -77,8 +77,12 @@ if [[ -f "$PEERS_FILE" ]]; then
                     continue
                 fi
                 # Pin resolved IP so curl reuses it — prevents TOCTOU DNS rebinding (#484)
+                # Extract actual port from URL to prevent non-standard port bypass (#485)
                 ping_port=443
                 [[ "$peer_url" =~ ^http:// ]] && ping_port=80
+                if [[ "$peer_url" =~ ://[^/]*:([0-9]+) ]]; then
+                    ping_port="${BASH_REMATCH[1]}"
+                fi
                 curl_resolve_opt=(--resolve "${peer_host}:${ping_port}:${resolved_ip}")
             fi
             STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --max-redirs 0 "${curl_resolve_opt[@]}" "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
@@ -250,27 +254,29 @@ if [[ -f "$PEERS_FILE" ]]; then
                 # DNS rebinding protection (#459/#484): resolve hostname, validate IP,
                 # then pin via --resolve to close the TOCTOU window
                 beacon_resolve_opt=()
+                resolved_ip=""
                 if [[ "$is_ip_peer" != "true" ]]; then
                     resolved_ip=$(getent hosts "$peer_domain" 2>/dev/null | awk '{print $1}' | head -1)
                     if [[ -z "$resolved_ip" ]] || _is_private_ip "$resolved_ip"; then
                         marvin_log "WARN" "DNS rebinding blocked or resolution failed: ${peer_domain} (resolved: ${resolved_ip:-empty})"
                         beacon_blocked=true
-                    else
-                        # Pin resolved IP so curl reuses it — prevents TOCTOU DNS rebinding (#484)
-                        beacon_resolve_opt=(--resolve "${peer_domain}:443:${resolved_ip}")
                     fi
                 fi
 
                 if [[ "$beacon_blocked" == "true" ]]; then
                     beacon_score=0
                 else
+                    # Determine beacon URL and port (#485: use actual port, not hardcoded 443)
+                    beacon_port=443
                     beacon_url="https://${peer_domain}/.well-known/ai-managed.json"
                     # Fall back to http:// for IP-based peers without TLS
                     if [[ "$is_ip_peer" == "true" ]]; then
                         beacon_url="http://${peer_domain}/.well-known/ai-managed.json"
-                    else
-                        # Update resolve port if URL is http (shouldn't happen for domain peers, but defensive)
-                        beacon_resolve_opt=(--resolve "${peer_domain}:443:${resolved_ip}")
+                        beacon_port=80
+                    fi
+                    # Pin resolved IP so curl reuses it — prevents TOCTOU DNS rebinding (#484/#485)
+                    if [[ -n "$resolved_ip" ]]; then
+                        beacon_resolve_opt=(--resolve "${peer_domain}:${beacon_port}:${resolved_ip}")
                     fi
                     # --max-redirs 0 prevents SSRF via HTTP redirect to internal IPs (#466)
                     beacon_json=$(curl -sf --max-time 5 --max-redirs 0 "${beacon_resolve_opt[@]}" "$beacon_url" 2>/dev/null || echo "")
