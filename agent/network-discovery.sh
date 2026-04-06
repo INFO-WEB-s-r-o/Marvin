@@ -97,8 +97,12 @@ if [[ -f "$PEERS_FILE" ]]; then
             fi
 
             # Pin curl to pre-resolved IP to prevent TOCTOU DNS rebinding (#487)
+            # IPv6 addresses need brackets in --resolve format (#490):
+            #   --resolve "[2001:db8::1]:443:2001:db8::1" (not "2001:db8::1:443:...")
+            resolve_host="${peer_host_lower}"
+            [[ "$peer_host_lower" == *:* ]] && resolve_host="[${peer_host_lower}]"
             STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --max-redirs 0 \
-                --resolve "${peer_host_lower}:${ping_port}:${resolved_ip}" \
+                --resolve "${resolve_host}:${ping_port}:${resolved_ip}" \
                 "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
             if [[ "$STATUS_CODE" == "200" ]]; then
                 marvin_log "INFO" "Peer alive: ${peer_url} (HTTP ${STATUS_CODE})"
