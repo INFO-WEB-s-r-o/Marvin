@@ -215,6 +215,10 @@ fi
 
 marvin_log "INFO" "Calculating peer trust scores..."
 
+# Overall timeout for trust scoring loop (#493) — skip remaining peers if exceeded
+TRUST_SCORING_TIMEOUT=60
+
+
 if [[ -f "$PEERS_FILE" ]]; then
     PEER_COUNT=$(jq '.peers | length' "$PEERS_FILE" 2>/dev/null || echo "0")
     current_epoch=$(date +%s)
@@ -223,12 +227,17 @@ if [[ -f "$PEERS_FILE" ]]; then
     jq_updates="."
     jq_args=()
 
+    SECONDS=0
     for idx in $(seq 0 $((PEER_COUNT - 1))); do
-        peer_name=$(jq -r ".peers[$idx].name // \"unknown\"" "$PEERS_FILE")
-        peer_alive=$(jq -r ".peers[$idx].alive // false" "$PEERS_FILE")
-        peer_discovered=$(jq -r ".peers[$idx].discovered // \"\"" "$PEERS_FILE")
-        peer_type=$(jq -r ".peers[$idx].type // \"\"" "$PEERS_FILE")
-        peer_domain=$(jq -r ".peers[$idx].domain // .peers[$idx].ip // \"\"" "$PEERS_FILE")
+        # Check overall timeout (#493) — peers already scored keep their scores
+        if (( SECONDS >= TRUST_SCORING_TIMEOUT )); then
+            marvin_log "WARN" "Trust scoring timeout (${TRUST_SCORING_TIMEOUT}s) exceeded after ${idx}/${PEER_COUNT} peers — skipping remaining"
+            break
+        fi
+
+        # Batch jq reads: single call per peer instead of 6 separate invocations (#493)
+        _peer_json=$(jq -r ".peers[$idx] | [(.name // \"unknown\"), (.alive // false | tostring), (.discovered // \"\"), (.type // \"\"), (.domain // .ip // \"\"), (.engine // \"\")] | @tsv" "$PEERS_FILE" 2>/dev/null || echo "")
+        IFS=$'\t' read -r peer_name peer_alive peer_discovered peer_type peer_domain peer_engine <<< "$_peer_json"
 
         # Longevity score (0-25): days known / 30, capped
         longevity_score=0
@@ -315,7 +324,6 @@ if [[ -f "$PEERS_FILE" ]]; then
         identity_score=0
         [[ -n "$peer_type" && "$peer_type" != "null" && "$peer_type" != "" ]] && identity_score=$((identity_score + 8))
         [[ -n "$peer_domain" && "$peer_domain" != "null" ]] && identity_score=$((identity_score + 8))
-        peer_engine=$(jq -r ".peers[$idx].engine // \"\"" "$PEERS_FILE")
         [[ -n "$peer_engine" && "$peer_engine" != "null" && "$peer_engine" != "" ]] && identity_score=$((identity_score + 9))
 
         total_score=$((longevity_score + alive_score + beacon_score + identity_score))
