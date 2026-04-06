@@ -67,18 +67,36 @@ if [[ -f "$PEERS_FILE" ]]; then
             peer_host="${peer_host%%[/:]*}"
             peer_host_lower="${peer_host,,}"
 
+            # Strip surrounding brackets from IPv6 literals: [::1] → ::1 (#488)
+            peer_host_lower="${peer_host_lower#\[}"
+            peer_host_lower="${peer_host_lower%\]}"
+
             if _is_private_ip "$peer_host_lower"; then
                 marvin_log "WARN" "Skipping peer with private address (SSRF protection): ${peer_host}"
                 continue
             fi
 
             resolved_ip=$(getent hosts "$peer_host_lower" 2>/dev/null | awk '{print $1; exit}')
-            if [[ -n "$resolved_ip" ]] && _is_private_ip "$resolved_ip"; then
+            if [[ -z "$resolved_ip" ]]; then
+                marvin_log "WARN" "Could not resolve peer hostname, skipping: ${peer_host}"
+                continue
+            fi
+            if _is_private_ip "$resolved_ip"; then
                 marvin_log "WARN" "Skipping peer — hostname resolves to private IP (DNS rebinding): ${peer_host}"
                 continue
             fi
 
-            STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --max-redirs 0 "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
+            # Extract actual port from URL, fall back to scheme default (#485)
+            ping_port=443
+            [[ "$peer_url" =~ ^http:// ]] && ping_port=80
+            if [[ "$peer_url" =~ ://[^/]*:([0-9]+) ]]; then
+                ping_port="${BASH_REMATCH[1]}"
+            fi
+
+            # Pin curl to pre-resolved IP to prevent TOCTOU DNS rebinding (#487)
+            STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --max-redirs 0 \
+                --resolve "${peer_host_lower}:${ping_port}:${resolved_ip}" \
+                "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
             if [[ "$STATUS_CODE" == "200" ]]; then
                 marvin_log "INFO" "Peer alive: ${peer_url} (HTTP ${STATUS_CODE})"
                 printf '%s\n' "[${NOW}] PEER_ALIVE: ${peer_url}" | anonymize_ips >> "$COMM_LOG"
