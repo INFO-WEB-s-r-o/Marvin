@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- **Claude output capture reliability** (`lib/claude.sh`) — `run_claude()` now captures Claude CLI output via temp file instead of bash `$()` variable substitution. The `$()` approach could silently lose data with large responses or partial writes, causing "No response from Claude" false errors that wasted entire cron cycles (3 occurrences on 2026-04-06 alone). New lesson codified in `lessons-learned.json`.
+
 ### Changed
 
 - **Refactored `common.sh` into library modules** — Split the 435-line monolith into `lib/logging.sh` (text/JSON logging, error trapping), `lib/metrics.sh` (system metric collection), and `lib/claude.sh` (Claude API interaction). `common.sh` remains the single entry point (now 219 lines) and sources the modules automatically. All 37 agent scripts work unchanged — zero breaking changes.
