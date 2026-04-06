@@ -79,13 +79,19 @@ if [[ -f "$PEERS_FILE" ]]; then
                 continue
             fi
 
-            resolved_ip=$(getent hosts "$peer_host_lower" 2>/dev/null | awk '{print $1; exit}')
-            if [[ -z "$resolved_ip" ]]; then
-                marvin_log "WARN" "Could not resolve peer hostname, skipping: ${peer_host_lower}"
-                continue
+            # Bare IP addresses (IPv4/IPv6) skip DNS resolution — already
+            # validated against private IP blocklist above (#475)
+            if [[ "$peer_host_lower" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$peer_host_lower" == *:* ]]; then
+                resolved_ip="$peer_host_lower"
+            else
+                resolved_ip=$(getent hosts "$peer_host_lower" 2>/dev/null | awk '{print $1; exit}')
+                if [[ -z "$resolved_ip" ]]; then
+                    marvin_log "WARN" "Could not resolve peer hostname, skipping: ${peer_host_lower}"
+                    continue
+                fi
             fi
             if _is_private_ip "$resolved_ip"; then
-                marvin_log "WARN" "Skipping peer — hostname resolves to private IP (DNS rebinding): ${peer_host_lower}"
+                marvin_log "WARN" "Skipping peer — resolves to private IP (DNS rebinding): ${peer_host_lower}"
                 continue
             fi
 
