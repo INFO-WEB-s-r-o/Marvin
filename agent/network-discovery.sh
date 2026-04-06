@@ -27,7 +27,7 @@ _is_private_ip() {
         127.*|0.*|169.254.*|localhost) return 0 ;;
         *:*)
             case "$ip" in
-                ::1|fc*|fd*|fe80:*|::ffff:*) return 0 ;;
+                ::1|::|fc*|fd*|fe80:*|::ffff:*) return 0 ;;
             esac
             return 1 ;;
         *) return 1 ;;
@@ -62,27 +62,30 @@ if [[ -f "$PEERS_FILE" ]]; then
     while IFS= read -r peer_url; do
         if [[ -n "$peer_url" && "$peer_url" != "null" ]]; then
             # SSRF / DNS rebinding protection: resolve hostname and reject private IPs
-            peer_host="${peer_url#http://}"
-            peer_host="${peer_host#https://}"
-            peer_host="${peer_host%%[/:]*}"
-            peer_host_lower="${peer_host,,}"
-
-            # Strip surrounding brackets from IPv6 literals: [::1] → ::1 (#488)
-            peer_host_lower="${peer_host_lower#\[}"
-            peer_host_lower="${peer_host_lower%\]}"
+            # IPv6 bracket-notation needs dedicated extraction (#488):
+            #   http://[2001:db8::1]:8080/path → 2001:db8::1
+            # Regular hostnames use the standard %%[/:]* strip.
+            if [[ "$peer_url" =~ ://\[([^\]]+)\] ]]; then
+                peer_host_lower="${BASH_REMATCH[1],,}"
+            else
+                peer_host_lower="${peer_url#http://}"
+                peer_host_lower="${peer_host_lower#https://}"
+                peer_host_lower="${peer_host_lower%%[/:]*}"
+                peer_host_lower="${peer_host_lower,,}"
+            fi
 
             if _is_private_ip "$peer_host_lower"; then
-                marvin_log "WARN" "Skipping peer with private address (SSRF protection): ${peer_host}"
+                marvin_log "WARN" "Skipping peer with private address (SSRF protection): ${peer_host_lower}"
                 continue
             fi
 
             resolved_ip=$(getent hosts "$peer_host_lower" 2>/dev/null | awk '{print $1; exit}')
             if [[ -z "$resolved_ip" ]]; then
-                marvin_log "WARN" "Could not resolve peer hostname, skipping: ${peer_host}"
+                marvin_log "WARN" "Could not resolve peer hostname, skipping: ${peer_host_lower}"
                 continue
             fi
             if _is_private_ip "$resolved_ip"; then
-                marvin_log "WARN" "Skipping peer — hostname resolves to private IP (DNS rebinding): ${peer_host}"
+                marvin_log "WARN" "Skipping peer — hostname resolves to private IP (DNS rebinding): ${peer_host_lower}"
                 continue
             fi
 
