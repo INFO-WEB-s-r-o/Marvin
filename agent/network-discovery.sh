@@ -21,7 +21,8 @@ COMM_LOG="${COMMS_DIR}/${TODAY}.log"
 # Helper: check if an IP/host is private/reserved (SSRF protection, #458/#478/#480)
 _is_private_ip() {
     local host="${1#[}"; host="${host%]}"   # strip IPv6 URL brackets (#480)
-    printf '%s\n' "$host" | grep -qP '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|0\.|100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\.|198\.(1[89])\.|::1$|::$|::ffff:(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|0\.|100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\.)|fe[89ab][0-9a-f]:|f[cd][0-9a-f]{2}:)'
+    # IPv4 patterns require full dotted-quad to avoid false positives on hostnames (#489)
+    printf '%s\n' "$host" | grep -qP '^(127\.\d+\.\d+\.\d+$|10\.\d+\.\d+\.\d+$|172\.(1[6-9]|2[0-9]|3[01])\.\d+\.\d+$|192\.168\.\d+\.\d+$|169\.254\.\d+\.\d+$|0\.\d+\.\d+\.\d+$|100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\.\d+\.\d+$|198\.(1[89])\.\d+\.\d+$|::1$|::$|::ffff:(127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|0\.\d+\.\d+\.\d+|100\.(6[4-9]|[7-9][0-9]|1[0-2][0-7])\.\d+\.\d+)$|fe[89ab][0-9a-f]:.*$|f[cd][0-9a-f]{2}:.*$)'
 }
 
 # Helper: anonymize IPs in a string before writing to public logs (issue #70, #271)
