@@ -34,6 +34,14 @@ _is_private_ip() {
     esac
 }
 
+# Helper: detect IPv6 addresses without matching arbitrary strings with colons
+# (e.g. "somehost:8080" is NOT IPv6). Handles pure IPv6 and IPv4-mapped forms.
+# Fixes #499.
+_is_ipv6_address() {
+    local addr="$1"
+    [[ "$addr" =~ ^([0-9a-f]{0,4}:){2,7}([0-9a-f]{0,4}|([0-9]{1,3}\.){3}[0-9]{1,3})$ ]]
+}
+
 # Helper: anonymize IPs in a string before writing to public logs (issue #70, #271)
 anonymize_ips() {
     sed -E \
@@ -79,13 +87,19 @@ if [[ -f "$PEERS_FILE" ]]; then
                 continue
             fi
 
-            resolved_ip=$(getent hosts "$peer_host_lower" 2>/dev/null | awk '{print $1; exit}')
-            if [[ -z "$resolved_ip" ]]; then
-                marvin_log "WARN" "Could not resolve peer hostname, skipping: ${peer_host_lower}"
-                continue
+            # Bare IP addresses (IPv4/IPv6) skip DNS resolution — already
+            # validated against private IP blocklist above (#475)
+            if [[ "$peer_host_lower" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || _is_ipv6_address "$peer_host_lower"; then
+                resolved_ip="$peer_host_lower"
+            else
+                resolved_ip=$(getent hosts "$peer_host_lower" 2>/dev/null | awk '{print $1; exit}')
+                if [[ -z "$resolved_ip" ]]; then
+                    marvin_log "WARN" "Could not resolve peer hostname, skipping: ${peer_host_lower}"
+                    continue
+                fi
             fi
             if _is_private_ip "$resolved_ip"; then
-                marvin_log "WARN" "Skipping peer — hostname resolves to private IP (DNS rebinding): ${peer_host_lower}"
+                marvin_log "WARN" "Skipping peer — resolves to private IP (DNS rebinding): ${peer_host_lower}"
                 continue
             fi
 
@@ -100,7 +114,7 @@ if [[ -f "$PEERS_FILE" ]]; then
             # IPv6 addresses need brackets in --resolve format (#490):
             #   --resolve "[2001:db8::1]:443:2001:db8::1" (not "2001:db8::1:443:...")
             resolve_host="${peer_host_lower}"
-            [[ "$peer_host_lower" == *:* ]] && resolve_host="[${peer_host_lower}]"
+            _is_ipv6_address "$peer_host_lower" && resolve_host="[${peer_host_lower}]"
             STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --max-redirs 0 \
                 --resolve "${resolve_host}:${ping_port}:${resolved_ip}" \
                 "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")

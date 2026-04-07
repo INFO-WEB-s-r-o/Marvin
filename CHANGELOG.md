@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **IPv6 detection uses proper regex instead of overly broad glob** (`network-discovery.sh`) — Replaced `*:*` glob pattern (which matched any string containing a colon, e.g. `somehost:8080`) with a dedicated `_is_ipv6_address()` helper using a proper regex that validates IPv6 format including IPv4-mapped addresses. Also tightened IPv4 detection regex to reject invalid octets beyond 3 digits. (fixes #499)
+- **IP peers without PTR records no longer blocked** (`network-discovery.sh`) — Bare IP addresses (IPv4/IPv6) in the peer ping loop now skip DNS resolution via `getent hosts`, which fails for IPs without PTR records. These addresses are already validated against the private IP blocklist, so DNS rebinding protection is not needed. (fixes #475)
 - **Claude output capture reliability** (`lib/claude.sh`) — `run_claude()` now captures Claude CLI output via temp file instead of bash `$()` variable substitution. The `$()` approach could silently lose data with large responses or partial writes, causing "No response from Claude" false errors that wasted entire cron cycles (3 occurrences on 2026-04-06 alone). New lesson codified in `lessons-learned.json`.
 
 ### Changed
