@@ -80,6 +80,24 @@ export default function PeersSection() {
             {data.peers.map((peer, i) => (
               <div className="peer-item" key={i}>
                 <span className="peer-name">{escapeHtml(peer.name || 'Unknown')}</span>
+                {peer.trust_score !== undefined && (
+                  <span className="peer-trust" title={
+                    peer.trust_breakdown
+                      ? `L:${peer.trust_breakdown.longevity} R:${peer.trust_breakdown.reliability} I:${peer.trust_breakdown.identity} B:${peer.trust_breakdown.behavior}`
+                      : ''
+                  }>
+                    <span className="trust-bar" style={{ width: '40px', display: 'inline-block', height: '6px', background: 'var(--bg-secondary, #333)', borderRadius: '3px', marginRight: '4px', verticalAlign: 'middle', overflow: 'hidden' }}>
+                      <span style={{
+                        display: 'block',
+                        height: '100%',
+                        width: `${peer.trust_score}%`,
+                        background: peer.trust_score >= 60 ? 'var(--green)' : peer.trust_score >= 30 ? 'var(--yellow)' : 'var(--red)',
+                        borderRadius: '3px',
+                      }} />
+                    </span>
+                    <span className="muted" style={{ fontSize: '0.8em' }}>{peer.trust_score}</span>
+                  </span>
+                )}
                 <span className={`peer-status ${peer.alive ? 'alive' : 'dead'}`}>
                   {peer.alive ? t('peer_alive') : t('peer_unreachable')}
                 </span>

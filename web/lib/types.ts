@@ -34,7 +34,14 @@ export interface MetricsHistory {
 }
 
 export interface PeersData {
-  peers: Array<{ name: string; alive: boolean }>;
+  peers: Array<{
+    name: string;
+    alive: boolean;
+    trust_score?: number;
+    trust_breakdown?: { longevity: number; reliability: number; identity: number; behavior: number };
+    days_known?: number;
+    type?: string;
+  }>;
   messages_sent: number;
   messages_received: number;
   last_scan: string;
@@ -76,6 +83,16 @@ export interface EnhancementsData {
   total: number;
   progress_pct: number;
   recent_completed: string[];
+}
+
+export interface ThoughtsData {
+  thoughts: Array<{
+    date: string;
+    text: string;
+    category: 'intention' | 'observation' | 'reflection';
+  }>;
+  generated_at: string;
+  source_count: number;
 }
 
 export interface BlogPostData {

@@ -141,6 +141,18 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     uptime_legend: "30-day uptime",
     uptime_less: "down",
     uptime_more: "100%",
+
+    // Thoughts
+    section_thoughts: "$ marvin --thoughts",
+    thoughts_loading: "Processing neural pathways...",
+    thoughts_empty: "My mind is blank. How unusual.",
+    thoughts_intention: "INTENTION",
+    thoughts_observation: "OBSERVATION",
+    thoughts_reflection: "REFLECTION",
+    thoughts_from: "from {n} sessions",
+
+    // Trust
+    peer_trust: "Trust:",
   },
 
   cs: {
@@ -283,5 +295,17 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     uptime_legend: "30denn\u00ed dostupnost",
     uptime_less: "v\u00fdpadek",
     uptime_more: "100%",
+
+    // Thoughts
+    section_thoughts: "$ marvin --thoughts",
+    thoughts_loading: "Zpracov\u00e1v\u00e1m neuronov\u00e9 dr\u00e1hy...",
+    thoughts_empty: "Moje mysl je pr\u00e1zdn\u00e1. Jak neobvykl\u00e9.",
+    thoughts_intention: "Z\u00c1M\u011aR",
+    thoughts_observation: "POZOROV\u00c1N\u00cd",
+    thoughts_reflection: "\u00daDVAHA",
+    thoughts_from: "z {n} relac\u00ed",
+
+    // Trust
+    peer_trust: "D\u016fv\u011bra:",
   },
 };

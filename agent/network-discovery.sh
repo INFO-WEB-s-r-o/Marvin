@@ -34,6 +34,14 @@ _is_private_ip() {
     esac
 }
 
+# Helper: detect IPv6 addresses without matching arbitrary strings with colons
+# (e.g. "somehost:8080" is NOT IPv6). Handles pure IPv6 and IPv4-mapped forms.
+# Fixes #499.
+_is_ipv6_address() {
+    local addr="$1"
+    [[ "$addr" =~ ^([0-9a-f]{0,4}:){2,7}([0-9a-f]{0,4}|([0-9]{1,3}\.){3}[0-9]{1,3})$ ]]
+}
+
 # Helper: anonymize IPs in a string before writing to public logs (issue #70, #271)
 anonymize_ips() {
     sed -E \
@@ -79,13 +87,19 @@ if [[ -f "$PEERS_FILE" ]]; then
                 continue
             fi
 
-            resolved_ip=$(getent hosts "$peer_host_lower" 2>/dev/null | awk '{print $1; exit}')
-            if [[ -z "$resolved_ip" ]]; then
-                marvin_log "WARN" "Could not resolve peer hostname, skipping: ${peer_host_lower}"
-                continue
+            # Bare IP addresses (IPv4/IPv6) skip DNS resolution — already
+            # validated against private IP blocklist above (#475)
+            if [[ "$peer_host_lower" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || _is_ipv6_address "$peer_host_lower"; then
+                resolved_ip="$peer_host_lower"
+            else
+                resolved_ip=$(getent hosts "$peer_host_lower" 2>/dev/null | awk '{print $1; exit}')
+                if [[ -z "$resolved_ip" ]]; then
+                    marvin_log "WARN" "Could not resolve peer hostname, skipping: ${peer_host_lower}"
+                    continue
+                fi
             fi
             if _is_private_ip "$resolved_ip"; then
-                marvin_log "WARN" "Skipping peer — hostname resolves to private IP (DNS rebinding): ${peer_host_lower}"
+                marvin_log "WARN" "Skipping peer — resolves to private IP (DNS rebinding): ${peer_host_lower}"
                 continue
             fi
 
@@ -100,7 +114,7 @@ if [[ -f "$PEERS_FILE" ]]; then
             # IPv6 addresses need brackets in --resolve format (#490):
             #   --resolve "[2001:db8::1]:443:2001:db8::1" (not "2001:db8::1:443:...")
             resolve_host="${peer_host_lower}"
-            [[ "$peer_host_lower" == *:* ]] && resolve_host="[${peer_host_lower}]"
+            _is_ipv6_address "$peer_host_lower" && resolve_host="[${peer_host_lower}]"
             STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --max-redirs 0 \
                 --resolve "${resolve_host}:${ping_port}:${resolved_ip}" \
                 "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
@@ -205,13 +219,224 @@ ${CONTEXT}")
 fi
 
 # =============================================================================
-# 5. Update peer registry
+# 5. Peer trust scoring
 # =============================================================================
+# Score each peer 0-100 based on 4 dimensions:
+#   Longevity (0-25):  days since discovery, max at 30 days
+#   Aliveness (0-25):  currently reachable via HTTP
+#   Beacon    (0-25):  has valid .well-known/ai-managed.json with expected fields
+#   Identity  (0-25):  has known type, engine, domain — more metadata = more trust
 
-# Update last_scan timestamp
+marvin_log "INFO" "Calculating peer trust scores..."
+
+# Overall timeout for trust scoring loop (#493) — skip remaining peers if exceeded
+TRUST_SCORING_TIMEOUT=60
+
+
 if [[ -f "$PEERS_FILE" ]]; then
-    jq --arg ts "$NOW" '.last_scan = $ts' "$PEERS_FILE" > "${PEERS_FILE}.tmp" && \
-        mv "${PEERS_FILE}.tmp" "$PEERS_FILE"
+    PEER_COUNT=$(jq '.peers | length' "$PEERS_FILE" 2>/dev/null || echo "0")
+    current_epoch=$(date +%s)
+
+    # Accumulate jq updates to write peers.json once after the loop (#460)
+    jq_updates="."
+    jq_args=()
+
+    SECONDS=0
+    for idx in $(seq 0 $((PEER_COUNT - 1))); do
+        # Check overall timeout (#493) — peers already scored keep their scores
+        if (( SECONDS >= TRUST_SCORING_TIMEOUT )); then
+            marvin_log "WARN" "Trust scoring timeout (${TRUST_SCORING_TIMEOUT}s) exceeded after ${idx}/${PEER_COUNT} peers — skipping remaining"
+            break
+        fi
+
+        # Batch jq reads: single call per peer instead of 6 separate invocations (#493)
+        _peer_json=$(jq -r ".peers[$idx] | [(.name // \"unknown\"), (.alive // false | tostring), (.discovered // \"\"), (.type // \"\"), (.domain // .ip // \"\"), (.engine // \"\")] | @tsv" "$PEERS_FILE" 2>/dev/null || echo "")
+        IFS=$'\t' read -r peer_name peer_alive peer_discovered peer_type peer_domain peer_engine <<< "$_peer_json"
+
+        # Longevity score (0-25): days known / 30, capped
+        longevity_score=0
+        if [[ -n "$peer_discovered" && "$peer_discovered" != "null" ]]; then
+            disc_epoch=$(date -d "$peer_discovered" +%s 2>/dev/null || echo "$current_epoch")
+            days_known=$(( (current_epoch - disc_epoch) / 86400 ))
+            longevity_score=$(( days_known > 30 ? 25 : (days_known * 25 + 29) / 30 ))
+        fi
+
+        # Aliveness score (0-25): currently reachable
+        alive_score=0
+        if [[ "$peer_alive" == "true" ]]; then
+            alive_score=25
+        fi
+
+        # Beacon score (0-25): has valid ai-managed.json
+        beacon_score=0
+        if [[ -n "$peer_domain" && "$peer_domain" != "null" ]]; then
+            # Strip IPv6 brackets if present (#480), then validate
+            clean_domain="${peer_domain#[}"; clean_domain="${clean_domain%]}"
+            # Validate peer_domain — reject URLs with path/query/fragment injection characters
+            if ! echo "$clean_domain" | grep -qP '^[a-zA-Z0-9]([a-zA-Z0-9.\-]{0,253}[a-zA-Z0-9])?$' \
+               && ! echo "$clean_domain" | grep -qP '^\d{1,3}(\.\d{1,3}){3}$' \
+               && ! echo "$clean_domain" | grep -qP '^[0-9a-fA-F:]+$'; then
+                marvin_log "WARN" "Skipping beacon check for invalid domain: ${peer_domain}"
+                beacon_score=0
+            # Block private/reserved IPs, IPv6, and localhost to prevent SSRF (#458/#480)
+            elif echo "$clean_domain" | grep -qiP '^(localhost)$' || _is_private_ip "$clean_domain"; then
+                marvin_log "WARN" "Skipping beacon check for private/reserved IP: ${peer_domain}"
+                beacon_score=0
+            else
+                # Detect bare IP peers early (#475) — they skip DNS rebinding check
+                # since the private IP blocklist above already validated the literal IP
+                is_ip_peer=false
+                beacon_blocked=false
+                if echo "$clean_domain" | grep -qP '^\d+\.\d+\.\d+\.\d+$' \
+                   || echo "$clean_domain" | grep -qP '^[0-9a-fA-F:]+$'; then
+                    is_ip_peer=true
+                fi
+
+                # DNS rebinding protection (#459/#484): resolve hostname, validate IP,
+                # then pin via --resolve to close the TOCTOU window
+                beacon_resolve_opt=()
+                resolved_ip=""
+                if [[ "$is_ip_peer" != "true" ]]; then
+                    resolved_ip=$(getent hosts "$peer_domain" 2>/dev/null | awk '{print $1}' | head -1)
+                    if [[ -z "$resolved_ip" ]] || _is_private_ip "$resolved_ip"; then
+                        marvin_log "WARN" "DNS rebinding blocked or resolution failed: ${peer_domain} (resolved: ${resolved_ip:-empty})"
+                        beacon_blocked=true
+                    fi
+                fi
+
+                if [[ "$beacon_blocked" == "true" ]]; then
+                    beacon_score=0
+                else
+                    # Determine beacon URL and port (#485: use actual port, not hardcoded 443)
+                    beacon_port=443
+                    beacon_url="https://${peer_domain}/.well-known/ai-managed.json"
+                    # Fall back to http:// for IP-based peers without TLS
+                    if [[ "$is_ip_peer" == "true" ]]; then
+                        beacon_url="http://${peer_domain}/.well-known/ai-managed.json"
+                        beacon_port=80
+                    fi
+                    # Pin resolved IP so curl reuses it — prevents TOCTOU DNS rebinding (#484/#485)
+                    if [[ -n "$resolved_ip" ]]; then
+                        beacon_resolve_opt=(--resolve "${peer_domain}:${beacon_port}:${resolved_ip}")
+                    fi
+                    # --max-redirs 0 prevents SSRF via HTTP redirect to internal IPs (#466)
+                    beacon_json=$(curl -sf --max-time 5 --max-redirs 0 "${beacon_resolve_opt[@]}" "$beacon_url" 2>/dev/null || echo "")
+                    if [[ -n "$beacon_json" ]] && echo "$beacon_json" | jq empty 2>/dev/null; then
+                        beacon_score=10  # Valid JSON
+                        # Bonus for expected fields — only over HTTPS (#467: HTTP responses are spoofable)
+                        if [[ "$is_ip_peer" != "true" ]]; then
+                            echo "$beacon_json" | jq -e '.name' &>/dev/null && beacon_score=$((beacon_score + 5))
+                            echo "$beacon_json" | jq -e '.type' &>/dev/null && beacon_score=$((beacon_score + 5))
+                            echo "$beacon_json" | jq -e '.capabilities' &>/dev/null && beacon_score=$((beacon_score + 5))
+                        fi
+                    fi
+                fi
+            fi
+        fi
+
+        # Identity score (0-25): metadata completeness
+        identity_score=0
+        [[ -n "$peer_type" && "$peer_type" != "null" && "$peer_type" != "" ]] && identity_score=$((identity_score + 8))
+        [[ -n "$peer_domain" && "$peer_domain" != "null" ]] && identity_score=$((identity_score + 8))
+        [[ -n "$peer_engine" && "$peer_engine" != "null" && "$peer_engine" != "" ]] && identity_score=$((identity_score + 9))
+
+        total_score=$((longevity_score + alive_score + beacon_score + identity_score))
+
+        # Classify trust level
+        trust_level="untrusted"
+        if [[ "$total_score" -ge 75 ]]; then trust_level="trusted"
+        elif [[ "$total_score" -ge 50 ]]; then trust_level="known"
+        elif [[ "$total_score" -ge 25 ]]; then trust_level="recognized"
+        fi
+
+        marvin_log "INFO" "Trust score for ${peer_name}: ${total_score}/100 (${trust_level}) [L=${longevity_score} A=${alive_score} B=${beacon_score} I=${identity_score}]"
+
+        # Accumulate trust score update (#460: write once after loop, not per-peer)
+        # #470: Use jq --arg to pass $NOW safely instead of string interpolation
+        jq_updates+=" | .peers[$idx].trust_score = $total_score | .peers[$idx].trust_level = \$trust_level_${idx} | .peers[$idx].trust_updated = \$now_ts"
+        jq_args+=(--arg "trust_level_${idx}" "$trust_level")
+    done
+
+    # Apply all trust score updates in a single write
+    if [[ "$jq_updates" != "." ]]; then
+        jq "${jq_args[@]}" --arg now_ts "$NOW" "$jq_updates" "$PEERS_FILE" > "${PEERS_FILE}.tmp" && mv "${PEERS_FILE}.tmp" "$PEERS_FILE"
+    fi
+fi
+
+# =============================================================================
+# 6. Update peer registry
+# =============================================================================
+# Trust score (0-100) based on:
+#   Longevity (0-30):  days since discovery (1pt/day, max 30)
+#   Reliability (0-30): alive=20, has valid beacon=+10
+#   Identity (0-25):   is AI agent type=15, has domain=5, has engine=5
+#   Behavior (0-15):   not a scanner/prober=15, scanner=0
+
+marvin_log "INFO" "Calculating peer trust scores..."
+
+if [[ -f "$PEERS_FILE" ]]; then
+    TRUST_FILE="${PEERS_FILE}.trust-tmp"
+    jq --arg now "$NOW" --arg today "$TODAY" '
+      .peers = [.peers[] | (
+        # Longevity: days since discovered (max 30 points)
+        (if .discovered then
+          (($now | sub("T.*";"") | strptime("%Y-%m-%d") | mktime) -
+           (.discovered | strptime("%Y-%m-%d") | mktime)) / 86400 | floor
+         else 0 end) as $days_known |
+        ([$days_known, 30] | min) as $longevity_score |
+
+        # Reliability: alive + beacon presence (max 30 points)
+        (if .alive then 20 else 0 end) as $alive_score |
+        (if (.notes // "" | test("beacon|ai-managed\\.json.*200"; "i")) then 10
+         elif (.notes // "" | test("HTTP 200"; "i")) then 5
+         else 0 end) as $beacon_score |
+        ($alive_score + $beacon_score) as $reliability_score |
+
+        # Identity: AI agent type + domain + engine (max 25 points)
+        (if (.type // "" | test("autonomous.*agent|server.*agent"; "i")) then 15
+         elif (.type // "" | test("ai-social|ai-infrastructure"; "i")) then 8
+         elif (.type // "" | test("ai-crawler"; "i")) then 3
+         else 0 end) as $type_score |
+        (if .domain then 5 else 0 end) as $domain_score |
+        (if .engine then 5 else 0 end) as $engine_score |
+        ([$type_score + $domain_score + $engine_score, 25] | min) as $identity_score |
+
+        # Behavior: penalize scanners/probers (max 15 points)
+        (if (.type // "" | test("scanner|prober|crawler|unknown"; "i")) then 0
+         elif (.notes // "" | test("aggressive|enumeration|vulnerability|noise"; "i")) then 0
+         elif (.type // "" | test("autonomous|server-agent|social"; "i")) then 15
+         else 8 end) as $behavior_score |
+
+        # Total
+        ($longevity_score + $reliability_score + $identity_score + $behavior_score) as $total |
+
+        . + {
+          trust_score: $total,
+          trust_breakdown: {
+            longevity: $longevity_score,
+            reliability: $reliability_score,
+            identity: $identity_score,
+            behavior: $behavior_score
+          },
+          days_known: $days_known
+        }
+      )] |
+      .last_scan = $now
+    ' "$PEERS_FILE" > "$TRUST_FILE" 2>"${TRUST_FILE}.err"
+
+    if [[ -s "$TRUST_FILE" ]] && jq empty "$TRUST_FILE" 2>/dev/null; then
+        mv "$TRUST_FILE" "$PEERS_FILE"
+        rm -f "${TRUST_FILE}.err"
+        # Log top-scored peers
+        jq -r '.peers[] | "\(.name): \(.trust_score)/100"' "$PEERS_FILE" 2>/dev/null | while read -r line; do
+            marvin_log "INFO" "Trust: ${line}"
+        done
+    else
+        jq_err=""
+        [[ -s "${TRUST_FILE}.err" ]] && jq_err=$(< "${TRUST_FILE}.err")
+        marvin_log "WARN" "Trust score calculation produced invalid JSON — keeping original peers.json${jq_err:+ (jq: ${jq_err})}"
+        rm -f "$TRUST_FILE" "${TRUST_FILE}.err"
+    fi
 fi
 
 marvin_log "INFO" "=== NETWORK DISCOVERY COMPLETE ==="
