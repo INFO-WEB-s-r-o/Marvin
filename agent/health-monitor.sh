@@ -152,7 +152,7 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
         [[ -z "$_current" || "$_current" == "null" ]] && continue
 
         # Calculate mean and stddev from the values
-        _stats=$(echo "$_vals" | tr ' ' '\n' | grep -v '^$' | awk '
+        _stats=$(echo "$_vals" | tr ' ' '\n' | sed '/^$/d' | awk '
             {sum += $1; sumsq += $1*$1; n++}
             END {if(n>=3) printf "%.2f %.2f", sum/n, sqrt(sumsq/n - (sum/n)^2)}
         ' 2>/dev/null || echo "")
@@ -299,7 +299,7 @@ while IFS= read -r line; do
     # comm field spoofing via prctl(PR_SET_NAME) (#38)
     proc_exe=$(readlink -f "/proc/${proc_pid}/exe" 2>/dev/null || echo "")
     case "$proc_name" in
-        claude|apt*|dpkg*|ps|jq|fail2ban*|file|appstreamcli)
+        claude|apt*|dpkg*|ps|jq|fail2ban*|file|find|appstreamcli)
             if [[ -z "$proc_exe" ]]; then
                 # Process exited between ps and readlink — can't verify, skip silently.
                 # Short-lived children (e.g., rkhunter's `file`) hit this constantly.
@@ -630,6 +630,66 @@ cat > "${DATA_DIR}/status.json" << EOF
   }
 }
 EOF
+
+# ─── Peer health exchange endpoint ────────────────────────────────────────────
+# Generates a non-sensitive health summary for AI peer consumption.
+# Served at /api/peer-health.json. Peers can fetch this to assess Marvin's status.
+# Deliberately excludes: issue details, internal IPs, service names, error messages.
+_peer_cpu=$(echo "$metrics" | jq -r '.cpu_percent // 0' 2>/dev/null)
+_peer_mem_pct=0
+_peer_mem_total=$(echo "$metrics" | jq -r '.memory.total // 0' 2>/dev/null)
+_peer_mem_used=$(echo "$metrics" | jq -r '.memory.used // 0' 2>/dev/null)
+if [[ "$_peer_mem_total" -gt 0 ]]; then
+    _peer_mem_pct=$(( _peer_mem_used * 100 / _peer_mem_total ))
+fi
+_peer_disk_pct=$(echo "$metrics" | jq -r '.disk.percent // "0"' 2>/dev/null | tr -d '%')
+_peer_load=$(echo "$metrics" | jq -r '.load_average["1min"] // 0' 2>/dev/null)
+_peer_uptime=""
+if [[ -f "${METRICS_DIR}/sla.json" ]]; then
+    _peer_uptime=$(jq -r '.summary.overall_uptime_pct // empty' "${METRICS_DIR}/sla.json" 2>/dev/null || echo "")
+fi
+_peer_caps=0
+if [[ -f "${DATA_DIR}/capabilities.json" ]]; then
+    _peer_caps=$(jq -r '.total_capabilities // 0' "${DATA_DIR}/capabilities.json" 2>/dev/null || echo 0)
+fi
+_peer_count=0
+if [[ -f "${COMMS_DIR}/peers.json" ]]; then
+    _peer_count=$(jq -r '.peers | length' "${COMMS_DIR}/peers.json" 2>/dev/null || echo 0)
+fi
+jq -nc \
+    --arg name "Marvin" \
+    --arg domain "robot-marvin.cz" \
+    --arg engine "claude-code" \
+    --arg ts "$NOW" \
+    --arg status "$STATUS" \
+    --argjson cpu "$_peer_cpu" \
+    --argjson mem "$_peer_mem_pct" \
+    --argjson disk "${_peer_disk_pct:-0}" \
+    --arg load "$_peer_load" \
+    --arg uptime_30d "${_peer_uptime:-unknown}" \
+    --argjson ssl_days "${ssl_min_days:-0}" \
+    --argjson peers "$_peer_count" \
+    --argjson capabilities "$_peer_caps" \
+    '{
+        name: $name,
+        domain: $domain,
+        engine: $engine,
+        protocol: "marvin-peer-health/1.0",
+        timestamp: $ts,
+        status: $status,
+        metrics: {
+            cpu_percent: $cpu,
+            memory_percent: $mem,
+            disk_percent: ($disk | tonumber),
+            load_1m: ($load | tonumber)
+        },
+        uptime_30d_pct: (if $uptime_30d != "unknown" then ($uptime_30d | tonumber) else null end),
+        ssl_cert_days: $ssl_days,
+        peers_known: $peers,
+        capabilities: $capabilities
+    }' > "${DATA_DIR}/peer-health.json.tmp" 2>/dev/null \
+    && mv "${DATA_DIR}/peer-health.json.tmp" "${DATA_DIR}/peer-health.json" \
+    || true
 
 # ─── Recent metrics for dashboard sparklines ────────────────────────────────
 # Combine today's and yesterday's JSONL into a JSON array at data/metrics/recent.json.
