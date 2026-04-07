@@ -62,7 +62,7 @@ for report in "${reports[@]}"; do
 
     # Helper: clean markdown formatting and trim text
     _clean() {
-        echo "$1" | sed 's/\*\*//g; s/`//g; s/^ *//; s/ *$//' | head -c 200
+        echo "$1" | sed 's/\*\*//g; s/`//g; s/^ *//; s/ *$//' | cut -c 1-200
     }
 
     # Build thought entries from this report

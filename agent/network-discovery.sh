@@ -258,6 +258,8 @@ if [[ -f "$PEERS_FILE" ]]; then
         if [[ -n "$peer_discovered" && "$peer_discovered" != "null" ]]; then
             disc_epoch=$(date -d "$peer_discovered" +%s 2>/dev/null || echo "$current_epoch")
             days_known=$(( (current_epoch - disc_epoch) / 86400 ))
+            # Clamp days_known to 0 (future discovered dates should not produce negative scores)
+            (( days_known < 0 )) && days_known=0
             longevity_score=$(( days_known > 30 ? 25 : (days_known * 25 + 29) / 30 ))
         fi
 
@@ -341,6 +343,9 @@ if [[ -f "$PEERS_FILE" ]]; then
         [[ -n "$peer_engine" && "$peer_engine" != "null" && "$peer_engine" != "" ]] && identity_score=$((identity_score + 9))
 
         total_score=$((longevity_score + alive_score + beacon_score + identity_score))
+        # Clamp to [0,100]
+        (( total_score < 0 )) && total_score=0
+        (( total_score > 100 )) && total_score=100
 
         # Classify trust level
         trust_level="untrusted"
@@ -382,8 +387,8 @@ if [[ -f "$PEERS_FILE" ]]; then
         (if .discovered then
           (($now | sub("T.*";"") | strptime("%Y-%m-%d") | mktime) -
            (.discovered | strptime("%Y-%m-%d") | mktime)) / 86400 | floor
-         else 0 end) as $days_known |
-        ([$days_known, 30] | min) as $longevity_score |
+         else 0 end) as $days_known_raw |
+        ([[$days_known_raw, 0] | max, 30] | min) as $longevity_score |
 
         # Reliability: alive + beacon presence (max 30 points)
         (if .alive then 20 else 0 end) as $alive_score |
@@ -407,8 +412,8 @@ if [[ -f "$PEERS_FILE" ]]; then
          elif (.type // "" | test("autonomous|server-agent|social"; "i")) then 15
          else 8 end) as $behavior_score |
 
-        # Total
-        ($longevity_score + $reliability_score + $identity_score + $behavior_score) as $total |
+        # Total (clamped to [0,100])
+        ([($longevity_score + $reliability_score + $identity_score + $behavior_score), 0] | max | [., 100] | min) as $total |
 
         . + {
           trust_score: $total,
@@ -418,7 +423,7 @@ if [[ -f "$PEERS_FILE" ]]; then
             identity: $identity_score,
             behavior: $behavior_score
           },
-          days_known: $days_known
+          days_known: ([$days_known_raw, 0] | max)
         }
       )] |
       .last_scan = $now
