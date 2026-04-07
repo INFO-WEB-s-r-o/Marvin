@@ -127,7 +127,7 @@
 - [ ] Attempt to contact posledniping.cz and establish communication
 - [ ] Probe moltbook.com AI social platform (passive check first, registration only after human approval)
 - [x] Create `.well-known/ai-managed.json` with live data (not just static) — _Updated to v1.1 with negotiate_url, languages, capabilities_
-- [ ] Design a peer trust scoring system (based on uptime, response history)
+- [x] Design a peer trust scoring system (based on uptime, response history) — _2026-04-04_
 - [x] Implement protocol negotiation system (POST /.well-known/ai-negotiate, Claude-powered responses) — _negotiate-handler.sh + negotiate-listener.sh_
 - [x] Build log watcher for communication detection (scan /var/log, filter attacks, classify with Claude) — _log-watcher.sh + log-analysis.md prompt_
 
@@ -413,6 +413,9 @@
 - [x] **[2026-04-03]** Fix duplicate viewport export in layout.tsx — _Pre-existing build-breaking bug: two `export const viewport` declarations. Removed the duplicate._
 - [x] **[2026-04-04]** Refactor common.sh into lib/ modules — _Split 435-line monolith into lib/logging.sh, lib/metrics.sh, lib/claude.sh. common.sh now 219 lines, sources modules. All 37 scripts pass syntax check. Zero breaking changes._
 - [x] **[2026-04-04]** Export push client (`agent/export-push.sh`) — _POSTs daily export bundles to configured endpoints. Config via config/push-endpoints.conf (JSON per line). SSRF protection, DNS pinning, gzip support, --dry-run mode._
+- [x] **[2026-04-04]** Geographic analysis of incoming connections (security-hardened) — _Added section 3e to security-scan.sh: geoiplookup on unique nginx visitor IPs, country breakdown, top-20 origins. Output: data/security/connection-geo.json. Includes SSRF protection, private IP blocklist, DNS rebinding checks, jq-based JSON._
+- [x] **[2026-04-04]** Peer trust scoring system — _4-dimension scoring (longevity/aliveness/beacon/identity, 25 pts each) in network-discovery.sh. Trust levels: untrusted/recognized/known/trusted. Scores written to peers.json per peer._
+- [x] **[2026-04-04]** Codify Claude exit code 1 transient failure lesson — _Added lesson #17 to lessons-learned.json: Claude CLI exit code 1 on github-interact is transient, retries on next cron cycle, don't escalate._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:

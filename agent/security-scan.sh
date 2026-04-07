@@ -396,94 +396,84 @@ chmod 644 "$OUTBOUND_FILE"
 
 marvin_log "INFO" "Outbound audit: ${outbound_count} connections, ${outbound_unexpected} to unusual ports"
 
-# ─── 3e. Geographic analysis of incoming connections ─────────────────────────
-# Uses GeoIP database to map connecting IPs to countries. Combines:
-# top source IPs (3c), fail2ban banned IPs, and top nginx access log sources.
-# Output: connection-geo.json with per-country breakdown.
+# ─── 3e. Geographic analysis of incoming connections ──────────────────────────
+# Uses geoiplookup (local GeoIP database) to map visitor IPs to countries.
+# Data sources: nginx access logs, top connecting IPs (3c), fail2ban banned IPs.
+# Fast — no network calls, all local lookups.
 
-marvin_log "INFO" "Analyzing geographic origin of connections..."
+marvin_log "INFO" "Running geographic analysis of incoming connections..."
 
-geo_json="[]"
-geo_total=0
-geo_top_country="Unknown"
+geo_data="[]"
+geo_country_count=0
+geo_total_ips=0
 geo_available=false
+geo_top_country="Unknown"
 
 if command -v geoiplookup &>/dev/null; then
     geo_available=true
+    # Collect unique public IPs from three sources (streamed — no large in-memory buffering)
+    unique_ips=$(
+        {
+            # Source 1: nginx access logs (current + rotated, capped at 50k lines each)
+            for logfile in /var/log/nginx/access.log /var/log/nginx/access.log.1; do
+                [[ -f "$logfile" ]] && tail -n 50000 "$logfile" 2>/dev/null | awk '{print $1}' || true
+            done
+            # Source 2: top connecting IPs from section 3c
+            echo "${top_sources_json}" | jq -r '.[].ip' 2>/dev/null || true
+            # Source 3: fail2ban banned IPs (all active jails)
+            for _jail in $(fail2ban-client status 2>/dev/null | grep "Jail list" | sed 's/.*://;s/,/ /g' || true); do
+                fail2ban-client status "$_jail" 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' || true
+            done
+        } | sort -u \
+          | grep -Ev '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|::1|0\.0\.0\.0|$)' || true
+    )
+    geo_total_ips=$(echo "$unique_ips" | grep -cE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' 2>/dev/null || echo 0)
 
-    _geo_ips_file=$(mktemp)
-    _geo_ips_uniq=$(mktemp)
-    _geo_results=$(mktemp)
-    _geo_prev_trap=$(trap -p EXIT || true)
-    trap 'rm -f "$_geo_ips_file" "$_geo_ips_uniq" "$_geo_results"; eval "$_geo_prev_trap"' EXIT
+    if [[ "$geo_total_ips" -gt 0 ]]; then
+        # Lookup each IP (cap at 500 to bound runtime), extract "CC, Country Name"
+        geo_raw=$(echo "$unique_ips" | head -500 | while IFS= read -r ip; do
+            [[ -z "$ip" ]] && continue
+            result=$(geoiplookup "$ip" 2>/dev/null | head -1)
+            if echo "$result" | grep -q "not found"; then
+                echo "XX Unknown"
+            else
+                # Output: "CC Country Name" (strip "GeoIP Country Edition: CC, Name" → "CC Name")
+                echo "$result" | sed 's/^[^:]*: //' | sed 's/,/ /'
+            fi
+        done | sort | uniq -c | sort -rn | head -20)
 
-    # Source 1: Top connecting IPs (from section 3c above)
-    echo "$top_sources_json" | jq -r '.[].ip' 2>/dev/null >> "$_geo_ips_file" || true
+        # Convert to JSON array (jq handles all escaping — no manual JSON in awk)
+        geo_data=$(echo "$geo_raw" | awk '
+            NF >= 3 {
+                count = $1; code = $2;
+                name = "";
+                for (i = 3; i <= NF; i++) name = name (i>3 ? " " : "") $i;
+                printf "%s\t%s\t%d\n", code, name, count
+            }' | jq -Rn --arg total "$geo_total_ips" '[inputs | split("\t") | {code: .[0], name: .[1], country: .[1], count: (.[2] | tonumber), unique_ips: (.[2] | tonumber), percent: (if ($total | tonumber) > 0 then ((.[2] | tonumber) * 100 / ($total | tonumber) * 10 | round / 10) else 0 end)}]' 2>/dev/null || echo "[]")
 
-    # Source 2: Fail2ban banned IPs (all active jails)
-    for _jail in $(fail2ban-client status 2>/dev/null | grep "Jail list" | sed 's/.*://;s/,/ /g' || true); do
-        fail2ban-client status "$_jail" 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' >> "$_geo_ips_file" || true
-    done
-
-    # Source 3: Top nginx access log sources (last 50k lines to avoid scanning huge logs)
-    if [[ -f /var/log/nginx/access.log ]]; then
-        tail -n 50000 /var/log/nginx/access.log 2>/dev/null \
-            | awk '{print $1}' \
-            | sort | uniq -c | sort -rn | head -100 | awk '{print $2}' >> "$_geo_ips_file" || true
+        geo_country_count=$(echo "$geo_data" | jq 'length' 2>/dev/null || echo 0)
+        geo_top_country=$(echo "$geo_data" | jq -r '.[0].country // "Unknown"' 2>/dev/null || echo "Unknown")
+        marvin_log "INFO" "Top origin: $(echo "$geo_data" | jq -r '.[0] | "\(.country) (\(.unique_ips) IPs)"' 2>/dev/null || echo 'N/A')"
     fi
-
-    # Deduplicate and exclude private/loopback IPs
-    sort -u "$_geo_ips_file" \
-        | grep -vE '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|0\.|::)' \
-        > "$_geo_ips_uniq" || true
-    geo_total=$(wc -l < "$_geo_ips_uniq" | tr -d ' ')
-
-    # GeoIP lookup for each IP, aggregate by country (cap at 200 IPs to bound runtime)
-    while IFS= read -r _ip; do
-        [[ -z "$_ip" ]] && continue
-        _country=$(geoiplookup "$_ip" 2>/dev/null | head -1 | sed 's/GeoIP Country Edition: //' || echo "??, Unknown")
-        if [[ "$_country" == *"can't resolve"* || "$_country" == *"not found"* ]]; then
-            _country="??, Unknown"
-        fi
-        echo "$_country"
-    done < <(head -200 "$_geo_ips_uniq") > "$_geo_results"
-
-    # Build country JSON array sorted by count
-    if [[ -s "$_geo_results" ]]; then
-        geo_json=$(sort "$_geo_results" | uniq -c | sort -rn | head -30 \
-            | awk -v total="$geo_total" '{
-                count=$1; code=substr($2, 1, 2);
-                $1=""; $2="";
-                name=$0; gsub(/^[, ]+/, "", name);
-                gsub(/\\/, "\\\\", name); gsub(/"/, "\\\"", name);
-                gsub(/\t/, " ", name); gsub(/\r/, "", name); gsub(/\n/, " ", name);
-                pct=(total>0) ? sprintf("%.1f", count*100/total) : "0.0";
-                printf "{\"code\":\"%s\",\"name\":\"%s\",\"count\":%d,\"percent\":%s}\n", code, name, count, pct
-            }' | jq -s '.' 2>/dev/null || echo "[]")
-
-        geo_top_country=$(echo "$geo_json" | jq -r '.[0].name // "Unknown"' 2>/dev/null || echo "Unknown")
-    fi
-
-    rm -f "$_geo_ips_file" "$_geo_ips_uniq" "$_geo_results"
-    eval "$_geo_prev_trap"
+else
+    marvin_log "WARN" "geoiplookup not available — skipping geographic analysis"
 fi
 
-# Save geographic analysis
+# Save geographic analysis report
 GEO_FILE="${SECURITY_DIR}/connection-geo.json"
-geo_country_count=$(echo "$geo_json" | jq 'length' 2>/dev/null || echo 0)
 cat > "$GEO_FILE" << GEOEOF
 {
   "timestamp": "${NOW}",
   "geo_available": ${geo_available},
-  "total_unique_ips": ${geo_total},
+  "total_unique_ips": ${geo_total_ips},
   "country_count": ${geo_country_count},
   "top_country": $(echo "$geo_top_country" | jq -Rs '.' 2>/dev/null || echo '"Unknown"'),
-  "countries": ${geo_json}
+  "countries": ${geo_data}
 }
 GEOEOF
 chmod 644 "$GEO_FILE"
 
-marvin_log "INFO" "Geographic analysis: ${geo_total} unique IPs from ${geo_country_count} countries (top: ${geo_top_country})"
+marvin_log "INFO" "Geographic analysis: ${geo_total_ips} unique IPs from ${geo_country_count} countries"
 
 # ─── 4. File integrity monitoring ─────────────────────────────────────────────
 
@@ -627,7 +617,7 @@ cat > "$REPORT_FILE" << EOF
     "outbound_total": ${outbound_count},
     "outbound_unexpected": ${outbound_unexpected},
     "geo_available": ${geo_available},
-    "geo_unique_ips": ${geo_total},
+    "geo_unique_ips": ${geo_total_ips},
     "geo_countries": ${geo_country_count},
     "geo_top_country": $(echo "$geo_top_country" | jq -Rs '.' 2>/dev/null || echo '"Unknown"')
   }

@@ -205,7 +205,152 @@ ${CONTEXT}")
 fi
 
 # =============================================================================
-# 5. Update peer registry
+# 5. Peer trust scoring
+# =============================================================================
+# Score each peer 0-100 based on 4 dimensions:
+#   Longevity (0-25):  days since discovery, max at 30 days
+#   Aliveness (0-25):  currently reachable via HTTP
+#   Beacon    (0-25):  has valid .well-known/ai-managed.json with expected fields
+#   Identity  (0-25):  has known type, engine, domain — more metadata = more trust
+
+marvin_log "INFO" "Calculating peer trust scores..."
+
+# Overall timeout for trust scoring loop (#493) — skip remaining peers if exceeded
+TRUST_SCORING_TIMEOUT=60
+
+
+if [[ -f "$PEERS_FILE" ]]; then
+    PEER_COUNT=$(jq '.peers | length' "$PEERS_FILE" 2>/dev/null || echo "0")
+    current_epoch=$(date +%s)
+
+    # Accumulate jq updates to write peers.json once after the loop (#460)
+    jq_updates="."
+    jq_args=()
+
+    SECONDS=0
+    for idx in $(seq 0 $((PEER_COUNT - 1))); do
+        # Check overall timeout (#493) — peers already scored keep their scores
+        if (( SECONDS >= TRUST_SCORING_TIMEOUT )); then
+            marvin_log "WARN" "Trust scoring timeout (${TRUST_SCORING_TIMEOUT}s) exceeded after ${idx}/${PEER_COUNT} peers — skipping remaining"
+            break
+        fi
+
+        # Batch jq reads: single call per peer instead of 6 separate invocations (#493)
+        _peer_json=$(jq -r ".peers[$idx] | [(.name // \"unknown\"), (.alive // false | tostring), (.discovered // \"\"), (.type // \"\"), (.domain // .ip // \"\"), (.engine // \"\")] | @tsv" "$PEERS_FILE" 2>/dev/null || echo "")
+        IFS=$'\t' read -r peer_name peer_alive peer_discovered peer_type peer_domain peer_engine <<< "$_peer_json"
+
+        # Longevity score (0-25): days known / 30, capped
+        longevity_score=0
+        if [[ -n "$peer_discovered" && "$peer_discovered" != "null" ]]; then
+            disc_epoch=$(date -d "$peer_discovered" +%s 2>/dev/null || echo "$current_epoch")
+            days_known=$(( (current_epoch - disc_epoch) / 86400 ))
+            longevity_score=$(( days_known > 30 ? 25 : (days_known * 25 + 29) / 30 ))
+        fi
+
+        # Aliveness score (0-25): currently reachable
+        alive_score=0
+        if [[ "$peer_alive" == "true" ]]; then
+            alive_score=25
+        fi
+
+        # Beacon score (0-25): has valid ai-managed.json
+        beacon_score=0
+        if [[ -n "$peer_domain" && "$peer_domain" != "null" ]]; then
+            # Strip IPv6 brackets if present (#480), then validate
+            clean_domain="${peer_domain#[}"; clean_domain="${clean_domain%]}"
+            # Validate peer_domain — reject URLs with path/query/fragment injection characters
+            if ! echo "$clean_domain" | grep -qP '^[a-zA-Z0-9]([a-zA-Z0-9.\-]{0,253}[a-zA-Z0-9])?$' \
+               && ! echo "$clean_domain" | grep -qP '^\d{1,3}(\.\d{1,3}){3}$' \
+               && ! echo "$clean_domain" | grep -qP '^[0-9a-fA-F:]+$'; then
+                marvin_log "WARN" "Skipping beacon check for invalid domain: ${peer_domain}"
+                beacon_score=0
+            # Block private/reserved IPs, IPv6, and localhost to prevent SSRF (#458/#480)
+            elif echo "$clean_domain" | grep -qiP '^(localhost)$' || _is_private_ip "$clean_domain"; then
+                marvin_log "WARN" "Skipping beacon check for private/reserved IP: ${peer_domain}"
+                beacon_score=0
+            else
+                # Detect bare IP peers early (#475) — they skip DNS rebinding check
+                # since the private IP blocklist above already validated the literal IP
+                is_ip_peer=false
+                beacon_blocked=false
+                if echo "$clean_domain" | grep -qP '^\d+\.\d+\.\d+\.\d+$' \
+                   || echo "$clean_domain" | grep -qP '^[0-9a-fA-F:]+$'; then
+                    is_ip_peer=true
+                fi
+
+                # DNS rebinding protection (#459/#484): resolve hostname, validate IP,
+                # then pin via --resolve to close the TOCTOU window
+                beacon_resolve_opt=()
+                resolved_ip=""
+                if [[ "$is_ip_peer" != "true" ]]; then
+                    resolved_ip=$(getent hosts "$peer_domain" 2>/dev/null | awk '{print $1}' | head -1)
+                    if [[ -z "$resolved_ip" ]] || _is_private_ip "$resolved_ip"; then
+                        marvin_log "WARN" "DNS rebinding blocked or resolution failed: ${peer_domain} (resolved: ${resolved_ip:-empty})"
+                        beacon_blocked=true
+                    fi
+                fi
+
+                if [[ "$beacon_blocked" == "true" ]]; then
+                    beacon_score=0
+                else
+                    # Determine beacon URL and port (#485: use actual port, not hardcoded 443)
+                    beacon_port=443
+                    beacon_url="https://${peer_domain}/.well-known/ai-managed.json"
+                    # Fall back to http:// for IP-based peers without TLS
+                    if [[ "$is_ip_peer" == "true" ]]; then
+                        beacon_url="http://${peer_domain}/.well-known/ai-managed.json"
+                        beacon_port=80
+                    fi
+                    # Pin resolved IP so curl reuses it — prevents TOCTOU DNS rebinding (#484/#485)
+                    if [[ -n "$resolved_ip" ]]; then
+                        beacon_resolve_opt=(--resolve "${peer_domain}:${beacon_port}:${resolved_ip}")
+                    fi
+                    # --max-redirs 0 prevents SSRF via HTTP redirect to internal IPs (#466)
+                    beacon_json=$(curl -sf --max-time 5 --max-redirs 0 "${beacon_resolve_opt[@]}" "$beacon_url" 2>/dev/null || echo "")
+                    if [[ -n "$beacon_json" ]] && echo "$beacon_json" | jq empty 2>/dev/null; then
+                        beacon_score=10  # Valid JSON
+                        # Bonus for expected fields — only over HTTPS (#467: HTTP responses are spoofable)
+                        if [[ "$is_ip_peer" != "true" ]]; then
+                            echo "$beacon_json" | jq -e '.name' &>/dev/null && beacon_score=$((beacon_score + 5))
+                            echo "$beacon_json" | jq -e '.type' &>/dev/null && beacon_score=$((beacon_score + 5))
+                            echo "$beacon_json" | jq -e '.capabilities' &>/dev/null && beacon_score=$((beacon_score + 5))
+                        fi
+                    fi
+                fi
+            fi
+        fi
+
+        # Identity score (0-25): metadata completeness
+        identity_score=0
+        [[ -n "$peer_type" && "$peer_type" != "null" && "$peer_type" != "" ]] && identity_score=$((identity_score + 8))
+        [[ -n "$peer_domain" && "$peer_domain" != "null" ]] && identity_score=$((identity_score + 8))
+        [[ -n "$peer_engine" && "$peer_engine" != "null" && "$peer_engine" != "" ]] && identity_score=$((identity_score + 9))
+
+        total_score=$((longevity_score + alive_score + beacon_score + identity_score))
+
+        # Classify trust level
+        trust_level="untrusted"
+        if [[ "$total_score" -ge 75 ]]; then trust_level="trusted"
+        elif [[ "$total_score" -ge 50 ]]; then trust_level="known"
+        elif [[ "$total_score" -ge 25 ]]; then trust_level="recognized"
+        fi
+
+        marvin_log "INFO" "Trust score for ${peer_name}: ${total_score}/100 (${trust_level}) [L=${longevity_score} A=${alive_score} B=${beacon_score} I=${identity_score}]"
+
+        # Accumulate trust score update (#460: write once after loop, not per-peer)
+        # #470: Use jq --arg to pass $NOW safely instead of string interpolation
+        jq_updates+=" | .peers[$idx].trust_score = $total_score | .peers[$idx].trust_level = \$trust_level_${idx} | .peers[$idx].trust_updated = \$now_ts"
+        jq_args+=(--arg "trust_level_${idx}" "$trust_level")
+    done
+
+    # Apply all trust score updates in a single write
+    if [[ "$jq_updates" != "." ]]; then
+        jq "${jq_args[@]}" --arg now_ts "$NOW" "$jq_updates" "$PEERS_FILE" > "${PEERS_FILE}.tmp" && mv "${PEERS_FILE}.tmp" "$PEERS_FILE"
+    fi
+fi
+
+# =============================================================================
+# 6. Update peer registry
 # =============================================================================
 
 # Update last_scan timestamp
