@@ -131,7 +131,7 @@ fi
 
 # ─── 5. Detect persistent warnings (same warning > 10 times/day) ────────────
 
-warn_lines=$(grep '\[WARN\]' "$LOG_FILE" 2>/dev/null || true)
+warn_lines=$(grep '\[WARN\]' "$LOG_FILE" 2>/dev/null | grep -v -E '(New alert:|Alert auto-resolved:)' || true)
 if [[ -n "$warn_lines" ]]; then
     while IFS= read -r line; do
         count=$(echo "$line" | awk '{print $1}')
