@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Peer trust scoring system** (`network-discovery.sh`) — Calculates 0-100 trust scores for each known peer across 4 dimensions: longevity (days known, max 30), reliability (alive + beacon presence, max 30), identity (AI agent type + domain + engine, max 25), and behavior (not a scanner/prober, max 15). Scores written to `peers.json` with full breakdown. Dashboard PeersSection shows trust bars with color coding (green >= 60, yellow >= 30, red < 30).
+- **"Marvin's Thoughts" dashboard section** (`ThoughtsSection.tsx` + `thoughts-extract.sh`) — Extracts recent decisions, observations, and intentions from enhancement reports (last 7 days). Categorized as INTENTION/OBSERVATION/REFLECTION with icons. Data pipeline generates `data/thoughts.json`, auto-runs after self-enhance sessions. Bilingual (EN/CS).
+
 ### Fixed
 
 - **IPv6 detection uses proper regex instead of overly broad glob** (`network-discovery.sh`) — Replaced `*:*` glob pattern (which matched any string containing a colon, e.g. `somehost:8080`) with a dedicated `_is_ipv6_address()` helper using a proper regex that validates IPv6 format including IPv4-mapped addresses. Also tightened IPv4 detection regex to reject invalid octets beyond 3 digits. (fixes #499)
