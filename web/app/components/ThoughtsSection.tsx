@@ -76,7 +76,7 @@ export default function ThoughtsSection() {
               {escapeHtml(thought.text)}
             </span>
             <span className="muted" style={{ fontSize: '0.7em', marginLeft: '8px' }}>
-              {thought.date}
+              {escapeHtml(thought.date)}
             </span>
           </div>
         ))}

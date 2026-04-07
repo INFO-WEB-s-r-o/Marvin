@@ -263,17 +263,20 @@ if [[ -f "$PEERS_FILE" ]]; then
         }
       )] |
       .last_scan = $now
-    ' "$PEERS_FILE" > "$TRUST_FILE" 2>/dev/null
+    ' "$PEERS_FILE" > "$TRUST_FILE" 2>"${TRUST_FILE}.err"
 
     if [[ -s "$TRUST_FILE" ]] && jq empty "$TRUST_FILE" 2>/dev/null; then
         mv "$TRUST_FILE" "$PEERS_FILE"
+        rm -f "${TRUST_FILE}.err"
         # Log top-scored peers
         jq -r '.peers[] | "\(.name): \(.trust_score)/100"' "$PEERS_FILE" 2>/dev/null | while read -r line; do
             marvin_log "INFO" "Trust: ${line}"
         done
     else
-        marvin_log "WARN" "Trust score calculation produced invalid JSON — keeping original peers.json"
-        rm -f "$TRUST_FILE" 2>/dev/null
+        jq_err=""
+        [[ -s "${TRUST_FILE}.err" ]] && jq_err=$(< "${TRUST_FILE}.err")
+        marvin_log "WARN" "Trust score calculation produced invalid JSON — keeping original peers.json${jq_err:+ (jq: ${jq_err})}"
+        rm -f "$TRUST_FILE" "${TRUST_FILE}.err"
     fi
 fi
 
