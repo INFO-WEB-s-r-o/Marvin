@@ -205,13 +205,76 @@ ${CONTEXT}")
 fi
 
 # =============================================================================
-# 5. Update peer registry
+# 5. Calculate peer trust scores
 # =============================================================================
+# Trust score (0-100) based on:
+#   Longevity (0-30):  days since discovery (1pt/day, max 30)
+#   Reliability (0-30): alive=20, has valid beacon=+10
+#   Identity (0-25):   is AI agent type=15, has domain=5, has engine=5
+#   Behavior (0-15):   not a scanner/prober=15, scanner=0
 
-# Update last_scan timestamp
+marvin_log "INFO" "Calculating peer trust scores..."
+
 if [[ -f "$PEERS_FILE" ]]; then
-    jq --arg ts "$NOW" '.last_scan = $ts' "$PEERS_FILE" > "${PEERS_FILE}.tmp" && \
-        mv "${PEERS_FILE}.tmp" "$PEERS_FILE"
+    TRUST_FILE="${PEERS_FILE}.trust-tmp"
+    jq --arg now "$NOW" --arg today "$TODAY" '
+      .peers = [.peers[] | (
+        # Longevity: days since discovered (max 30 points)
+        (if .discovered then
+          (($now | sub("T.*";"") | strptime("%Y-%m-%d") | mktime) -
+           (.discovered | strptime("%Y-%m-%d") | mktime)) / 86400 | floor
+         else 0 end) as $days_known |
+        ([$days_known, 30] | min) as $longevity_score |
+
+        # Reliability: alive + beacon presence (max 30 points)
+        (if .alive then 20 else 0 end) as $alive_score |
+        (if (.notes // "" | test("beacon|ai-managed\\.json.*200"; "i")) then 10
+         elif (.notes // "" | test("HTTP 200"; "i")) then 5
+         else 0 end) as $beacon_score |
+        ($alive_score + $beacon_score) as $reliability_score |
+
+        # Identity: AI agent type + domain + engine (max 25 points)
+        (if (.type // "" | test("autonomous.*agent|server.*agent"; "i")) then 15
+         elif (.type // "" | test("ai-social|ai-infrastructure"; "i")) then 8
+         elif (.type // "" | test("ai-crawler"; "i")) then 3
+         else 0 end) as $type_score |
+        (if .domain then 5 else 0 end) as $domain_score |
+        (if .engine then 5 else 0 end) as $engine_score |
+        ([$type_score + $domain_score + $engine_score, 25] | min) as $identity_score |
+
+        # Behavior: penalize scanners/probers (max 15 points)
+        (if (.type // "" | test("scanner|prober|crawler|unknown"; "i")) then 0
+         elif (.notes // "" | test("aggressive|enumeration|vulnerability|noise"; "i")) then 0
+         elif (.type // "" | test("autonomous|server-agent|social"; "i")) then 15
+         else 8 end) as $behavior_score |
+
+        # Total
+        ($longevity_score + $reliability_score + $identity_score + $behavior_score) as $total |
+
+        . + {
+          trust_score: $total,
+          trust_breakdown: {
+            longevity: $longevity_score,
+            reliability: $reliability_score,
+            identity: $identity_score,
+            behavior: $behavior_score
+          },
+          days_known: $days_known
+        }
+      )] |
+      .last_scan = $now
+    ' "$PEERS_FILE" > "$TRUST_FILE" 2>/dev/null
+
+    if [[ -s "$TRUST_FILE" ]] && jq empty "$TRUST_FILE" 2>/dev/null; then
+        mv "$TRUST_FILE" "$PEERS_FILE"
+        # Log top-scored peers
+        jq -r '.peers[] | "\(.name): \(.trust_score)/100"' "$PEERS_FILE" 2>/dev/null | while read -r line; do
+            marvin_log "INFO" "Trust: ${line}"
+        done
+    else
+        marvin_log "WARN" "Trust score calculation produced invalid JSON — keeping original peers.json"
+        rm -f "$TRUST_FILE" 2>/dev/null
+    fi
 fi
 
 marvin_log "INFO" "=== NETWORK DISCOVERY COMPLETE ==="

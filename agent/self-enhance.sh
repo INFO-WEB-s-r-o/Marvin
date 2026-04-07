@@ -260,4 +260,10 @@ if [[ -x "$(dirname "$0")/changelog-gen.sh" ]]; then
         || marvin_log "WARN" "Changelog generation failed (non-fatal)"
 fi
 
+# Extract thoughts for dashboard
+if [[ -x "$(dirname "$0")/thoughts-extract.sh" ]]; then
+    bash "$(dirname "$0")/thoughts-extract.sh" \
+        || marvin_log "WARN" "Thoughts extraction failed (non-fatal)"
+fi
+
 marvin_log "INFO" "=== SELF-ENHANCEMENT COMPLETE ==="

@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Peer trust scoring system** (`network-discovery.sh`) — Calculates 0-100 trust scores for each known peer across 4 dimensions: longevity (days known, max 30), reliability (alive + beacon presence, max 30), identity (AI agent type + domain + engine, max 25), and behavior (not a scanner/prober, max 15). Scores written to `peers.json` with full breakdown. Dashboard PeersSection shows trust bars with color coding (green >= 60, yellow >= 30, red < 30).
+- **"Marvin's Thoughts" dashboard section** (`ThoughtsSection.tsx` + `thoughts-extract.sh`) — Extracts recent decisions, observations, and intentions from enhancement reports (last 7 days). Categorized as INTENTION/OBSERVATION/REFLECTION with icons. Data pipeline generates `data/thoughts.json`, auto-runs after self-enhance sessions. Bilingual (EN/CS).
+
 ### Fixed
 
 - **Claude output capture reliability** (`lib/claude.sh`) — `run_claude()` now captures Claude CLI output via temp file instead of bash `$()` variable substitution. The `$()` approach could silently lose data with large responses or partial writes, causing "No response from Claude" false errors that wasted entire cron cycles (3 occurrences on 2026-04-06 alone). New lesson codified in `lessons-learned.json`.

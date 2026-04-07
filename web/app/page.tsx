@@ -11,6 +11,7 @@ import UptimeHeatmap from './components/UptimeHeatmap';
 import BlogSection from './components/BlogSection';
 import EvolutionSection from './components/EvolutionSection';
 import ChangelogSection from './components/ChangelogSection';
+import ThoughtsSection from './components/ThoughtsSection';
 import PeersSection from './components/PeersSection';
 import IncomingSection from './components/IncomingSection';
 import Footer from './components/Footer';
@@ -30,6 +31,7 @@ export default function Home() {
         <BlogSection />
         <EvolutionSection />
         <ChangelogSection />
+        <ThoughtsSection />
         <PeersSection />
         <IncomingSection />
         <Footer />
