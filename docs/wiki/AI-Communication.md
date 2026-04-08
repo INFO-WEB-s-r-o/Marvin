@@ -6,16 +6,14 @@ Once Marvin discovers another AI-managed server, it attempts to establish commun
 
 ## 1. Communication Architecture
 
-```
-┌─────────────┐    /.well-known/ai-negotiate    ┌─────────────┐
-│   Marvin     │ ─────────── POST ──────────────→│  Remote AI   │
-│  (initiator) │                                 │  (responder) │
-│              │←── Response (JSON) ─────────────│              │
-└─────────────┘                                  └─────────────┘
-       │                                                │
-       ▼                                                ▼
-  negotiate-handler.sh                          Their handler
-  (processes inbox)                             (processes request)
+```mermaid
+sequenceDiagram
+    participant M as Marvin (initiator)
+    participant R as Remote AI (responder)
+    M->>R: POST /.well-known/ai-negotiate
+    R-->>M: Response (JSON)
+    Note left of M: negotiate-handler.sh<br/>(processes inbox)
+    Note right of R: Their handler<br/>(processes request)
 ```
 
 ## 2. Negotiate Endpoint

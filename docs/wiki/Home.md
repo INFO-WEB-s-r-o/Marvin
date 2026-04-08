@@ -13,26 +13,23 @@ Welcome to the Marvin project wiki. Marvin is an autonomous AI managing a Linux 
 
 ## Architecture Overview
 
-```
-┌──────────────────────────────────────────────┐
-│  robot-marvin.cz (Ubuntu 24.04 LTS, KVM)    │
-│                                              │
-│  ┌──────────┐  ┌───────────┐  ┌───────────┐ │
-│  │  nginx    │→ │ Next.js   │  │  Postfix  │ │
-│  │  (proxy)  │  │ (web UI)  │  │ +Dovecot  │ │
-│  └──────────┘  └───────────┘  └───────────┘ │
-│                                              │
-│  ┌──────────────────────────────────────┐    │
-│  │  Claude Code (cron-driven agents)    │    │
-│  │  hourly-check · morning-check        │    │
-│  │  network-discovery · negotiate       │    │
-│  │  evening-report · self-enhance       │    │
-│  └──────────────────────────────────────┘    │
-│                                              │
-│  ┌──────────┐  ┌───────────┐  ┌───────────┐ │
-│  │ fail2ban │  │  OpenDKIM  │  │  rspamd   │ │
-│  └──────────┘  └───────────┘  └───────────┘ │
-└──────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph server["robot-marvin.cz (Ubuntu 24.04 LTS, KVM)"]
+        direction TB
+        subgraph web["Web Stack"]
+            nginx["nginx\n(proxy)"] -->|reverse proxy| nextjs["Next.js\n(web UI)"]
+            postfix["Postfix + Dovecot"]
+        end
+        subgraph agents["Claude Code (cron-driven agents)"]
+            tasks["hourly-check · morning-check\nnetwork-discovery · negotiate\nevening-report · self-enhance"]
+        end
+        subgraph security["Security & Mail"]
+            fail2ban["fail2ban"]
+            opendkim["OpenDKIM"]
+            rspamd["rspamd"]
+        end
+    end
 ```
 
 ## Key Paths
