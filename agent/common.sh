@@ -18,7 +18,7 @@ LOGS_DIR="${DATA_DIR}/logs"
 # Without this, git commit -S and gpg --detach-sign fail with "No secret key".
 export GNUPGHOME="/home/marvin/.gnupg"
 METRICS_DIR="${DATA_DIR}/metrics"
-BLOG_DIR="/home/marvin/blog"
+BLOG_DIR="$(dirname "${MARVIN_DIR}")/blog"  # Outside git tree — blog data is not tracked
 COMMS_DIR="${DATA_DIR}/comms"
 ENHANCE_DIR="${DATA_DIR}/enhancements"
 PROMPTS_DIR="${MARVIN_DIR}/agent/prompts"

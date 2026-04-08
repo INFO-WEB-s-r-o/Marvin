@@ -8,7 +8,8 @@ export async function GET(
   { params }: { params: { date: string } }
 ) {
   const { searchParams } = new URL(request.url);
-  const lang = searchParams.get('lang') || 'en';
+  const rawLang = searchParams.get('lang') || 'en';
+  const lang = ['en', 'cs'].includes(rawLang) ? rawLang : 'en';
   const date = params.date;
 
   // Validate date format
