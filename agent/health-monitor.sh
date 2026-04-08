@@ -327,6 +327,8 @@ while IFS= read -r line; do
                         continue
                     fi
                 fi
+            else
+                marvin_log "WARN" "Untrusted exe for allowlisted name: ${proc_name} (PID ${proc_pid}, exe=${proc_exe}) at ${proc_cpu}% CPU"
             fi
         ;;
     esac
