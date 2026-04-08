@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-MARVIN_DIR="/home/marvin/git"
+MARVIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 log() {
     echo "[MARVIN] $1"

@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 
 const SECRET = process.env.BLOG_INSERT_SECRET;
 if (!SECRET) {
-  console.error('FATAL: BLOG_INSERT_SECRET env var is required');
+  throw new Error('FATAL: BLOG_INSERT_SECRET env var is required — set it before starting the server');
 }
 
 export async function POST(request: Request) {
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'lang must be en or cs' }, { status: 400 });
     }
 
-    upsertPost({ date, type, lang, title, content, excerpt, raw_source });
+    await upsertPost({ date, type, lang, title, content, excerpt, raw_source });
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
