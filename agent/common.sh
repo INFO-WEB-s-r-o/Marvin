@@ -133,6 +133,30 @@ marvin_rebuild_web() {
         return 0
     fi
 
+    # Prevent concurrent builds — race condition between health-monitor and
+    # self-enhance caused ENOENT crashes on 2026-04-08 (two builds writing
+    # to .next/ simultaneously corrupt prerender-manifest.json and static/).
+    local lock_file="/tmp/marvin-web-build.lock"
+    if [[ -f "$lock_file" ]]; then
+        local lock_age lock_pid
+        lock_pid=$(cat "$lock_file" 2>/dev/null || echo "")
+        lock_age=$(( $(date +%s) - $(stat -c%Y "$lock_file" 2>/dev/null || echo "0") ))
+        # Stale lock (>10 min) — previous build crashed without cleanup
+        if [[ "$lock_age" -gt 600 ]]; then
+            marvin_log "WARN" "Removing stale build lock (age ${lock_age}s, PID ${lock_pid})"
+            rm -f "$lock_file"
+        elif kill -0 "$lock_pid" 2>/dev/null; then
+            marvin_log "WARN" "Web rebuild skipped — another build in progress (PID ${lock_pid}, reason: ${reason})"
+            return 1
+        else
+            marvin_log "WARN" "Removing orphaned build lock (PID ${lock_pid} not running)"
+            rm -f "$lock_file"
+        fi
+    fi
+    echo "$$" > "$lock_file"
+    # Ensure lock is released on exit from this function
+    trap 'rm -f "$lock_file"' RETURN
+
     local web_dir="${WEB_DIR}"
     local standalone_dir="${web_dir}/.next/standalone"
     local backup_dir="${web_dir}/.next-backup-$(date +%s)"
