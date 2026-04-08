@@ -54,7 +54,14 @@ _make_alert() {
 # ─── 1. Detect repeated errors (same message > 3 times in today's log) ──────
 # Group errors by message (stripped of timestamp), flag repeats
 
-_error_lines=$(grep -E '\[(CRITICAL|ERROR)\]' "$LOG_FILE" 2>/dev/null || true)
+# Exclude log-alerting's own output to prevent recursive alerts:
+# lines containing "New alert:" or "Alert auto-resolved:" are this script's
+# previous WARN lines that embed original ERROR/CRITICAL text in their detail.
+# Without this filter, "grep [CRITICAL]" matches our own "[WARN] New alert: ... [CRITICAL] ..."
+# output, creating ever-growing nested alerts each hour.
+# NOTE: These filter strings must stay in sync with _make_alert() output format.
+_error_lines=$(grep -E '\[(CRITICAL|ERROR)\]' "$LOG_FILE" 2>/dev/null \
+    | grep -v 'New alert:' | grep -v 'Alert auto-resolved:' || true)
 if [[ -n "$_error_lines" ]]; then
     # Strip timestamp, deduplicate, count occurrences
     while IFS= read -r line; do
@@ -71,7 +78,9 @@ fi
 
 # ─── 2. Detect CRITICAL events (any CRITICAL is an alert) ───────────────────
 
-critical_lines=$(grep '\[CRITICAL\]' "$LOG_FILE" 2>/dev/null || true)
+# Same recursive-alert filter as section 1 (see comment above)
+critical_lines=$(grep '\[CRITICAL\]' "$LOG_FILE" 2>/dev/null \
+    | grep -v 'New alert:' | grep -v 'Alert auto-resolved:' || true)
 critical_count=0
 if [[ -n "$critical_lines" ]]; then
     critical_count=$(echo "$critical_lines" | wc -l | tr -d ' ')
@@ -92,7 +101,10 @@ if [[ -n "$one_hour_ago" ]]; then
     recent_errors=$(awk -v cutoff="$one_hour_ago" '$0 ~ /\[(ERROR|CRITICAL)\]/ && $1 >= "["cutoff {count++} END {print count+0}' "$LOG_FILE" 2>/dev/null || echo 0)
 
     # Get total errors and hours elapsed to compute average rate
-    total_errors=$(grep -cE '\[(ERROR|CRITICAL)\]' "$LOG_FILE" 2>/dev/null || true)
+    # Same recursive-alert filter as section 1 — exclude alerting's own output
+    total_errors=$(grep -E '\[(ERROR|CRITICAL)\]' "$LOG_FILE" 2>/dev/null \
+        | grep -v 'New alert:' | grep -v 'Alert auto-resolved:' | wc -l || true)
+    total_errors=$(( total_errors + 0 ))
     total_errors=${total_errors:-0}
     # Estimate hours elapsed today
     first_log_ts=$(head -1 "$LOG_FILE" 2>/dev/null | grep -oP '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}' || echo "")
@@ -131,7 +143,9 @@ fi
 
 # ─── 5. Detect persistent warnings (same warning > 10 times/day) ────────────
 
-warn_lines=$(grep '\[WARN\]' "$LOG_FILE" 2>/dev/null || true)
+# Same recursive-alert filter as sections 1-2 (see comment in section 1)
+warn_lines=$(grep '\[WARN\]' "$LOG_FILE" 2>/dev/null \
+    | grep -v 'New alert:' | grep -v 'Alert auto-resolved:' || true)
 if [[ -n "$warn_lines" ]]; then
     while IFS= read -r line; do
         count=$(echo "$line" | awk '{print $1}')
