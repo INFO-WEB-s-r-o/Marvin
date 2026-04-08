@@ -86,23 +86,6 @@ fi
 BUNDLE_SIZE=$(stat -c%s "$SEND_FILE" 2>/dev/null || echo "0")
 marvin_log "INFO" "Pushing ${PUSH_DATE} export (${BUNDLE_SIZE} bytes, gz=${USE_GZ})"
 
-# ─── SSRF protection (reused pattern from log-export.sh webhook logic) ───────
-
-_is_private_ip() {
-    local ip="$1"
-    case "$ip" in
-        10.*|172.1[6-9].*|172.2[0-9].*|172.3[0-1].*|192.168.*) return 0 ;;
-        127.*|0.*|169.254.*|localhost) return 0 ;;
-        *:*)
-            # IPv6 patterns — only match strings containing a colon (#465)
-            case "$ip" in
-                ::1|fc*|fd*|fe80:*|::ffff:*) return 0 ;;
-            esac
-            return 1 ;;
-        *) return 1 ;;
-    esac
-}
-
 # ─── Push to each endpoint ───────────────────────────────────────────────────
 
 push_count=0

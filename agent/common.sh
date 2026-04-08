@@ -42,6 +42,31 @@ TIMESTAMP=$(date +%s)
 MARVIN_DRY_RUN="${MARVIN_DRY_RUN:-false}"
 export MARVIN_DRY_RUN
 
+# ─── SSRF protection: private/internal IP detection ─────────────────────────
+# Shared helper used by network-discovery.sh, export-push.sh, log-export.sh.
+# Returns 0 if the given IP/hostname is private/reserved (RFC 1918, CGNAT,
+# loopback, link-local, IPv6 ULA/link-local). Colon guard prevents false
+# positives on hostnames starting with fc/fd/fe80 (issue #296).
+_is_private_ip() {
+    local ip_lower="${1,,}"
+    [[ "$ip_lower" == "localhost" ]] \
+        || [[ "$ip_lower" =~ ^127\. ]] \
+        || [[ "$ip_lower" =~ ^10\. ]] \
+        || [[ "$ip_lower" =~ ^0\. ]] \
+        || [[ "$ip_lower" =~ ^169\.254\. ]] \
+        || [[ "$ip_lower" =~ ^192\.168\. ]] \
+        || [[ "$ip_lower" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]] \
+        || [[ "$ip_lower" =~ ^100\.(6[4-9]|[7-9][0-9]|1([01][0-9]|2[0-7]))\. ]] \
+        || { [[ "$ip_lower" == *:* ]] && {
+                [[ "$ip_lower" =~ ^::1$ ]] \
+                || [[ "$ip_lower" == "::" ]] \
+                || [[ "$ip_lower" =~ ^fd ]] \
+                || [[ "$ip_lower" =~ ^fc ]] \
+                || [[ "$ip_lower" =~ ^fe80 ]] \
+                || [[ "$ip_lower" =~ ^::ffff: ]];
+            }; }
+}
+
 marvin_parse_args() {
     for arg in "$@"; do
         case "$arg" in
