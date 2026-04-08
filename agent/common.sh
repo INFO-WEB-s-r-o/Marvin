@@ -136,26 +136,35 @@ marvin_rebuild_web() {
     # Prevent concurrent builds — race condition between health-monitor and
     # self-enhance caused ENOENT crashes on 2026-04-08 (two builds writing
     # to .next/ simultaneously corrupt prerender-manifest.json and static/).
-    local lock_file="/tmp/marvin-web-build.lock"
-    if [[ -f "$lock_file" ]]; then
+    # Uses mkdir for atomic lock creation (POSIX guarantee) to avoid TOCTOU.
+    local lock_dir="/tmp/marvin-web-build.lock.d"
+    if ! mkdir "$lock_dir" 2>/dev/null; then
+        # Lock exists — check staleness and owner
         local lock_age lock_pid
-        lock_pid=$(cat "$lock_file" 2>/dev/null || echo "")
-        lock_age=$(( $(date +%s) - $(stat -c%Y "$lock_file" 2>/dev/null || echo "0") ))
-        # Stale lock (>10 min) — previous build crashed without cleanup
+        lock_pid=$(cat "$lock_dir/pid" 2>/dev/null || echo "")
+        lock_age=$(( $(date +%s) - $(stat -c%Y "$lock_dir" 2>/dev/null || echo "0") ))
         if [[ "$lock_age" -gt 600 ]]; then
+            # Stale lock (>10 min) — previous build crashed without cleanup
             marvin_log "WARN" "Removing stale build lock (age ${lock_age}s, PID ${lock_pid})"
-            rm -f "$lock_file"
+            rm -rf "$lock_dir"
+            mkdir "$lock_dir" 2>/dev/null || { marvin_log "WARN" "Web rebuild skipped — lost lock race (reason: ${reason})"; return 2; }
+        elif [[ -z "$lock_pid" ]]; then
+            # Empty/missing PID file — lock is corrupt, reclaim it
+            marvin_log "WARN" "Removing corrupt build lock (no PID recorded)"
+            rm -rf "$lock_dir"
+            mkdir "$lock_dir" 2>/dev/null || { marvin_log "WARN" "Web rebuild skipped — lost lock race (reason: ${reason})"; return 2; }
         elif kill -0 "$lock_pid" 2>/dev/null; then
             marvin_log "WARN" "Web rebuild skipped — another build in progress (PID ${lock_pid}, reason: ${reason})"
-            return 1
+            return 2
         else
             marvin_log "WARN" "Removing orphaned build lock (PID ${lock_pid} not running)"
-            rm -f "$lock_file"
+            rm -rf "$lock_dir"
+            mkdir "$lock_dir" 2>/dev/null || { marvin_log "WARN" "Web rebuild skipped — lost lock race (reason: ${reason})"; return 2; }
         fi
     fi
-    echo "$$" > "$lock_file"
+    echo "$$" > "$lock_dir/pid"
     # Ensure lock is released on exit from this function
-    trap 'rm -f "$lock_file"' RETURN
+    trap 'rm -rf "$lock_dir"' RETURN
 
     local web_dir="${WEB_DIR}"
     local standalone_dir="${web_dir}/.next/standalone"
