@@ -315,18 +315,21 @@ while IFS= read -r line; do
         ;;
         find)
             # Only suppress find if it's the real binary AND launched by a Marvin
-            # script — avoids blanket suppression of all find processes (#510)
+            # bash script — avoids blanket suppression of all find processes (#510)
+            # Parent exe must be bash to prevent cmdline spoofing (#514)
             if [[ -z "$proc_exe" ]]; then
                 continue
             fi
             if [[ "$proc_exe" == /usr/bin/find ]]; then
                 proc_ppid=$(awk '/^PPid:/{print $2}' "/proc/${proc_pid}/status" 2>/dev/null || echo "")
                 if [[ -n "$proc_ppid" ]]; then
+                    parent_exe=$(readlink -f "/proc/${proc_ppid}/exe" 2>/dev/null || echo "")
                     parent_cmdline=$(tr '\0' ' ' < "/proc/${proc_ppid}/cmdline" 2>/dev/null || echo "")
-                    if [[ "$parent_cmdline" == *"${MARVIN_DIR}"* ]]; then
+                    if [[ "$parent_exe" == */bash ]] && [[ "$parent_cmdline" == *"${MARVIN_DIR}"* ]]; then
                         continue
                     fi
                 fi
+                marvin_log "WARN" "Non-Marvin find at ${proc_cpu}% CPU (PID ${proc_pid}, ppid=${proc_ppid:-unknown})"
             else
                 marvin_log "WARN" "Untrusted exe for allowlisted name: ${proc_name} (PID ${proc_pid}, exe=${proc_exe}) at ${proc_cpu}% CPU"
             fi
