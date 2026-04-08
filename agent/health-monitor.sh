@@ -325,7 +325,7 @@ while IFS= read -r line; do
                 if [[ -n "$proc_ppid" ]]; then
                     parent_exe=$(readlink -f "/proc/${proc_ppid}/exe" 2>/dev/null || echo "")
                     parent_cmdline=$(tr '\0' ' ' < "/proc/${proc_ppid}/cmdline" 2>/dev/null || echo "")
-                    if [[ "$parent_exe" == */bash ]] && [[ "$parent_cmdline" == *"${MARVIN_DIR}"* ]]; then
+                    if [[ -n "${MARVIN_DIR}" && "$parent_exe" == */bash ]] && [[ "$parent_cmdline" == *"${MARVIN_DIR}"* ]]; then
                         continue
                     fi
                 fi
