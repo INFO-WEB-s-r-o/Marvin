@@ -58,7 +58,7 @@ for report in "${reports[@]}"; do
 
     # Extract "Risk Assessment" last line — Marvin's overall risk take
     risk_note=$(sed -n '/^## Risk Assessment/,/^## \|^---/{ /^## Risk Assessment/d; /^## \|^---/d; p; }' "$report" 2>/dev/null \
-        | { grep -v '^$' || true; } | tail -1 | sed 's/^- //' || true)
+        | sed '/^$/d' | tail -1 | sed 's/^- //' || true)
 
     # Helper: clean markdown formatting and trim text
     _clean() {

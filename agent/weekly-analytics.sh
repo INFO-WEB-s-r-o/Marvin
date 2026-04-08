@@ -161,7 +161,7 @@ _log_stats() {
     done < <(_dates_in_range "$start" "$end")
 
     if [[ -n "$all_errors" ]]; then
-        error_summary=$(echo "$all_errors" | grep -v '^$' | sort | uniq -c | sort -rn | head -5 \
+        error_summary=$(echo "$all_errors" | sed '/^$/d' | sort | uniq -c | sort -rn | head -5 \
             | awk '{count=$1; $1=""; sub(/^ /, ""); printf "{\"count\":%d,\"message\":\"%s\"}\n", count, $0}' \
             | jq -s '.' 2>/dev/null || echo '[]')
     fi
