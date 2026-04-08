@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
+import { timingSafeEqual } from 'crypto';
 import { upsertPost } from '@/db/blog-queries';
 
 export const dynamic = 'force-dynamic';
+
+const MAX_BODY_SIZE = 1024 * 1024; // 1MB
 
 const SECRET = process.env.BLOG_INSERT_SECRET;
 if (!SECRET) {
@@ -13,8 +16,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 });
   }
 
-  const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${SECRET}`) {
+  const contentLength = parseInt(request.headers.get('content-length') || '0', 10);
+  if (contentLength > MAX_BODY_SIZE) {
+    return NextResponse.json({ error: 'Request body too large' }, { status: 413 });
+  }
+
+  const authHeader = request.headers.get('authorization') || '';
+  const expected = Buffer.from(`Bearer ${SECRET}`);
+  const actual = Buffer.from(authHeader);
+  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
