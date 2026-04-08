@@ -133,6 +133,35 @@ marvin_rebuild_web() {
         return 0
     fi
 
+    # Atomic lock using mkdir (POSIX guarantees atomicity — no TOCTOU race)
+    local lock_dir="/tmp/marvin-web-build.lock.d"
+    if ! mkdir "$lock_dir" 2>/dev/null; then
+        local lock_pid lock_age
+        lock_pid=$(cat "$lock_dir/pid" 2>/dev/null || echo "")
+        lock_age=$(( $(date +%s) - $(stat -c%Y "$lock_dir" 2>/dev/null || echo 0) ))
+        if [[ "$lock_age" -gt 600 ]]; then
+            marvin_log "WARN" "Removing stale build lock (age ${lock_age}s, PID ${lock_pid})"
+            rm -rf "$lock_dir"
+            if ! mkdir "$lock_dir" 2>/dev/null; then
+                marvin_log "WARN" "Web rebuild skipped — could not reacquire lock (reason: ${reason})"
+                return 1
+            fi
+        elif [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
+            marvin_log "WARN" "Web rebuild skipped — build in progress (PID ${lock_pid}, reason: ${reason})"
+            return 1
+        else
+            marvin_log "WARN" "Removing orphaned build lock (PID ${lock_pid} not running)"
+            rm -rf "$lock_dir"
+            if ! mkdir "$lock_dir" 2>/dev/null; then
+                marvin_log "WARN" "Web rebuild skipped — could not reacquire lock (reason: ${reason})"
+                return 1
+            fi
+        fi
+    fi
+    echo "$$" > "$lock_dir/pid"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$lock_dir'" RETURN
+
     local web_dir="${WEB_DIR}"
     local standalone_dir="${web_dir}/.next/standalone"
     local backup_dir="${web_dir}/.next-backup-$(date +%s)"

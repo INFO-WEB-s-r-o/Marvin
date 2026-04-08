@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Atomic build lock for `marvin_rebuild_web()`** — Adds `mkdir`-based atomic lock to prevent concurrent Next.js builds (POSIX guarantees `mkdir` atomicity, avoiding the TOCTOU race condition of check-then-write file locks). Includes stale lock detection (>600s) and orphaned PID cleanup. (fixes #516)
 - **Trust score clamped to [0,100]** (`network-discovery.sh`) — Longevity calculation now clamps `days_known` to minimum 0 (future `discovered` dates no longer produce negative scores). Final trust score clamped to [0,100] in both bash loop and jq pipeline. (fixes #503)
 - **UTF-8-safe text truncation in thoughts extraction** (`thoughts-extract.sh`) — Replaced `head -c 200` (byte-boundary truncation) with `cut -c 1-200` (character-boundary truncation). Prevents mid-codepoint truncation of Czech characters that could produce invalid JSON. (fixes #504)
 - **`grep -v '^$'` pipefail failures across 5 scripts** — Under `set -o pipefail`, `grep -v '^$'` returns exit 1 when all lines are empty, killing the pipeline before `|| true` can catch it. Replaced with `sed '/^$/d'` (always returns 0) in: `thoughts-extract.sh`, `health-monitor.sh`, `weekly-analytics.sh`, `fix-issues.sh`, `changelog-gen.sh`. Root cause of the `thoughts-extract.sh:61` ERR trap that fired at 08:06 UTC today.
