@@ -122,7 +122,7 @@ if [[ "$open_pr_count" -gt 0 ]]; then
 
     # Deduplicate combined results
     if [[ -n "$_dedup_nums" ]]; then
-        pr_issue_numbers=$(echo "$_dedup_nums" | tr ',' '\n' | grep -v '^$' | sort -un | paste -sd',' -)
+        pr_issue_numbers=$(echo "$_dedup_nums" | tr ',' '\n' | sed '/^$/d' | sort -un | paste -sd',' -)
     fi
 
     # Only warn if PRs look like issue-fix PRs but we couldn't extract numbers.

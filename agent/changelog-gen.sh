@@ -171,7 +171,7 @@ for d in ${sorted_dates}; do
     changes_json="[]"
     if [[ -n "${day_changes["$d"]:-}" ]]; then
         # Deduplicate and convert to JSON array
-        changes_json=$(printf '%s' "${day_changes["$d"]}" | sed 's/\\n/\n/g' | sort -u | grep -v '^$' | head -10 | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]")
+        changes_json=$(printf '%s' "${day_changes["$d"]}" | sed 's/\\n/\n/g' | sort -u | sed '/^$/d' | head -10 | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]")
     fi
 
     # Build PR numbers array
