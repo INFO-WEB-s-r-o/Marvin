@@ -355,6 +355,11 @@ if [[ -f "$PEERS_FILE" ]]; then
     if [[ "$jq_updates" != "." ]]; then
         jq "${jq_args[@]}" --arg now_ts "$NOW" "$jq_updates" "$PEERS_FILE" > "${PEERS_FILE}.tmp" && mv "${PEERS_FILE}.tmp" "$PEERS_FILE"
     fi
+
+    # Log per-peer trust scores after writing to peers.json
+    jq -r '.peers[] | "\(.name): \(.trust_score)/100"' "${PEERS_FILE}" | while read -r line; do
+        marvin_log "INFO" "Trust: ${line}"
+    done
 fi
 
 marvin_log "INFO" "=== NETWORK DISCOVERY COMPLETE ==="
