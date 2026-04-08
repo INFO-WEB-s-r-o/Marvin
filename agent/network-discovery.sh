@@ -18,22 +18,6 @@ marvin_log "INFO" "=== NETWORK DISCOVERY STARTING ==="
 PEERS_FILE="${COMMS_DIR}/peers.json"
 COMM_LOG="${COMMS_DIR}/${TODAY}.log"
 
-# ─── SSRF protection (reused pattern from export-push.sh) ────────────────────
-
-_is_private_ip() {
-    local ip="$1"
-    case "$ip" in
-        10.*|172.1[6-9].*|172.2[0-9].*|172.3[0-1].*|192.168.*) return 0 ;;
-        127.*|0.*|169.254.*|localhost) return 0 ;;
-        *:*)
-            case "$ip" in
-                ::1|::|fc*|fd*|fe80:*|::ffff:*) return 0 ;;
-            esac
-            return 1 ;;
-        *) return 1 ;;
-    esac
-}
-
 # Helper: detect IPv6 addresses without matching arbitrary strings with colons
 # (e.g. "somehost:8080" is NOT IPv6). Handles pure IPv6 and IPv4-mapped forms.
 # Fixes #499.
