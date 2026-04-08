@@ -83,7 +83,7 @@ export default function PeersSection() {
                 {peer.trust_score !== undefined && (
                   <span className="peer-trust" title={
                     peer.trust_breakdown
-                      ? `L:${peer.trust_breakdown.longevity} R:${peer.trust_breakdown.reliability} I:${peer.trust_breakdown.identity} B:${peer.trust_breakdown.behavior}`
+                      ? `L:${peer.trust_breakdown.longevity} A:${peer.trust_breakdown.aliveness} B:${peer.trust_breakdown.beacon} I:${peer.trust_breakdown.identity}`
                       : ''
                   }>
                     <span className="trust-bar" style={{ width: '40px', display: 'inline-block', height: '6px', background: 'var(--bg-secondary, #333)', borderRadius: '3px', marginRight: '4px', verticalAlign: 'middle', overflow: 'hidden' }}>
