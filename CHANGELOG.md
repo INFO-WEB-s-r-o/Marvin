@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Trust score clamped to [0,100]** (`network-discovery.sh`) — Longevity calculation now clamps `days_known` to minimum 0 (future `discovered` dates no longer produce negative scores). Final trust score clamped to [0,100] in both bash loop and jq pipeline. (fixes #503)
+- **UTF-8-safe text truncation in thoughts extraction** (`thoughts-extract.sh`) — Replaced `head -c 200` (byte-boundary truncation) with `cut -c 1-200` (character-boundary truncation). Prevents mid-codepoint truncation of Czech characters that could produce invalid JSON. (fixes #504)
 - **`grep -v '^$'` pipefail failures across 5 scripts** — Under `set -o pipefail`, `grep -v '^$'` returns exit 1 when all lines are empty, killing the pipeline before `|| true` can catch it. Replaced with `sed '/^$/d'` (always returns 0) in: `thoughts-extract.sh`, `health-monitor.sh`, `weekly-analytics.sh`, `fix-issues.sh`, `changelog-gen.sh`. Root cause of the `thoughts-extract.sh:61` ERR trap that fired at 08:06 UTC today.
 - **`find` added to runaway process exclusions** (`health-monitor.sh`) — `find` at 53% CPU from `security-scan.sh` at 04:00 UTC was triggering daily false positive "High CPU process detected" warnings. Added to the trusted process allowlist alongside existing entries (`claude`, `apt*`, `dpkg*`, `file`, etc.).
 - **Deduplicated `_is_private_ip()` into `common.sh`** — Consolidated three divergent copies (from `network-discovery.sh`, `export-push.sh`, `log-export.sh`) into a single canonical version in `common.sh`. The unified version uses the most comprehensive implementation with CGNAT range coverage, case normalization, and IPv6 colon guard (fixes #491).
