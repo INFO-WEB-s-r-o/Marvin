@@ -62,15 +62,16 @@ ${prompt}"
 
     # Run Claude Code in non-interactive mode
     # Use stdin pipe to avoid "Argument list too long" with large prompts
+    #
+    # IMPORTANT: Output is captured via temp file, NOT $() variable substitution.
+    # Bash $() can silently lose data with very large responses or partial writes,
+    # causing "No response from Claude" false errors (lesson: claude-output-capture-data-loss).
+    # Writing to a file first preserves all bytes reliably.
     local output
     local exit_code
     local start_time
     start_time=$(date +%s)
 
-    # Capture output via temp file instead of $() to prevent silent data loss.
-    # Root cause: bash $() variable capture can lose large outputs or fail when
-    # Claude writes partial data / exits unexpectedly. The temp file approach
-    # ensures all bytes are preserved on disk before we read them.
     local output_file
     output_file=$(mktemp "${LOGS_DIR}/claude-output-XXXXXX.tmp")
     trap 'rm -f "${output_file:-}"' RETURN
@@ -81,6 +82,7 @@ ${prompt}"
     local duration=$((end_time - start_time))
 
     # Read output from temp file — preserves all data regardless of size
+    # (temp file cleanup handled by RETURN trap above)
     output=$(<"$output_file") || { marvin_log "ERROR" "Failed to read Claude output temp file: ${output_file}" >&2; output=""; }
 
     if [[ "$exit_code" -ne 0 ]]; then
