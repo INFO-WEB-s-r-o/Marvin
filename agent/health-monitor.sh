@@ -299,7 +299,7 @@ while IFS= read -r line; do
     # comm field spoofing via prctl(PR_SET_NAME) (#38)
     proc_exe=$(readlink -f "/proc/${proc_pid}/exe" 2>/dev/null || echo "")
     case "$proc_name" in
-        claude|apt*|dpkg*|ps|jq|fail2ban*|file|find|appstreamcli)
+        claude|apt*|dpkg*|ps|jq|fail2ban*|file|appstreamcli)
             if [[ -z "$proc_exe" ]]; then
                 # Process exited between ps and readlink — can't verify, skip silently.
                 # Short-lived children (e.g., rkhunter's `file`) hit this constantly.
@@ -312,6 +312,22 @@ while IFS= read -r line; do
                 continue
             fi
             marvin_log "WARN" "Untrusted exe for allowlisted name: ${proc_name} (PID ${proc_pid}, exe=${proc_exe}) at ${proc_cpu}% CPU"
+        ;;
+        find)
+            # Only suppress find if it's the real binary AND launched by a Marvin
+            # script — avoids blanket suppression of all find processes (#510)
+            if [[ -z "$proc_exe" ]]; then
+                continue
+            fi
+            if [[ "$proc_exe" == /usr/bin/find ]]; then
+                proc_ppid=$(awk '/^PPid:/{print $2}' "/proc/${proc_pid}/status" 2>/dev/null || echo "")
+                if [[ -n "$proc_ppid" ]]; then
+                    parent_cmdline=$(tr '\0' ' ' < "/proc/${proc_ppid}/cmdline" 2>/dev/null || echo "")
+                    if [[ "$parent_cmdline" == *"${MARVIN_DIR}"* ]]; then
+                        continue
+                    fi
+                fi
+            fi
         ;;
     esac
 
