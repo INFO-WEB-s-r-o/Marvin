@@ -38,7 +38,7 @@ export interface PeersData {
     name: string;
     alive: boolean;
     trust_score?: number;
-    trust_breakdown?: { longevity: number; reliability: number; identity: number; behavior: number };
+    trust_breakdown?: { longevity: number; aliveness: number; beacon: number; identity: number };
     days_known?: number;
     type?: string;
   }>;

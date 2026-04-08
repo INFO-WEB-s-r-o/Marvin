@@ -71,7 +71,7 @@ if [[ -f "$LOCK_FILE" ]]; then
     # Stale lock file
     marvin_log "WARN" "Removing stale lock file (PID $pid no longer running)"
 fi
-echo $$ > "$LOCK_FILE"
+echo "$$" > "${LOCK_FILE}"
 
 marvin_log "INFO" "=== ISSUE FIXER STARTING ==="
 
