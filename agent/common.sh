@@ -174,7 +174,7 @@ marvin_rebuild_web() {
     # cleanup regardless of how the subshell terminates — including set -e
     # kills, which do NOT fire RETURN traps (fixes #521, #523).
     (
-        trap "rm -rf '${lock_dir}'" EXIT
+        trap "rm -rf '${lock_dir}' || true" EXIT
 
         local web_dir="${WEB_DIR}"
         local standalone_dir="${web_dir}/.next/standalone"
