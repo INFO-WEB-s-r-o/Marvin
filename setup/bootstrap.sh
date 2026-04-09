@@ -61,7 +61,7 @@ echo "${MARVIN_HOSTNAME}" > /etc/hostname
 # Ensure hostname resolves locally
 if ! grep -Fq "${MARVIN_HOSTNAME}" /etc/hosts; then
     if grep -q "^127\.0\.1\.1" /etc/hosts; then
-        sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t${MARVIN_HOSTNAME}/" /etc/hosts
+        sed -i "s|^127\.0\.1\.1.*|127.0.1.1\t${MARVIN_HOSTNAME}|" /etc/hosts
     else
         echo "127.0.1.1\t${MARVIN_HOSTNAME}" >> /etc/hosts
     fi
@@ -578,7 +578,7 @@ if [[ -n "$MARVIN_DOMAIN" ]]; then
     log "Setting up SSL for ${MARVIN_DOMAIN}..."
     
     # Update nginx server_name
-    sed -i "s/server_name _;/server_name ${MARVIN_DOMAIN};/" /etc/nginx/sites-available/marvin
+    sed -i "s|server_name _;|server_name ${MARVIN_DOMAIN};|" /etc/nginx/sites-available/marvin
     nginx -t && systemctl reload nginx
     
     # Install certbot and get certificate

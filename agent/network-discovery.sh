@@ -4,10 +4,10 @@
 # =============================================================================
 # Tries to find and communicate with other AI-managed machines:
 #   1. Checks known peers from registry
-#   2. Scans for .well-known/ai-managed.json endpoints
-#   3. Listens for ECHO signals (like Last Ping)
-#   4. Attempts communication with discovered peers
-#   5. Updates peer registry
+#   2. Broadcasts ECHO signal (identity beacon)
+#   3. Checks for Last Ping (posledniping.cz)
+#   4. Uses Claude for communication strategy
+#   5. Calculates peer trust scores (longevity/aliveness/beacon/identity)
 # =============================================================================
 
 set -euo pipefail
@@ -343,18 +343,28 @@ if [[ -f "$PEERS_FILE" ]]; then
         # Accumulate trust score update (#460: write once after loop, not per-peer)
         # #470: Use jq --arg to pass $NOW safely instead of string interpolation
         jq_updates+=" | .peers[$idx].trust_score = $total_score | .peers[$idx].trust_level = \$trust_level_${idx} | .peers[$idx].trust_updated = \$now_ts"
+        jq_updates+=" | .peers[$idx].trust_breakdown = {\"longevity\": $longevity_score, \"aliveness\": $alive_score, \"beacon\": $beacon_score, \"identity\": $identity_score}"
+        jq_updates+=" | .peers[$idx].days_known = ${days_known:-0}"
         jq_args+=(--arg "trust_level_${idx}" "$trust_level")
     done
+
+    # Set last_scan timestamp
+    jq_updates+=" | .last_scan = \$now_ts"
 
     # Apply all trust score updates in a single write
     if [[ "$jq_updates" != "." ]]; then
         jq "${jq_args[@]}" --arg now_ts "$NOW" "$jq_updates" "$PEERS_FILE" > "${PEERS_FILE}.tmp" && mv "${PEERS_FILE}.tmp" "$PEERS_FILE"
     fi
-fi
 
-# Section 6 (duplicate jq-based trust scoring) removed 2026-04-08.
-# It was overwriting Section 5's superior scores with an inferior algorithm
-# that didn't validate beacons via HTTP — only checked .notes strings.
-# Section 5 does live beacon fetching with SSRF/DNS-rebinding protection.
+    # Section 6 (duplicate jq-based trust scoring) removed 2026-04-08.
+    # It was overwriting Section 5's superior scores with an inferior algorithm
+    # that didn't validate beacons via HTTP — only checked .notes strings.
+    # Section 5 does live beacon fetching with SSRF/DNS-rebinding protection.
+
+    # Log per-peer trust scores after writing to peers.json
+    jq -r '.peers[] | "\(.name): \(.trust_score)/100"' "${PEERS_FILE}" | while read -r line; do
+        marvin_log "INFO" "Trust: ${line}"
+    done
+fi
 
 marvin_log "INFO" "=== NETWORK DISCOVERY COMPLETE ==="
