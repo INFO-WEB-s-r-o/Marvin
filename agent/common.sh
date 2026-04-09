@@ -235,7 +235,7 @@ marvin_rebuild_web() {
             if [[ -d "$backup_dir" ]]; then
                 rm -rf "${web_dir}/.next"
                 mv "$backup_dir" "${web_dir}/.next"
-                systemctl restart marvin-web 2>/dev/null || true
+                timeout 30 systemctl restart marvin-web 2>/dev/null || true
             fi
             exit 1
         fi
@@ -255,7 +255,7 @@ marvin_rebuild_web() {
             if [[ -d "$backup_dir" ]]; then
                 rm -rf "${web_dir}/.next"
                 mv "$backup_dir" "${web_dir}/.next"
-                systemctl restart marvin-web 2>/dev/null || true
+                timeout 30 systemctl restart marvin-web 2>/dev/null || true
             fi
             exit 1
         fi
@@ -275,7 +275,7 @@ marvin_rebuild_web() {
                 if [[ -d "$backup_dir" ]]; then
                     rm -rf "${web_dir}/.next"
                     mv "$backup_dir" "${web_dir}/.next"
-                    systemctl restart marvin-web 2>/dev/null || true
+                    timeout 30 systemctl restart marvin-web 2>/dev/null || true
                 fi
                 exit 1
             fi
