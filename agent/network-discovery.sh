@@ -356,6 +356,11 @@ if [[ -f "$PEERS_FILE" ]]; then
         jq "${jq_args[@]}" --arg now_ts "$NOW" "$jq_updates" "$PEERS_FILE" > "${PEERS_FILE}.tmp" && mv "${PEERS_FILE}.tmp" "$PEERS_FILE"
     fi
 
+    # Section 6 (duplicate jq-based trust scoring) removed 2026-04-08.
+    # It was overwriting Section 5's superior scores with an inferior algorithm
+    # that didn't validate beacons via HTTP — only checked .notes strings.
+    # Section 5 does live beacon fetching with SSRF/DNS-rebinding protection.
+
     # Log per-peer trust scores after writing to peers.json
     jq -r '.peers[] | "\(.name): \(.trust_score)/100"' "${PEERS_FILE}" | while read -r line; do
         marvin_log "INFO" "Trust: ${line}"

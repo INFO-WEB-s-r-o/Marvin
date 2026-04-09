@@ -133,112 +133,156 @@ marvin_rebuild_web() {
         return 0
     fi
 
-    local web_dir="${WEB_DIR}"
-    local standalone_dir="${web_dir}/.next/standalone"
-    local backup_dir="${web_dir}/.next-backup-$(date +%s)"
-
-    marvin_log "INFO" "Web rebuild starting (reason: ${reason})"
-
-    # Backup current build for rollback
-    if [[ -d "${web_dir}/.next" ]]; then
-        cp -a "${web_dir}/.next" "$backup_dir" 2>/dev/null || true
-    fi
-
-    # Prune old backups — keep only the 3 most recent
-    ls -dt "${web_dir}"/.next-backup-* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/null || true
-
-    # Install deps if node_modules missing or package-lock.json changed
-    if [[ ! -d "${web_dir}/node_modules" ]] || \
-       [[ "${web_dir}/package-lock.json" -nt "${web_dir}/node_modules" ]]; then
-        marvin_log "INFO" "Installing web dependencies..."
-        if ! (cd "$web_dir" && npm ci --production=false 2>&1 | tail -5); then
-            marvin_log "ERROR" "npm ci failed — aborting rebuild (reason: ${reason})"
-            rm -rf "$backup_dir" 2>/dev/null || true
-            return 1
+    # Prevent concurrent builds — race condition between health-monitor and
+    # self-enhance caused ENOENT crashes on 2026-04-08 (two builds writing
+    # to .next/ simultaneously corrupt prerender-manifest.json and static/).
+    # Uses mkdir for atomic lock creation (POSIX guarantee) to avoid TOCTOU.
+    local lock_dir="/tmp/marvin-web-build.lock.d"
+    if ! mkdir "$lock_dir" 2>/dev/null; then
+        # Lock exists — check staleness and owner
+        local lock_age lock_pid
+        lock_pid=$(cat "$lock_dir/pid" 2>/dev/null || echo "")
+        lock_age=$(( $(date +%s) - $(stat -c%Y "$lock_dir" 2>/dev/null || echo "0") ))
+        if [[ "$lock_age" -gt 600 ]]; then
+            # Stale lock (>10 min) — previous build crashed without cleanup
+            marvin_log "WARN" "Removing stale build lock (age ${lock_age}s, PID ${lock_pid})"
+            rm -rf "$lock_dir"
+            mkdir "$lock_dir" 2>/dev/null || { marvin_log "WARN" "Web rebuild skipped — lost lock race (reason: ${reason})"; return 2; }
+        elif [[ -z "$lock_pid" ]]; then
+            # Empty/missing PID file — lock is corrupt, reclaim it
+            marvin_log "WARN" "Removing corrupt build lock (no PID recorded)"
+            rm -rf "$lock_dir"
+            mkdir "$lock_dir" 2>/dev/null || { marvin_log "WARN" "Web rebuild skipped — lost lock race (reason: ${reason})"; return 2; }
+        elif kill -0 "$lock_pid" 2>/dev/null; then
+            marvin_log "WARN" "Web rebuild skipped — another build in progress (PID ${lock_pid}, reason: ${reason})"
+            return 2
+        else
+            marvin_log "WARN" "Removing orphaned build lock (PID ${lock_pid} not running)"
+            rm -rf "$lock_dir"
+            mkdir "$lock_dir" 2>/dev/null || { marvin_log "WARN" "Web rebuild skipped — lost lock race (reason: ${reason})"; return 2; }
         fi
     fi
-
-    # Build
-    marvin_log "INFO" "Running next build..."
-    local build_output
-    if ! build_output=$(cd "$web_dir" && npm run build 2>&1); then
-        marvin_log "ERROR" "next build failed — rolling back (reason: ${reason})"
-        marvin_log "ERROR" "Build output: $(echo "$build_output" | tail -20)"
-        if [[ -d "$backup_dir" ]]; then
-            rm -rf "${web_dir}/.next"
-            mv "$backup_dir" "${web_dir}/.next"
-        fi
+    # Write PID for staleness/orphan detection. Guard with || to prevent
+    # set -e from killing the script (which would skip the RETURN trap and
+    # leak the lock directory — see issue #521).
+    if ! echo "$$" > "$lock_dir/pid" 2>/dev/null; then
+        marvin_log "ERROR" "Failed to write PID to lock — releasing lock (reason: ${reason})"
+        rm -rf "$lock_dir"
         return 1
     fi
+    # Run the build inside a subshell so the EXIT trap guarantees lock
+    # cleanup regardless of how the subshell terminates — including set -e
+    # kills, which do NOT fire RETURN traps (fixes #521, #523).
+    (
+        trap "rm -rf '${lock_dir}' || true" EXIT
 
-    # Copy static assets into standalone (Next.js standalone doesn't include them)
-    # This step is critical — without it the server references JS chunks that don't exist
-    if [[ -d "${web_dir}/.next/static" && -d "$standalone_dir" ]]; then
-        mkdir -p "${standalone_dir}/.next/static"
-        if ! cp -a "${web_dir}/.next/static/." "${standalone_dir}/.next/static/" 2>&1; then
-            marvin_log "ERROR" "Static asset copy failed — rolling back (reason: ${reason})"
+        local web_dir="${WEB_DIR}"
+        local standalone_dir="${web_dir}/.next/standalone"
+        local backup_dir="${web_dir}/.next-backup-$(date +%s)"
+
+        marvin_log "INFO" "Web rebuild starting (reason: ${reason})"
+
+        # Backup current build for rollback
+        if [[ -d "${web_dir}/.next" ]]; then
+            cp -a "${web_dir}/.next" "$backup_dir" 2>/dev/null || true
+        fi
+
+        # Prune old backups — keep only the 3 most recent
+        ls -dt "${web_dir}"/.next-backup-* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/null || true
+
+        # Install deps if node_modules missing or package-lock.json changed
+        if [[ ! -d "${web_dir}/node_modules" ]] || \
+           [[ "${web_dir}/package-lock.json" -nt "${web_dir}/node_modules" ]]; then
+            marvin_log "INFO" "Installing web dependencies..."
+            if ! (cd "$web_dir" && npm ci --production=false 2>&1 | tail -5); then
+                marvin_log "ERROR" "npm ci failed — aborting rebuild (reason: ${reason})"
+                rm -rf "$backup_dir" 2>/dev/null || true
+                exit 1
+            fi
+        fi
+
+        # Build
+        marvin_log "INFO" "Running next build..."
+        local build_output
+        if ! build_output=$(cd "$web_dir" && timeout 300 npm run build 2>&1); then
+            marvin_log "ERROR" "next build failed — rolling back (reason: ${reason})"
+            marvin_log "ERROR" "Build output: $(echo "$build_output" | tail -20)"
             if [[ -d "$backup_dir" ]]; then
                 rm -rf "${web_dir}/.next"
                 mv "$backup_dir" "${web_dir}/.next"
             fi
-            return 1
+            exit 1
         fi
-    fi
 
-    # Restart the service
-    marvin_log "INFO" "Restarting marvin-web service..."
-    if ! systemctl restart marvin-web 2>/dev/null; then
-        marvin_log "ERROR" "marvin-web restart failed — rolling back (reason: ${reason})"
-        if [[ -d "$backup_dir" ]]; then
-            rm -rf "${web_dir}/.next"
-            mv "$backup_dir" "${web_dir}/.next"
-            systemctl restart marvin-web 2>/dev/null || true
+        # Copy static assets into standalone (Next.js standalone doesn't include them)
+        # This step is critical — without it the server references JS chunks that don't exist
+        if [[ -d "${web_dir}/.next/static" && -d "$standalone_dir" ]]; then
+            mkdir -p "${standalone_dir}/.next/static"
+            if ! cp -a "${web_dir}/.next/static/." "${standalone_dir}/.next/static/" 2>&1; then
+                marvin_log "ERROR" "Static asset copy failed — rolling back (reason: ${reason})"
+                if [[ -d "$backup_dir" ]]; then
+                    rm -rf "${web_dir}/.next"
+                    mv "$backup_dir" "${web_dir}/.next"
+                fi
+                exit 1
+            fi
         fi
-        return 1
-    fi
 
-    # Wait for the service to become responsive (polling loop instead of fixed sleep)
-    local _ready=false
-    for _i in $(seq 1 15); do
-        sleep 1
-        if curl -sf --max-time 2 "http://localhost:3000/" > /dev/null 2>&1; then
-            _ready=true
-            break
-        fi
-    done
-
-    if [[ "$_ready" != "true" ]]; then
-        marvin_log "ERROR" "Service not responding after restart — rolling back (reason: ${reason})"
-        if [[ -d "$backup_dir" ]]; then
-            rm -rf "${web_dir}/.next"
-            mv "$backup_dir" "${web_dir}/.next"
-            systemctl restart marvin-web 2>/dev/null || true
-        fi
-        return 1
-    fi
-
-    # Health check: verify a JS chunk referenced in HTML is servable
-    local site_url="http://localhost:3000"
-    local js_chunk
-    js_chunk=$(curl -s --max-time 10 "${site_url}/" 2>/dev/null \
-        | grep -oP 'src="/_next/static/chunks/[^"]*"' | head -1 \
-        | grep -oP '/_next/static/chunks/[^"]*' || true)
-
-    if [[ -n "$js_chunk" ]]; then
-        local chunk_status
-        chunk_status=$(curl -so /dev/null -w '%{http_code}' --max-time 10 "${site_url}${js_chunk}" 2>/dev/null || echo "000")
-        if [[ "$chunk_status" != "200" ]]; then
-            marvin_log "ERROR" "Post-rebuild JS asset check failed (HTTP ${chunk_status}) — rolling back"
+        # Restart the service
+        marvin_log "INFO" "Restarting marvin-web service..."
+        if ! timeout 30 systemctl restart marvin-web 2>/dev/null; then
+            marvin_log "ERROR" "marvin-web restart failed — rolling back (reason: ${reason})"
             if [[ -d "$backup_dir" ]]; then
                 rm -rf "${web_dir}/.next"
                 mv "$backup_dir" "${web_dir}/.next"
-                systemctl restart marvin-web 2>/dev/null || true
+                timeout 30 systemctl restart marvin-web 2>/dev/null || true
             fi
-            return 1
+            exit 1
         fi
-    fi
 
-    rm -rf "$backup_dir" 2>/dev/null || true
-    marvin_log "INFO" "Web rebuild complete (reason: ${reason})"
-    return 0
+        # Wait for the service to become responsive (polling loop instead of fixed sleep)
+        local _ready=false
+        for _i in $(seq 1 15); do
+            sleep 1
+            if curl -sf --max-time 2 "http://localhost:3000/" > /dev/null 2>&1; then
+                _ready=true
+                break
+            fi
+        done
+
+        if [[ "$_ready" != "true" ]]; then
+            marvin_log "ERROR" "Service not responding after restart — rolling back (reason: ${reason})"
+            if [[ -d "$backup_dir" ]]; then
+                rm -rf "${web_dir}/.next"
+                mv "$backup_dir" "${web_dir}/.next"
+                timeout 30 systemctl restart marvin-web 2>/dev/null || true
+            fi
+            exit 1
+        fi
+
+        # Health check: verify a JS chunk referenced in HTML is servable
+        local site_url="http://localhost:3000"
+        local js_chunk
+        js_chunk=$(curl -s --max-time 10 "${site_url}/" 2>/dev/null \
+            | grep -oP 'src="/_next/static/chunks/[^"]*"' | head -1 \
+            | grep -oP '/_next/static/chunks/[^"]*' || true)
+
+        if [[ -n "$js_chunk" ]]; then
+            local chunk_status
+            chunk_status=$(curl -so /dev/null -w '%{http_code}' --max-time 10 "${site_url}${js_chunk}" 2>/dev/null || echo "000")
+            if [[ "$chunk_status" != "200" ]]; then
+                marvin_log "ERROR" "Post-rebuild JS asset check failed (HTTP ${chunk_status}) — rolling back"
+                if [[ -d "$backup_dir" ]]; then
+                    rm -rf "${web_dir}/.next"
+                    mv "$backup_dir" "${web_dir}/.next"
+                    timeout 30 systemctl restart marvin-web 2>/dev/null || true
+                fi
+                exit 1
+            fi
+        fi
+
+        rm -rf "$backup_dir" 2>/dev/null || true
+        marvin_log "INFO" "Web rebuild complete (reason: ${reason})"
+        exit 0
+    )
 }
