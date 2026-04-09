@@ -33,6 +33,13 @@ _MODULES_DIR="${MARVIN_DIR}/agent/prompts/modules"
 # Usage: content=$(marvin_load_module "identity")
 marvin_load_module() {
     local name="$1"
+
+    # Validate module name — alphanumeric, hyphens, underscores only (no path traversal)
+    if [[ ! "$name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        marvin_log "ERROR" "Invalid module name: ${name}" >&2
+        return 1
+    fi
+
     local module_file="${_MODULES_DIR}/${name}.md"
 
     if [[ ! -f "$module_file" ]]; then
@@ -44,7 +51,8 @@ marvin_load_module() {
 }
 
 # Load multiple modules and concatenate them with blank line separators.
-# Skips modules that don't exist (with a warning).
+# Hard-fails if any module cannot be loaded — prevents running with
+# incomplete prompts (e.g., missing security constraints).
 #
 # Usage: modules=$(marvin_load_modules identity security-rules output-rules)
 marvin_load_modules() {
@@ -53,7 +61,10 @@ marvin_load_modules() {
 
     for name in "$@"; do
         local content
-        content=$(marvin_load_module "$name") || continue
+        if ! content=$(marvin_load_module "$name"); then
+            marvin_log "ERROR" "Required prompt module '${name}' failed to load — aborting prompt assembly" >&2
+            return 1
+        fi
 
         if [[ "$first" == "true" ]]; then
             result="$content"
@@ -94,7 +105,10 @@ marvin_build_prompt() {
     fi
 
     local module_content
-    module_content=$(marvin_load_modules "${modules[@]}")
+    if ! module_content=$(marvin_load_modules "${modules[@]}"); then
+        marvin_log "ERROR" "Prompt assembly failed: one or more modules could not be loaded" >&2
+        return 1
+    fi
 
     echo "${task_content}
 
