@@ -204,7 +204,7 @@ marvin_rebuild_web() {
         # Build
         marvin_log "INFO" "Running next build..."
         local build_output
-        if ! build_output=$(cd "$web_dir" && npm run build 2>&1); then
+        if ! build_output=$(cd "$web_dir" && timeout 300 npm run build 2>&1); then
             marvin_log "ERROR" "next build failed — rolling back (reason: ${reason})"
             marvin_log "ERROR" "Build output: $(echo "$build_output" | tail -20)"
             if [[ -d "$backup_dir" ]]; then
@@ -230,7 +230,7 @@ marvin_rebuild_web() {
 
         # Restart the service
         marvin_log "INFO" "Restarting marvin-web service..."
-        if ! systemctl restart marvin-web 2>/dev/null; then
+        if ! timeout 30 systemctl restart marvin-web 2>/dev/null; then
             marvin_log "ERROR" "marvin-web restart failed — rolling back (reason: ${reason})"
             if [[ -d "$backup_dir" ]]; then
                 rm -rf "${web_dir}/.next"
