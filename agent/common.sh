@@ -163,8 +163,10 @@ marvin_rebuild_web() {
         fi
     fi
     echo "$$" > "$lock_dir/pid"
-    # Ensure lock is released on exit from this function
-    trap 'rm -rf "$lock_dir"' RETURN
+    # Ensure lock is released on exit from this function.
+    # Expand lock_dir at definition time (not fire time) to avoid scope leak —
+    # local variables are destroyed after RETURN trap fires in some bash versions.
+    trap "rm -rf '${lock_dir}'" RETURN
 
     local web_dir="${WEB_DIR}"
     local standalone_dir="${web_dir}/.next/standalone"
