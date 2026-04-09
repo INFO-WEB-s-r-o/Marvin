@@ -162,8 +162,19 @@ marvin_rebuild_web() {
             mkdir "$lock_dir" 2>/dev/null || { marvin_log "WARN" "Web rebuild skipped — lost lock race (reason: ${reason})"; return 2; }
         fi
     fi
-    echo "$$" > "$lock_dir/pid"
-    # Ensure lock is released on exit from this function.
+    # Write PID for staleness/orphan detection. Guard with || to prevent
+    # set -e from killing the script (which would skip the RETURN trap and
+    # leak the lock directory — see issue #521).
+    if ! echo "$$" > "$lock_dir/pid" 2>/dev/null; then
+        marvin_log "ERROR" "Failed to write PID to lock — releasing lock (reason: ${reason})"
+        rm -rf "$lock_dir"
+        return 1
+    fi
+    # Ensure lock is released when the function returns.
+    # IMPORTANT: trap RETURN fires on 'return' but NOT on 'set -e' exit.
+    # All commands below MUST be inside if/||/&& guards to prevent unhandled
+    # failures from bypassing cleanup. The 10-min stale lock detector is the
+    # safety net for truly catastrophic exits.
     # Expand lock_dir at definition time (not fire time) to avoid scope leak —
     # local variables are destroyed after RETURN trap fires in some bash versions.
     trap "rm -rf '${lock_dir}'" RETURN
