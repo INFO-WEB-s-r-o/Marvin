@@ -182,7 +182,8 @@ marvin_rebuild_web() {
         return 1
     fi
     # Record process start time for PID-reuse detection (fixes #526)
-    awk '{print $22}' "/proc/$$/stat" > "$lock_dir/start" 2>/dev/null || true
+    awk '{print $22}' "/proc/$$/stat" > "$lock_dir/start" 2>/dev/null \
+        || marvin_log "WARN" "Could not record start time for lock — PID reuse detection disabled"
     # Run the build inside a subshell so the EXIT trap guarantees lock
     # cleanup regardless of how the subshell terminates — including set -e
     # kills, which do NOT fire RETURN traps (fixes #521, #523).
