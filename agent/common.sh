@@ -155,8 +155,18 @@ marvin_rebuild_web() {
             rm -rf "$lock_dir"
             mkdir "$lock_dir" 2>/dev/null || { marvin_log "WARN" "Web rebuild skipped — lost lock race (reason: ${reason})"; return 2; }
         elif kill -0 "$lock_pid" 2>/dev/null; then
-            marvin_log "WARN" "Web rebuild skipped — another build in progress (PID ${lock_pid}, reason: ${reason})"
-            return 2
+            # Guard against PID reuse: compare process start time with recorded value
+            local recorded_start actual_start
+            recorded_start=$(cat "$lock_dir/start" 2>/dev/null || echo "")
+            actual_start=$(awk '{print $22}' "/proc/${lock_pid}/stat" 2>/dev/null || echo "")
+            if [[ -n "$recorded_start" && -n "$actual_start" && "$recorded_start" != "$actual_start" ]]; then
+                marvin_log "WARN" "Removing build lock — PID ${lock_pid} reused by different process"
+                rm -rf "$lock_dir"
+                mkdir "$lock_dir" 2>/dev/null || { marvin_log "WARN" "Web rebuild skipped — lost lock race (reason: ${reason})"; return 2; }
+            else
+                marvin_log "WARN" "Web rebuild skipped — another build in progress (PID ${lock_pid}, reason: ${reason})"
+                return 2
+            fi
         else
             marvin_log "WARN" "Removing orphaned build lock (PID ${lock_pid} not running)"
             rm -rf "$lock_dir"
@@ -171,6 +181,8 @@ marvin_rebuild_web() {
         rm -rf "$lock_dir"
         return 1
     fi
+    # Record process start time for PID-reuse detection (fixes #526)
+    awk '{print $22}' "/proc/$$/stat" > "$lock_dir/start" 2>/dev/null || true
     # Run the build inside a subshell so the EXIT trap guarantees lock
     # cleanup regardless of how the subshell terminates — including set -e
     # kills, which do NOT fire RETURN traps (fixes #521, #523).
