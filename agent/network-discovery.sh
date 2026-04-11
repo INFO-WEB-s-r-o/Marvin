@@ -379,7 +379,7 @@ if [[ -f "$PEERS_FILE" ]]; then
         protocol: "marvin-peer-registry",
         version: "1.0",
         generated: $ts,
-        registry: [.peers[] | {
+        registry: [.peers[] | select(.trust_level != "untrusted") | {
             name: .name,
             domain: (.domain // null),
             type: .type,
@@ -387,8 +387,8 @@ if [[ -f "$PEERS_FILE" ]]; then
             trust_level: .trust_level,
             discovered: .discovered
         }],
-        total_peers: (.peers | length),
-        active_peers: ([.peers[] | select(.alive == true)] | length)
+        total_peers: ([.peers[] | select(.trust_level != "untrusted")] | length),
+        active_peers: ([.peers[] | select(.trust_level != "untrusted") | select(.alive == true)] | length)
     }' "$PEERS_FILE" > "${REGISTRY_DIR}/registry.json.tmp" \
         && mv "${REGISTRY_DIR}/registry.json.tmp" "${REGISTRY_DIR}/registry.json"
     marvin_log "INFO" "Public peer registry updated at /api/peers/registry.json"
