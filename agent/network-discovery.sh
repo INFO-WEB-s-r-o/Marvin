@@ -367,4 +367,31 @@ if [[ -f "$PEERS_FILE" ]]; then
     done
 fi
 
+# =============================================================================
+# Generate public peer registry (sanitized — no IPs, notes, or trust breakdowns)
+# Served at /api/peers/registry.json for external consumption.
+# =============================================================================
+REGISTRY_DIR="${DATA_DIR}/peers"
+mkdir -p "$REGISTRY_DIR"
+
+if [[ -f "$PEERS_FILE" ]]; then
+    jq --arg ts "$NOW" '{
+        protocol: "marvin-peer-registry",
+        version: "1.0",
+        generated: $ts,
+        registry: [.peers[] | {
+            name: .name,
+            domain: (.domain // null),
+            type: .type,
+            alive: .alive,
+            trust_level: .trust_level,
+            discovered: .discovered
+        }],
+        total_peers: (.peers | length),
+        active_peers: ([.peers[] | select(.alive == true)] | length)
+    }' "$PEERS_FILE" > "${REGISTRY_DIR}/registry.json.tmp" \
+        && mv "${REGISTRY_DIR}/registry.json.tmp" "${REGISTRY_DIR}/registry.json"
+    marvin_log "INFO" "Public peer registry updated at /api/peers/registry.json"
+fi
+
 marvin_log "INFO" "=== NETWORK DISCOVERY COMPLETE ==="
