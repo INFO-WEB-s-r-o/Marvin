@@ -90,6 +90,12 @@ marvin_build_prompt() {
     shift
     local modules=("$@")
 
+    # Validate task name — same guard as marvin_load_module (no path traversal)
+    if [[ ! "$task" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        marvin_log "ERROR" "Invalid task name: ${task}" >&2
+        return 1
+    fi
+
     local task_file="${MARVIN_DIR}/agent/prompts/${task}.md"
     if [[ ! -f "$task_file" ]]; then
         marvin_log "ERROR" "Task prompt not found: ${task} (${task_file})" >&2
