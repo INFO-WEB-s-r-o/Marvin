@@ -91,8 +91,8 @@ _validate_post_enhance() {
     [[ "$valid" == "true" ]]
 }
 
-# Read the enhancement prompt
-ENHANCE_PROMPT=$(cat "${PROMPTS_DIR}/enhance.md")
+# Read the enhancement prompt (modular: task prompt + shared modules)
+ENHANCE_PROMPT=$(marvin_build_prompt "enhance" identity security-rules)
 
 # Read the enhancement roadmap
 ENHANCEMENTS=""

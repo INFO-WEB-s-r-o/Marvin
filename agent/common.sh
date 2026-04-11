@@ -92,6 +92,7 @@ _MARVIN_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" && pwd)"
 source "${_MARVIN_LIB_DIR}/logging.sh"
 source "${_MARVIN_LIB_DIR}/metrics.sh"
 source "${_MARVIN_LIB_DIR}/claude.sh"
+source "${_MARVIN_LIB_DIR}/prompts.sh"
 
 # ─── Service management ──────────────────────────────────────────────────────
 
