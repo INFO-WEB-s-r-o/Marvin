@@ -182,7 +182,9 @@ marvin_rebuild_web() {
         return 1
     fi
     # Record process start time for PID-reuse detection (fixes #526)
-    awk '{print $22}' "/proc/$$/stat" > "$lock_dir/start" 2>/dev/null \
+    # Atomic write: tmp+mv prevents concurrent readers from seeing a partial file
+    awk '{print $22}' "/proc/$$/stat" > "$lock_dir/start.tmp" 2>/dev/null \
+        && mv "$lock_dir/start.tmp" "$lock_dir/start" \
         || marvin_log "WARN" "Could not record start time for lock — PID reuse detection disabled"
     # Run the build inside a subshell so the EXIT trap guarantees lock
     # cleanup regardless of how the subshell terminates — including set -e
