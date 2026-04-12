@@ -251,12 +251,10 @@ ${SYNC_CONTEXT}"
         SYNC_OUTPUT=$(run_claude "sync-and-learn" "$SYNC_FULL") || SYNC_EXIT=$?
         if [[ $SYNC_EXIT -ne 0 ]]; then
             marvin_log "WARN" "sync-and-learn Claude run failed (exit=${SYNC_EXIT}) — skipping learn report"
-            SYNC_OUTPUT=""
-        fi
-
-        # Save the learning report
-        LEARN_FILE="${DATA_DIR}/enhancements/${TODAY}-sync-learn-${TIMESTAMP}.md"
-        cat > "$LEARN_FILE" << EOF
+        else
+            # Save the learning report
+            LEARN_FILE="${DATA_DIR}/enhancements/${TODAY}-sync-learn-${TIMESTAMP}.md"
+            cat > "$LEARN_FILE" << EOF
 # Sync & Learn Report — ${NOW}
 
 ## Pull Summary
@@ -270,7 +268,8 @@ ${SYNC_OUTPUT}
 *Triggered by git pull at morning check*
 EOF
 
-        marvin_log "INFO" "Sync-and-learn report saved: ${LEARN_FILE}"
+            marvin_log "INFO" "Sync-and-learn report saved: ${LEARN_FILE}"
+        fi
     else
         marvin_log "WARN" "sync-learn.md prompt not found — skipping change analysis"
     fi
