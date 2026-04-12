@@ -125,6 +125,7 @@ EOF
         >> "$usage_file" 2>/dev/null || true
 
     echo "$output"
+    return $exit_code
 }
 
 # Check if Claude Code is available
