@@ -323,7 +323,9 @@ while IFS= read -r line; do
                 # Fall through to normal runaway detection instead of skipping.
                 # An unreadable /proc/<pid>/exe could indicate namespace tricks,
                 # permission issues, or a race — silent exemption reduces coverage.
-                break
+                # NOTE: No break/continue here — proc_exe="" falls through to the
+                # _expected_exe check below (which fails), logging "Untrusted exe",
+                # then past esac into runaway detection. This is intentional (#547).
             fi
             _expected_exe="/usr/bin/${proc_name}"
             if [[ "$proc_exe" == "$_expected_exe" ]]; then
