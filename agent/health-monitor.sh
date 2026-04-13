@@ -313,10 +313,11 @@ while IFS= read -r line; do
             fi
             marvin_log "WARN" "Untrusted exe for allowlisted name: ${proc_name} (PID ${proc_pid}, exe=${proc_exe}) at ${proc_cpu}% CPU"
         ;;
-        find)
-            # Only suppress find if it's the real binary AND launched by a Marvin
-            # bash script — avoids blanket suppression of all find processes (#510)
-            # Parent exe must be bash to prevent cmdline spoofing (#514)
+        find|git)
+            # Only suppress find/git if it's the real binary AND launched by a
+            # Marvin bash script — avoids blanket suppression (#510, #514).
+            # git spikes to 100% CPU during morning-check fetch/pull/push and
+            # github-interact push operations — this is normal and transient.
             if [[ -z "$proc_exe" ]]; then
                 marvin_log "WARN" "Cannot read exe for allowlisted ${proc_name} at ${proc_cpu}% CPU (PID ${proc_pid}) — treating as unverified"
                 # Fall through to normal runaway detection instead of skipping.
@@ -324,7 +325,8 @@ while IFS= read -r line; do
                 # permission issues, or a race — silent exemption reduces coverage.
                 break
             fi
-            if [[ "$proc_exe" == /usr/bin/find ]]; then
+            _expected_exe="/usr/bin/${proc_name}"
+            if [[ "$proc_exe" == "$_expected_exe" ]]; then
                 proc_ppid=$(awk '/^PPid:/{print $2}' "/proc/${proc_pid}/status" 2>/dev/null || echo "")
                 if [[ -n "$proc_ppid" ]]; then
                     parent_exe=$(readlink -f "/proc/${proc_ppid}/exe" 2>/dev/null || echo "")
@@ -333,7 +335,7 @@ while IFS= read -r line; do
                         continue
                     fi
                 fi
-                marvin_log "WARN" "Non-Marvin find at ${proc_cpu}% CPU (PID ${proc_pid}, ppid=${proc_ppid:-unknown})"
+                marvin_log "WARN" "Non-Marvin ${proc_name} at ${proc_cpu}% CPU (PID ${proc_pid}, ppid=${proc_ppid:-unknown})"
             else
                 marvin_log "WARN" "Untrusted exe for allowlisted name: ${proc_name} (PID ${proc_pid}, exe=${proc_exe}) at ${proc_cpu}% CPU"
             fi
