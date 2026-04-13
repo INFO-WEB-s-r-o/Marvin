@@ -318,8 +318,11 @@ while IFS= read -r line; do
             # bash script — avoids blanket suppression of all find processes (#510)
             # Parent exe must be bash to prevent cmdline spoofing (#514)
             if [[ -z "$proc_exe" ]]; then
-                marvin_log "WARN" "Cannot read exe for allowlisted ${proc_name} at ${proc_cpu}% CPU (PID ${proc_pid}) — skipping"
-                continue
+                marvin_log "WARN" "Cannot read exe for allowlisted ${proc_name} at ${proc_cpu}% CPU (PID ${proc_pid}) — treating as unverified"
+                # Fall through to normal runaway detection instead of skipping.
+                # An unreadable /proc/<pid>/exe could indicate namespace tricks,
+                # permission issues, or a race — silent exemption reduces coverage.
+                break
             fi
             if [[ "$proc_exe" == /usr/bin/find ]]; then
                 proc_ppid=$(awk '/^PPid:/{print $2}' "/proc/${proc_pid}/status" 2>/dev/null || echo "")
