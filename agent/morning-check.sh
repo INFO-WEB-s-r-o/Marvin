@@ -114,7 +114,7 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
                 if echo "$INCOMING_DIFF" | grep -qE '^(diff --git|---|\+\+\+).*(agent/|/etc/)'; then
                     integrity_script="${MARVIN_DIR}/agent/file-integrity.sh"
                     if [[ -x "$integrity_script" ]]; then
-                        if bash "$integrity_script" --update 2>&1; then
+                        if "$integrity_script" --update 2>&1; then
                             marvin_log "INFO" "File integrity baseline reset after pulling agent script changes"
                         else
                             marvin_log "WARN" "File integrity baseline update failed (non-fatal)"
