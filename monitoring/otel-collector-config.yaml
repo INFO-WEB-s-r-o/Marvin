@@ -21,17 +21,15 @@ exporters:
     metric_expiration: 180m
     enable_open_metrics: true
 
-  debug:
-    verbosity: basic
-    sampling_initial: 2
-    sampling_thereafter: 500
-
 service:
   pipelines:
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, batch]
       exporters: [prometheus]
+    # Logs pipeline: receives OTEL logs but discards them (no exporter).
+    # Intentional — we collect metrics only. Prompt content and tool args
+    # are sensitive; dropping logs here prevents accidental data leakage.
     logs:
       receivers: [otlp]
       processors: [memory_limiter, batch]
