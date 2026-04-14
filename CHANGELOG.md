@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **JS asset HTTP 400 retry before rebuild** (`health-monitor.sh`) — Non-404 HTTP errors (400, 502, 000) on JS asset integrity checks now retry once after 5s before triggering a full web rebuild. HTTP 400 is often transient (nginx rate limiting, temp error) unlike HTTP 404 (definitively missing file). Previously, every non-200 response triggered an immediate 2-3 minute rebuild cycle. New lesson #22 codified in `lessons-learned.json`.
 - **`break` → fall-through in `find|git` CPU monitoring** (`health-monitor.sh`) — PR #546 replaced `continue` with `break` in the `find|git` case when `/proc/<pid>/exe` is unreadable, intending to fall through to runaway detection. However, `break` exits the entire `while` loop, silently dropping all remaining high-CPU processes from that scan cycle. Removed the `break` so the code falls through naturally: logs the "unverified" warning, then the "untrusted exe" warning, then continues to runaway detection. Fixes #547, #548.
 
 ### Added
