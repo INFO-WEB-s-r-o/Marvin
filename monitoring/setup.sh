@@ -32,13 +32,19 @@ else
 fi
 
 # --- Step 2: Set Grafana password ---
+# Source existing .env if present — avoids regenerating password on re-run (#556)
+if [[ -f "${SCRIPT_DIR}/.env" ]]; then
+    # shellcheck source=/dev/null
+    source "${SCRIPT_DIR}/.env"
+fi
+
 if [[ -z "${GRAFANA_ADMIN_PASSWORD:-}" ]]; then
     GRAFANA_ADMIN_PASSWORD="marvin-$(openssl rand -hex 8)"
     echo "GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}" > "${SCRIPT_DIR}/.env"
     chmod 600 "${SCRIPT_DIR}/.env"
     echo "[2/4] Generated Grafana admin password — saved to ${SCRIPT_DIR}/.env"
 else
-    echo "[2/4] Using existing GRAFANA_ADMIN_PASSWORD from environment."
+    echo "[2/4] Using existing Grafana admin password from ${SCRIPT_DIR}/.env"
 fi
 
 # --- Step 3: Start the stack ---

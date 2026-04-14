@@ -42,7 +42,7 @@ services:
       - "127.0.0.1:3001:3000"
     environment:
       # SECURITY: Change this before first run or use .env file
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-marvin-change-me}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?Run monitoring/setup.sh first to generate credentials}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_ANALYTICS_REPORTING_ENABLED=false
       - GF_ANALYTICS_CHECK_FOR_UPDATES=false
