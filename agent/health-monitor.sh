@@ -300,9 +300,11 @@ while IFS= read -r line; do
     proc_exe=$(readlink -f "/proc/${proc_pid}/exe" 2>/dev/null || echo "")
     case "$proc_name" in
         claude|apt*|dpkg*|ps|jq|fail2ban*|file|appstreamcli)
+            # High-frequency, low-risk short-lived children — silent skip when
+            # exe is unreadable (they exit between ps and readlink constantly).
+            # Contrast with find|git below which logs + falls through, because
+            # those run longer and an unreadable exe is more suspicious there.
             if [[ -z "$proc_exe" ]]; then
-                # Process exited between ps and readlink — can't verify, skip silently.
-                # Short-lived children (e.g., rkhunter's `file`) hit this constantly.
                 continue
             fi
             if [[ "$proc_exe" == /usr/bin/* || "$proc_exe" == /usr/sbin/* || \
@@ -323,7 +325,9 @@ while IFS= read -r line; do
                 # Fall through to normal runaway detection instead of skipping.
                 # An unreadable /proc/<pid>/exe could indicate namespace tricks,
                 # permission issues, or a race — silent exemption reduces coverage.
-                break
+                # NOTE: No break/continue here — proc_exe="" falls through to the
+                # _expected_exe check below (which fails), logging "Untrusted exe",
+                # then past esac into runaway detection. This is intentional (#547).
             fi
             _expected_exe="/usr/bin/${proc_name}"
             if [[ "$proc_exe" == "$_expected_exe" ]]; then

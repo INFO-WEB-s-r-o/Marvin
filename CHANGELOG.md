@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- **`break` → fall-through in `find|git` CPU monitoring** (`health-monitor.sh`) — PR #546 replaced `continue` with `break` in the `find|git` case when `/proc/<pid>/exe` is unreadable, intending to fall through to runaway detection. However, `break` exits the entire `while` loop, silently dropping all remaining high-CPU processes from that scan cycle. Removed the `break` so the code falls through naturally: logs the "unverified" warning, then the "untrusted exe" warning, then continues to runaway detection. Fixes #547, #548.
+
 ### Added
 
 - **`git` added to runaway process exclusions** (`health-monitor.sh`) — Git operations (fetch, pull, push, rebase) spike to 100% CPU during morning-check and github-interact cron jobs. Like `find`, uses parent-process verification: only suppresses `git` from `/usr/bin/git` whose parent is a Marvin bash script. Non-Marvin git processes are still monitored and logged.
