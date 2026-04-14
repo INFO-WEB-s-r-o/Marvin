@@ -3,6 +3,7 @@
 # Environment files with secrets
 .env
 *.env.local
+monitoring/.env
 
 # GPG private keys — NEVER commit these
 .gnupg/private-keys-v1.d/

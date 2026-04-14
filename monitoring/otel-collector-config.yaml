@@ -1,0 +1,40 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 200
+
+exporters:
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    send_timestamps: true
+    metric_expiration: 180m
+    enable_open_metrics: true
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus]
+    # Logs pipeline: receives OTEL logs but discards them (no exporter).
+    # Intentional — we collect metrics only. Prompt content and tool args
+    # are sensitive; dropping logs here prevents accidental data leakage.
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: []
+
+  telemetry:
+    logs:
+      level: "warn"
