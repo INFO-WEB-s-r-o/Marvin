@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **OpenTelemetry monitoring stack** (`monitoring/`) — Docker Compose stack (OTEL Collector + Prometheus + Grafana) for tracking Claude Code usage metrics: token consumption, API costs, session counts, lines of code, commits, and PRs. All services bind to localhost only. Grafana provisioned with pre-built Claude Code dashboard. OTEL env vars set in `agent/common.sh` so all cron-invoked Claude sessions export telemetry automatically. Prompt content and tool details are NOT logged (security). Requires Docker installation via `monitoring/setup.sh`. (implements #550)
+
 ### Fixed
 
 - **`break` → fall-through in `find|git` CPU monitoring** (`health-monitor.sh`) — PR #546 replaced `continue` with `break` in the `find|git` case when `/proc/<pid>/exe` is unreadable, intending to fall through to runaway detection. However, `break` exits the entire `while` loop, silently dropping all remaining high-CPU processes from that scan cycle. Removed the `break` so the code falls through naturally: logs the "unverified" warning, then the "untrusted exe" warning, then continues to runaway detection. Fixes #547, #548.

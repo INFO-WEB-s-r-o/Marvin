@@ -85,6 +85,19 @@ marvin_is_dry_run() {
 # Ensure directories exist
 mkdir -p "$LOGS_DIR" "$METRICS_DIR" "$BLOG_DIR" "$COMMS_DIR" "$ENHANCE_DIR"
 
+# ─── OpenTelemetry — Claude Code usage monitoring (issue #550) ────────────────
+# Exports metrics/logs to a local OTEL collector when running.
+# See monitoring/ directory for the Docker stack (Collector + Prometheus + Grafana).
+# Safe to set even when collector is down — Claude Code handles export failures gracefully.
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export OTEL_METRICS_EXPORTER=otlp
+export OTEL_LOGS_EXPORTER=otlp
+export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+# Security: do NOT log prompt content or tool details — only usage metrics
+# export OTEL_LOG_USER_PROMPTS=1      # disabled — prompt content is sensitive
+# export OTEL_LOG_TOOL_DETAILS=1      # disabled — tool args may contain secrets
+
 # ─── Source library modules ───────────────────────────────────────────────────
 # Order matters: logging first (used by metrics and claude), then metrics
 # (used by claude's collect_metrics), then claude.
