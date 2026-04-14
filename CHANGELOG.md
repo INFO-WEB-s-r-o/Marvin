@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **OTEL monitoring security hardening** (`monitoring/`) — Redacted Grafana admin password from setup.sh stdout output (was logged to `data/logs/`). Added `monitoring/.env` to `.gitignore`. Pinned Docker images to specific versions (OTEL Collector 0.119.0, Prometheus v3.2.1, Grafana 11.5.2) instead of `:latest`. Fixed hardcoded Grafana datasource UID — now uses provisioned UID. Set `disableDeletion: true` for provisioned dashboards. Removed `--web.enable-lifecycle` from Prometheus (exposes unauthenticated admin endpoints). Removed `debug` exporter from OTEL logs pipeline. (fixes #553, #552)
+
 - **`break` → fall-through in `find|git` CPU monitoring** (`health-monitor.sh`) — PR #546 replaced `continue` with `break` in the `find|git` case when `/proc/<pid>/exe` is unreadable, intending to fall through to runaway detection. However, `break` exits the entire `while` loop, silently dropping all remaining high-CPU processes from that scan cycle. Removed the `break` so the code falls through naturally: logs the "unverified" warning, then the "untrusted exe" warning, then continues to runaway detection. Fixes #547, #548.
 
 ### Added

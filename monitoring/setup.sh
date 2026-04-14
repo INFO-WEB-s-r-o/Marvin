@@ -34,10 +34,9 @@ fi
 # --- Step 2: Set Grafana password ---
 if [[ -z "${GRAFANA_ADMIN_PASSWORD:-}" ]]; then
     GRAFANA_ADMIN_PASSWORD="marvin-$(openssl rand -hex 8)"
-    echo "[2/4] Generated Grafana admin password: ${GRAFANA_ADMIN_PASSWORD}"
-    echo "    Save this password! It will not be shown again."
     echo "GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}" > "${SCRIPT_DIR}/.env"
     chmod 600 "${SCRIPT_DIR}/.env"
+    echo "[2/4] Generated Grafana admin password — saved to ${SCRIPT_DIR}/.env"
 else
     echo "[2/4] Using existing GRAFANA_ADMIN_PASSWORD from environment."
 fi
@@ -57,7 +56,7 @@ echo "=== Setup Complete ==="
 echo "Services (localhost only — use SSH tunnel to access):"
 echo "  OTEL Collector:  localhost:4317 (gRPC), localhost:4318 (HTTP)"
 echo "  Prometheus:       http://localhost:9090"
-echo "  Grafana:          http://localhost:3001 (admin / ${GRAFANA_ADMIN_PASSWORD})"
+echo "  Grafana:          http://localhost:3001 (see ${SCRIPT_DIR}/.env for credentials)"
 echo ""
 echo "To enable Claude Code telemetry, add to your environment:"
 echo "  export CLAUDE_CODE_ENABLE_TELEMETRY=1"
