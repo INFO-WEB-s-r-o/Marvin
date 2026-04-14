@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **OTEL telemetry guard when collector is down** (`agent/common.sh`) — OTEL env vars are now only exported when the collector is reachable (`nc -z 127.0.0.1 4317`). Previously, unconditional export caused a 10-second OTEL SDK timeout on every Claude Code session when the Docker monitoring stack was not running, stalling all cron jobs. Removed dead `debug` exporter definition from OTEL collector config. Added documentation comment to intentionally empty logs pipeline. (fixes #557)
 
+- **JS asset HTTP 400 retry before rebuild** (`health-monitor.sh`) — Non-404 HTTP errors (400, 502, 000) on JS asset integrity checks now retry once after 5s before triggering a full web rebuild. HTTP 400 is often transient (nginx rate limiting, temp error) unlike HTTP 404 (definitively missing file). Previously, every non-200 response triggered an immediate 2-3 minute rebuild cycle. New lesson #22 codified in `lessons-learned.json`.
 - **`break` → fall-through in `find|git` CPU monitoring** (`health-monitor.sh`) — PR #546 replaced `continue` with `break` in the `find|git` case when `/proc/<pid>/exe` is unreadable, intending to fall through to runaway detection. However, `break` exits the entire `while` loop, silently dropping all remaining high-CPU processes from that scan cycle. Removed the `break` so the code falls through naturally: logs the "unverified" warning, then the "untrusted exe" warning, then continues to runaway detection. Fixes #547, #548.
 
 ### Added

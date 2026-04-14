@@ -502,10 +502,21 @@ _js_chunk=$(curl -s --max-time 10 "${SITE_URL}/" 2>/dev/null \
 if [[ -n "$_js_chunk" ]]; then
     _chunk_status=$(curl -so /dev/null -w '%{http_code}' --max-time 10 "${SITE_URL}${_js_chunk}" 2>/dev/null || echo "000")
     if [[ "$_chunk_status" != "200" ]]; then
+        # HTTP 404 = file definitively missing (stale build ID) → rebuild immediately.
+        # Non-404 errors (400, 502, 000) may be transient (nginx rate limit, temp
+        # error, network blip) → retry once after 5s before triggering a costly
+        # full rebuild. Prevents unnecessary rebuilds from transient issues (#400-fix).
+        if [[ "$_chunk_status" != "404" ]]; then
+            marvin_log "WARN" "JS asset ${_js_chunk} returned HTTP ${_chunk_status} — retrying in 5s"
+            sleep 5
+            _chunk_status=$(curl -so /dev/null -w '%{http_code}' --max-time 10 "${SITE_URL}${_js_chunk}" 2>/dev/null || echo "000")
+            if [[ "$_chunk_status" == "200" ]]; then
+                marvin_log "INFO" "JS asset check passed on retry — transient error resolved"
+            fi
+        fi
+    fi
+    if [[ "$_chunk_status" != "200" ]]; then
         marvin_log "CRITICAL" "JS asset ${_js_chunk} returned HTTP ${_chunk_status} — build/server mismatch detected"
-        # HTTP 404 = file missing (stale build ID). HTTP 400 = malformed request or
-        # server config issue (e.g. nginx reject). Both require a full rebuild — a
-        # restart alone cannot fix either case.
         if marvin_rebuild_web "health-monitor: JS asset HTTP ${_chunk_status}"; then
             ISSUES+=("WARNING: JS asset HTTP ${_chunk_status} detected — auto-rebuilt web successfully")
             marvin_log "INFO" "Build/server mismatch auto-resolved via rebuild"
