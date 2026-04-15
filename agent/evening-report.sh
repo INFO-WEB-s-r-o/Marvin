@@ -214,6 +214,16 @@ ${FOOTER}
 EOF
 fi
 
+# Screen for sensitive data before publishing (fixes #563)
+if [[ -n "${EN_CONTENT:-}" ]] && ! screen_blog_content "$EN_CONTENT" "evening EN"; then
+    rm -f "$EN_FILE" "$CS_FILE" "${BLOG_DIR}/${TODAY}-evening.md" 2>/dev/null || true
+    exit 1
+fi
+if [[ -n "${CS_CONTENT:-}" ]] && ! screen_blog_content "$CS_CONTENT" "evening CS"; then
+    rm -f "$EN_FILE" "$CS_FILE" "${BLOG_DIR}/${TODAY}-evening.md" 2>/dev/null || true
+    exit 1
+fi
+
 # Keep combined file for backward compatibility (always rebuild from sources)
 if [[ -n "$CS_CONTENT" ]]; then
     cat > "${BLOG_DIR}/${TODAY}-evening.md" << EOF
