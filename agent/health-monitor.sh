@@ -325,7 +325,7 @@ while IFS= read -r line; do
                 # between ps and readlink (race condition). Check liveness:
                 # - Dead process → skip silently (no threat from a finished process)
                 # - Alive but unreadable exe → suspicious, log and fall through (#547)
-                if ! kill -0 "$proc_pid" 2>/dev/null; then
+                if [[ ! -d "/proc/${proc_pid}" ]]; then
                     continue  # Process already exited — harmless race condition
                 fi
                 marvin_log "WARN" "Cannot read exe for running ${proc_name} at ${proc_cpu}% CPU (PID ${proc_pid}) — treating as unverified"
@@ -389,7 +389,8 @@ if [[ -f "$RUNAWAY_FILE" ]]; then
     stale_pids=()
     while IFS= read -r pid; do
         [[ -z "$pid" ]] && continue
-        if ! kill -0 "$pid" 2>/dev/null; then
+        [[ "$pid" =~ ^[0-9]+$ ]] || continue  # Sanitize: jq keys must be numeric PIDs
+        if [[ ! -d "/proc/${pid}" ]]; then
             stale_pids+=("$pid")
         fi
     done < <(jq -r 'keys[]' "$RUNAWAY_FILE" 2>/dev/null)
