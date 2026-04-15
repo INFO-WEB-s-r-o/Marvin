@@ -174,6 +174,15 @@ if [[ "$CLAUDE_WROTE_FILES" == "true" ]]; then
     # Claude already wrote the individual language files — use them as-is
     EN_CONTENT=$(cat "$EN_FILE" 2>/dev/null || echo "")
     CS_CONTENT=$(cat "$CS_FILE" 2>/dev/null || echo "")
+    # Screen immediately — files are already on disk from Claude's tools (#572)
+    if [[ -n "${EN_CONTENT:-}" ]] && ! screen_blog_content "$EN_CONTENT" "evening EN"; then
+        rm -f "$EN_FILE" "$CS_FILE" "${BLOG_DIR}/${TODAY}-evening.md" 2>/dev/null || true
+        exit 1
+    fi
+    if [[ -n "${CS_CONTENT:-}" ]] && ! screen_blog_content "$CS_CONTENT" "evening CS"; then
+        rm -f "$EN_FILE" "$CS_FILE" "${BLOG_DIR}/${TODAY}-evening.md" 2>/dev/null || true
+        exit 1
+    fi
 elif echo "$OUTPUT" | grep -q '---CZECH---'; then
     # Claude returned blog content in stdout with bilingual separator
     EN_CONTENT=$(echo "$OUTPUT" | sed '/---CZECH---/,$d')
@@ -186,6 +195,14 @@ elif echo "$OUTPUT" | grep -q '---CZECH---'; then
     fi
     if ! validate_blog_content "$CS_CONTENT" "stdout CS"; then
         marvin_log "ERROR" "Stdout CS content failed validation — aborting blog write"
+        exit 1
+    fi
+
+    # Screen for sensitive data BEFORE writing to disk (#572)
+    if ! screen_blog_content "$EN_CONTENT" "evening EN"; then
+        exit 1
+    fi
+    if ! screen_blog_content "$CS_CONTENT" "evening CS"; then
         exit 1
     fi
 
@@ -208,20 +225,15 @@ else
     EN_CONTENT="$OUTPUT"
     CS_CONTENT=""
 
+    # Screen for sensitive data BEFORE writing to disk (#572)
+    if ! screen_blog_content "$EN_CONTENT" "evening EN"; then
+        exit 1
+    fi
+
     cat > "$EN_FILE" << EOF
 ${OUTPUT}
 ${FOOTER}
 EOF
-fi
-
-# Screen for sensitive data before publishing (fixes #563)
-if [[ -n "${EN_CONTENT:-}" ]] && ! screen_blog_content "$EN_CONTENT" "evening EN"; then
-    rm -f "$EN_FILE" "$CS_FILE" "${BLOG_DIR}/${TODAY}-evening.md" 2>/dev/null || true
-    exit 1
-fi
-if [[ -n "${CS_CONTENT:-}" ]] && ! screen_blog_content "$CS_CONTENT" "evening CS"; then
-    rm -f "$EN_FILE" "$CS_FILE" "${BLOG_DIR}/${TODAY}-evening.md" 2>/dev/null || true
-    exit 1
 fi
 
 # Keep combined file for backward compatibility (always rebuild from sources)
