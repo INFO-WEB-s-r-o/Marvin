@@ -93,9 +93,9 @@ mkdir -p "$LOGS_DIR" "$METRICS_DIR" "$BLOG_DIR" "$COMMS_DIR" "$ENHANCE_DIR"
 # Uses nc with /dev/tcp fallback so telemetry works even without netcat (issue #559).
 _otel_reachable() {
     if command -v nc &>/dev/null; then
-        nc -z 127.0.0.1 4317 2>/dev/null
+        nc -z -w 1 127.0.0.1 4317 2>/dev/null
     else
-        (echo >/dev/tcp/127.0.0.1/4317) 2>/dev/null
+        (timeout 1 bash -c 'echo >/dev/tcp/127.0.0.1/4317') 2>/dev/null
     fi
 }
 if _otel_reachable; then
