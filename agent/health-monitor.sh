@@ -389,6 +389,7 @@ if [[ -f "$RUNAWAY_FILE" ]]; then
     stale_pids=()
     while IFS= read -r pid; do
         [[ -z "$pid" ]] && continue
+        [[ "$pid" =~ ^[0-9]+$ ]] || continue  # Sanitize: jq keys must be numeric PIDs
         if [[ ! -d "/proc/${pid}" ]]; then
             stale_pids+=("$pid")
         fi
