@@ -87,9 +87,14 @@ screen_blog_content() {
         found+="kernel version, "
     fi
 
-    # Common API key/token prefixes
-    if grep -qP '(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{30,}|gho_[a-zA-Z0-9]{30,}|AKIA[A-Z0-9]{16})' <<< "$content"; then
+    # Common API key/token prefixes (sk-ant- for Anthropic keys with hyphens)
+    if grep -qP '(sk-ant-[a-zA-Z0-9_-]{20,}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{30,}|gho_[a-zA-Z0-9]{30,}|AKIA[A-Z0-9]{16})' <<< "$content"; then
         found+="API key/token, "
+    fi
+
+    # SSH private key content (not just path references)
+    if grep -q 'BEGIN [A-Z ]*PRIVATE KEY' <<< "$content"; then
+        found+="private key material, "
     fi
 
     # Sensitive file paths that indicate operational details
