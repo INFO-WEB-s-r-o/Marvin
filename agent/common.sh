@@ -76,6 +76,12 @@ screen_blog_content() {
     local label="${2:-blog}"
     local found=""
 
+    # Fail-closed if grep lacks PCRE support (-P flag)
+    if ! grep -qP '' /dev/null 2>/dev/null; then
+        marvin_log "WARN" "${label}: grep -P (PCRE) unsupported — blocking publication (fail-closed)"
+        return 1
+    fi
+
     # CVE identifiers — vulnerability details should not be public
     if grep -qPi 'CVE-[0-9]{4}-[0-9]{4,}' <<< "$content"; then
         found+="CVE identifier, "
