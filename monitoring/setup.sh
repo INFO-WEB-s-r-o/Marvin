@@ -17,7 +17,7 @@ echo "=== Marvin OTEL Monitoring Setup ==="
 if ! command -v docker &>/dev/null; then
     echo "[1/4] Installing Docker..."
     apt-get update -qq
-    apt-get install -y -qq ca-certificates curl
+    apt-get install -y -qq ca-certificates curl gnupg
     install -m 0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
     # Verify Docker GPG key fingerprint (https://docs.docker.com/engine/install/ubuntu/)
