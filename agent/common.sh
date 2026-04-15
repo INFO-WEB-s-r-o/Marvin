@@ -82,7 +82,8 @@ screen_blog_content() {
     fi
 
     # Kernel version with build suffix (e.g., 6.8.0-101-generic)
-    if grep -qP '[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-[a-z]+' <<< "$content"; then
+    # Anchored to Linux-style kernel versions: major.minor.patch-build-flavour
+    if grep -qP '\b[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-(?:generic|lowlatency|cloud|aws|azure|gcp|kvm|virtual)\b' <<< "$content"; then
         found+="kernel version, "
     fi
 

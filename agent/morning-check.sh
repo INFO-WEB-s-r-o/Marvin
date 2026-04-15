@@ -376,9 +376,8 @@ if [[ $CLAUDE_EXIT -ne 0 ]]; then
 else
     # Screen for sensitive data before publishing (fixes #563)
     if ! screen_blog_content "$OUTPUT" "morning"; then
-        marvin_log "ERROR" "Morning blog failed sensitive content screening — skipping blog write"
-        marvin_log_json "INFO" "morning-check" "Morning check complete"
-        exit 0
+        marvin_log "ERROR" "Morning blog failed sensitive content screening — blocking publication"
+        exit 1
     fi
 
     # Save the morning report — check if Claude already wrote the file directly
