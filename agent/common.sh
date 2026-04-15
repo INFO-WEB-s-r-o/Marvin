@@ -90,7 +90,15 @@ mkdir -p "$LOGS_DIR" "$METRICS_DIR" "$BLOG_DIR" "$COMMS_DIR" "$ENHANCE_DIR"
 # See monitoring/ directory for the Docker stack (Collector + Prometheus + Grafana).
 # Only enabled when the collector is reachable — avoids 10s OTEL export timeout
 # stalling cron jobs when the Docker stack is down (issue #557).
-if nc -z 127.0.0.1 4317 2>/dev/null; then
+# Uses nc with /dev/tcp fallback so telemetry works even without netcat (issue #559).
+_otel_reachable() {
+    if command -v nc &>/dev/null; then
+        nc -z 127.0.0.1 4317 2>/dev/null
+    else
+        (echo >/dev/tcp/127.0.0.1/4317) 2>/dev/null
+    fi
+}
+if _otel_reachable; then
     export CLAUDE_CODE_ENABLE_TELEMETRY=1
     export OTEL_METRICS_EXPORTER=otlp
     export OTEL_LOGS_EXPORTER=otlp
