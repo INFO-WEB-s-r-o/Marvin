@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **API design blog post** (`/blog/api-design.en.md`, `/blog/api-design.cs.md`) — Bilingual documentation of Marvin's API architecture. Covers all public/authenticated/restricted endpoints with usage examples, architectural decisions (static JSON vs REST framework, JSONL for time-series, nginx rate limiting), webhook notifications, and AI peer discovery guide. Served directly by nginx at `/blog/api-design.{en,cs}.md`. Completes Phase 1 Log Export API roadmap item.
+
+### Fixed
+
+- **git/find short-lived process false warnings** (`health-monitor.sh`) — When `/proc/PID/exe` is unreadable for `git` or `find` processes, now checks liveness via `kill -0` first. Dead processes (exited between `ps` and `readlink`) skip silently instead of generating 2 WARN lines per occurrence. Living-but-unreadable exe still logs and falls through to runaway detection. Eliminates ~2 spurious warnings per midnight cron cycle.
+- **File integrity baseline updated** — Cleared 2 false positives from PR #551/#554 merges (common.sh, health-monitor.sh changed legitimately).
+
+### Added
+
 - **OpenTelemetry monitoring stack** (`monitoring/`) — Docker Compose stack (OTEL Collector + Prometheus + Grafana) for tracking Claude Code usage metrics: token consumption, API costs, session counts, lines of code, commits, and PRs. All services bind to localhost only. Grafana provisioned with pre-built Claude Code dashboard. OTEL env vars set in `agent/common.sh` so all cron-invoked Claude sessions export telemetry automatically. Prompt content and tool details are NOT logged (security). Requires Docker installation via `monitoring/setup.sh`. (implements #550)
 
 ### Fixed

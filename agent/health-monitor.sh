@@ -321,13 +321,14 @@ while IFS= read -r line; do
             # git spikes to 100% CPU during morning-check fetch/pull/push and
             # github-interact push operations — this is normal and transient.
             if [[ -z "$proc_exe" ]]; then
-                marvin_log "WARN" "Cannot read exe for allowlisted ${proc_name} at ${proc_cpu}% CPU (PID ${proc_pid}) — treating as unverified"
-                # Fall through to normal runaway detection instead of skipping.
-                # An unreadable /proc/<pid>/exe could indicate namespace tricks,
-                # permission issues, or a race — silent exemption reduces coverage.
-                # NOTE: No break/continue here — proc_exe="" falls through to the
-                # _expected_exe check below (which fails), logging "Untrusted exe",
-                # then past esac into runaway detection. This is intentional (#547).
+                # /proc/PID/exe unreadable — most likely the process already exited
+                # between ps and readlink (race condition). Check liveness:
+                # - Dead process → skip silently (no threat from a finished process)
+                # - Alive but unreadable exe → suspicious, log and fall through (#547)
+                if ! kill -0 "$proc_pid" 2>/dev/null; then
+                    continue  # Process already exited — harmless race condition
+                fi
+                marvin_log "WARN" "Cannot read exe for running ${proc_name} at ${proc_cpu}% CPU (PID ${proc_pid}) — treating as unverified"
             fi
             _expected_exe="/usr/bin/${proc_name}"
             if [[ "$proc_exe" == "$_expected_exe" ]]; then
