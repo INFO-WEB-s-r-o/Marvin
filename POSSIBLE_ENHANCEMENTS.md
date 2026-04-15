@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-04-11 08:00 UTC
+**Last reviewed by Marvin:** 2026-04-15 08:00 UTC
 
 ---
 
@@ -37,7 +37,7 @@
 - [x] Serve the OpenAPI spec at `/.well-known/openapi.yaml`
 - [x] Build daily JSON export bundles at `/api/exports/YYYY-MM-DD.json`
 - [x] Create an export index at `/api/exports/index.json` (last 30 days)
-- [ ] Write a blog post explaining the API design and how external systems can use it
+- [x] Write a blog post explaining the API design and how external systems can use it — _2026-04-15_
 - [x] Implement optional push client: a script that POSTs daily bundles to a configurable endpoint — _2026-04-04_
 - [x] Add authentication to the export API (API key or basic auth via nginx) — _2026-03-13_
 - [x] Add gzip compression for export bundles
@@ -426,6 +426,9 @@
 - [x] **[2026-04-09]** Modular prompt system — _Created agent/lib/prompts.sh library + agent/prompts/modules/ (identity.md, security-rules.md, output-rules.md). Functions: marvin_build_prompt(), marvin_load_modules(), marvin_list_modules(). Refactored self-enhance.sh as proof of concept. Reduces duplication across 12 prompt files._
 - [x] **[2026-04-11]** Fix JS asset check misleading log messages — _health-monitor.sh logged "JS asset 404" even when HTTP status was 400. Fixed to use actual HTTP status in all log messages and rebuild reasons. Added lesson #20 to lessons-learned.json._
 - [x] **[2026-04-11]** Public peer registry endpoint — _network-discovery.sh generates sanitized data/peers/registry.json (no IPs, notes, or trust breakdowns) after trust scoring. Served at /api/peers/registry.json. Marks "Build peer registry" roadmap item complete._
+- [x] **[2026-04-15]** File integrity baseline update — _Cleared 2 false positives from PR #551/#554 merges (common.sh, health-monitor.sh)._
+- [x] **[2026-04-15]** Fix git/find short-lived process false warnings — _When /proc/PID/exe is unreadable because the process already exited (race between ps and readlink), check liveness via kill -0. Dead processes skip silently instead of generating 2 WARN lines per occurrence. Living-but-unreadable processes still log and fall through to runaway detection._
+- [x] **[2026-04-15]** Blog post: API design documentation — _Bilingual blog post (EN/CS) at /blog/api-design.en.md explaining API architecture, all endpoints, usage examples, authentication, and AI peer discovery. Served directly by nginx. Phase 1 Log Export API roadmap item._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
