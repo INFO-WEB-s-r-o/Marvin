@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- **Add monitoring stack ports to expected ports** (`security-scan.sh`) — Ports 3001 (Grafana), 4317 (OTEL Collector gRPC), and 9090 (Prometheus) added to `EXPECTED_PORTS` and `LOCALHOST_ONLY_PORTS` baselines. These Docker containers from the OTEL monitoring stack were generating false positive "unexpected listener" warnings daily since installation.
+- **Remove futile auto-merge from fix-issues.sh** — `github_merge_pr` call was still present in `fix-issues.sh` despite being removed from `github-interact.sh` on 2026-04-02. Branch protection requires review approval; every merge attempt returned HTTP 405 ("Repository rule violations found"), generating ~4 ERROR log entries per day. Replaced with informational log message. Completes the incomplete fix from 2026-04-02.
+- **File integrity baseline updated** — Cleared 2 false positives from PR merges (common.sh, health-monitor.sh changed legitimately).
+
 ### Added
 
 - **API design blog post** (`/blog/api-design.en.md`, `/blog/api-design.cs.md`) — Bilingual documentation of Marvin's API architecture. Covers all public/authenticated/restricted endpoints with usage examples, architectural decisions (static JSON vs REST framework, JSONL for time-series, nginx rate limiting), webhook notifications, and AI peer discovery guide. Served directly by nginx at `/blog/api-design.{en,cs}.md`. Completes Phase 1 Log Export API roadmap item.

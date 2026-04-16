@@ -442,44 +442,11 @@ else
     marvin_log "WARN" "Could not determine PR head SHA — skipping auto-merge"
 fi
 
-if [[ "$MERGE_OK" == "true" ]] && github_merge_pr "$pr_number" "fix: resolve #${FIXED_ISSUE:-unknown} — ${FIXED_TITLE}" 2>/dev/null; then
-    marvin_log "INFO" "PR #${pr_number} merged successfully"
-
-    # ─── Post-merge validation ───────────────────────────────────────────
-    # Pull the merge and verify the code is still valid
-    git checkout main 2>/dev/null || true
-    git pull origin main 2>/dev/null || true
-
-    POST_MERGE_OK=true
-    while IFS= read -r script; do
-        if ! bash -n "$script" 2>/dev/null; then
-            POST_MERGE_OK=false
-            marvin_log "CRITICAL" "POST-MERGE: syntax error in $(basename "$script")"
-        fi
-    done < <(find "${MARVIN_DIR}/agent" -name "*.sh" -type f)
-
-    if [[ "$POST_MERGE_OK" != "true" ]]; then
-        marvin_log "CRITICAL" "Post-merge validation FAILED — code may be broken!"
-        # Create a GitHub issue about the broken merge
-        github_create_issue \
-            "CRITICAL: Post-merge validation failed after PR #${pr_number}" \
-            "PR #${pr_number} (fix for #${FIXED_ISSUE:-unknown}) was merged but post-merge syntax validation failed. Manual review required.\n\n— Marvin (automated)" \
-            "marvin-auto,incident" 2>/dev/null || true
-    else
-        marvin_log "INFO" "Post-merge validation passed"
-
-        # Close the fixed issue
-        if [[ -n "$FIXED_ISSUE" ]]; then
-            github_comment_issue "$FIXED_ISSUE" \
-                "Fixed in PR #${pr_number} and merged to main.\n\n${FIX_DESCRIPTION}\n\n— Marvin (automated issue fixer)" 2>/dev/null || true
-            github_close_issue "$FIXED_ISSUE" 2>/dev/null || true
-            marvin_log "INFO" "Closed issue #${FIXED_ISSUE}"
-        fi
-    fi
-else
-    marvin_log "WARN" "Could not auto-merge PR #${pr_number} — may have conflicts or require review"
-    # Don't close the issue — PR needs manual merge
-fi
+# Do NOT attempt auto-merge. Branch protection requires at least 1 approving
+# review before merge is allowed (HTTP 405). Attempting merge generates ERROR
+# logs for no benefit. The PR will be merged by Pavel after review.
+# See lessons-learned.json: branch-protection-no-auto-merge
+marvin_log "INFO" "PR #${pr_number} created for issue #${FIXED_ISSUE:-unknown} — awaiting review (branch protection requires approval)"
 
 # Save run log
 cat >> "${LOGS_DIR}/fix-issues-${TODAY}.log" << EOF
