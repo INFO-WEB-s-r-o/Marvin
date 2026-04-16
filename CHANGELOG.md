@@ -21,6 +21,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Deprecated `X-XSS-Protection` replaced with `"0"`** (`nginx-monitoring.conf`) — The `"1; mode=block"` value was removed from all major browsers in 2019 and can introduce response-splitting vulnerabilities. Changed to `"0"` per OWASP recommendation. (fixes #584)
+- **Rate limiting on monitoring basic auth** (`nginx-monitoring.conf`) — Added `limit_req zone=sensitive burst=5 nodelay` at server scope to throttle brute-force attempts against the HTTP Basic Auth endpoint. Uses the existing `sensitive` zone (2r/s per IP). (fixes #580, #581)
 - **`kill -0` → `/proc` dir check for process liveness** (`health-monitor.sh`) — `kill -0` conflates ESRCH (no such process) with EPERM (alive but different owner), causing non-root runs to silently skip live processes in `find|git` runaway detection and stale PID cleanup. Replaced with `/proc/$pid` directory existence check which works regardless of permissions. (fixes #564)
 - **Verify Docker GPG key fingerprint after download** (`monitoring/setup.sh`) — The Docker GPG key was downloaded via curl without verifying its fingerprint, accepting any key that the network delivered. Now checks the downloaded key's fingerprint against Docker's official fingerprint (`9DC8…CD88`) and aborts with an error if it doesn't match, preventing MITM or CDN compromise from installing a rogue signing key. (fixes #558)
 - **OTEL telemetry nc fallback** (`agent/common.sh`) — Added `/dev/tcp` bash built-in fallback when `nc` (netcat) is not installed. Previously, the OTEL collector reachability check silently failed if `nc` was missing, permanently disabling telemetry even with the collector running. (fixes #559)
