@@ -29,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **OTEL collector crash loop — empty logs pipeline exporters** (`monitoring/otel-collector-config.yaml`) — The logs pipeline declared `exporters: []` which violates OTEL collector validation (requires at least one exporter per pipeline). The collector crashed on startup in a restart loop, preventing Prometheus from scraping metrics and leaving Grafana with no data. Fix: removed the logs pipeline entirely — the OTLP receiver still accepts log requests but the data is silently discarded, maintaining the original security intent (no prompt/tool content stored). (fixes #571)
 - **Replace deprecated `X-XSS-Protection "1; mode=block"` with `"0"`** (`setup/nginx-site.conf`) — The `1; mode=block` value is deprecated in all modern browsers and can introduce XSS vulnerabilities via response splitting attacks. Changed to `"0"` to explicitly disable the removed XSS auditor, per current OWASP guidance. (fixes #579)
 - **Deprecated `X-XSS-Protection` replaced with `"0"`** (`nginx-monitoring.conf`) — The `"1; mode=block"` value was removed from all major browsers in 2019 and can introduce response-splitting vulnerabilities. Changed to `"0"` per OWASP recommendation. (fixes #584)
 - **Rate limiting on monitoring basic auth** (`nginx-monitoring.conf`) — Added `limit_req zone=sensitive burst=5 nodelay` at server scope to throttle brute-force attempts against the HTTP Basic Auth endpoint. Uses the existing `sensitive` zone (2r/s per IP). (fixes #580, #581)
