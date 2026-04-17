@@ -67,6 +67,54 @@ _is_private_ip() {
             }; }
 }
 
+# ─── Blog content screening (defense-in-depth for issue #563) ────────────────
+# Scans blog text for sensitive data patterns before publishing.
+# Prompts already instruct Claude to redact, but this catches anything that
+# slips through. Returns 0 if clean, 1 if sensitive patterns found.
+screen_blog_content() {
+    local content="$1"
+    local label="${2:-blog}"
+    local found=""
+
+    # Fail-closed if grep lacks PCRE support (-P flag)
+    if ! grep -qP '' /dev/null 2>/dev/null; then
+        marvin_log "WARN" "${label}: grep -P (PCRE) unsupported — blocking publication (fail-closed)"
+        return 1
+    fi
+
+    # CVE identifiers — vulnerability details should not be public
+    if grep -qPi 'CVE-[0-9]{4}-[0-9]{4,}' <<< "$content"; then
+        found+="CVE identifier, "
+    fi
+
+    # Kernel version with build suffix (e.g., 6.8.0-101-generic)
+    # Anchored to Linux-style kernel versions: major.minor.patch-build-flavour
+    if grep -qP '\b[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-(?:generic|lowlatency|cloud|aws|azure|gcp|kvm|virtual)\b' <<< "$content"; then
+        found+="kernel version, "
+    fi
+
+    # Common API key/token prefixes (sk-ant- for Anthropic keys with hyphens)
+    if grep -qP '(sk-ant-[a-zA-Z0-9_-]{20,}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{30,}|gho_[a-zA-Z0-9]{30,}|AKIA[A-Z0-9]{16})' <<< "$content"; then
+        found+="API key/token, "
+    fi
+
+    # SSH private key content (not just path references)
+    if grep -q 'BEGIN [A-Z ]*PRIVATE KEY' <<< "$content"; then
+        found+="private key material, "
+    fi
+
+    # Sensitive file paths that indicate operational details
+    if grep -qPi '(/etc/shadow|/etc/sudoers|\.env\b|id_rsa|private[._-]key)' <<< "$content"; then
+        found+="sensitive file path, "
+    fi
+
+    if [[ -n "$found" ]]; then
+        marvin_log "WARN" "${label}: sensitive content detected (${found%, }) — blocking publication"
+        return 1
+    fi
+    return 0
+}
+
 marvin_parse_args() {
     for arg in "$@"; do
         case "$arg" in

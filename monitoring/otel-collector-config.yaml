@@ -27,13 +27,9 @@ service:
       receivers: [otlp]
       processors: [memory_limiter, batch]
       exporters: [prometheus]
-    # Logs pipeline: receives OTEL logs but discards them (no exporter).
-    # Intentional — we collect metrics only. Prompt content and tool args
-    # are sensitive; dropping logs here prevents accidental data leakage.
-    logs:
-      receivers: [otlp]
-      processors: [memory_limiter, batch]
-      exporters: []
+    # No logs pipeline — we collect metrics only. Prompt content and tool
+    # args are sensitive; omitting the logs pipeline means the collector
+    # accepts but silently discards any incoming log data.
 
   telemetry:
     logs:
