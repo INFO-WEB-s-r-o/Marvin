@@ -374,10 +374,22 @@ OUTPUT=$(run_claude "morning-check" "$FULL_PROMPT") || CLAUDE_EXIT=$?
 if [[ $CLAUDE_EXIT -ne 0 ]]; then
     marvin_log "WARN" "Claude run failed (exit=${CLAUDE_EXIT}) — skipping blog write to avoid publishing error messages"
 else
+    # Screen for sensitive data before publishing (fixes #563)
+    if ! screen_blog_content "$OUTPUT" "morning"; then
+        marvin_log "ERROR" "Morning blog failed sensitive content screening — blocking publication"
+        exit 1
+    fi
+
     # Save the morning report — check if Claude already wrote the file directly
     MORNING_FILE="${BLOG_DIR}/${TODAY}-morning.md"
     if [[ -f "$MORNING_FILE" ]] && head -1 "$MORNING_FILE" | grep -q '^# '; then
-        marvin_log "INFO" "Claude created morning report directly — preserving that"
+        marvin_log "INFO" "Claude created morning report directly — screening file content"
+        file_content=$(cat "$MORNING_FILE")
+        if ! screen_blog_content "$file_content" "morning-file"; then
+            marvin_log "ERROR" "Morning blog file failed sensitive content screening — removing"
+            rm -f "$MORNING_FILE"
+            exit 1
+        fi
     else
         cat > "$MORNING_FILE" << EOF
 # Morning Report — ${TODAY}

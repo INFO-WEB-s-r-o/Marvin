@@ -129,9 +129,11 @@ port_count=0
 # Update this list when installing new services to avoid false-positive warnings.
 # 22=SSH, 25=SMTP, 53=DNS(systemd-resolved), 80=HTTP, 443=HTTPS,
 # 465=SMTPS, 587=STARTTLS, 993=IMAPS, 3000=Next.js,
+# 3001=Grafana(local), 4317=OTEL-gRPC(local), 4318=OTEL-HTTP(local),
+# 8889=OTEL-Prometheus-exporter(local), 9090=Prometheus(local)
 # 6379=Redis(local), 8043=alt-HTTPS, 11332-11334=Rspamd(local)
 # Note: CUPS snap (port 631) disabled 2026-03-06 — not needed on a VPS
-EXPECTED_PORTS="22 25 53 80 443 465 587 993 3000 6379 8043 11332 11333 11334"
+EXPECTED_PORTS="22 25 53 80 443 465 587 993 3000 3001 4317 4318 6379 8043 8889 9090 11332 11333 11334"
 
 # Extract unique port numbers from listening sockets
 active_ports=$(echo "$listening_ports" | awk '{print $4}' | grep -oP '\d+$' | sort -un)
@@ -142,7 +144,7 @@ unexpected_count=0
 unexpected_details_json="[]"
 
 # Ports expected only on localhost — alert if bound to 0.0.0.0 or [::]
-LOCALHOST_ONLY_PORTS="6379 11332 11333 11334"
+LOCALHOST_ONLY_PORTS="3001 4317 4318 6379 8889 9090 11332 11333 11334"
 
 for port in $active_ports; do
     if ! echo "$EXPECTED_PORTS" | grep -qw "$port"; then
@@ -337,9 +339,10 @@ if [[ -n "$outbound_output" ]]; then
             continue
         fi
 
-        # Skip loopback
+        # Skip loopback and Docker bridge networks (internal container traffic)
         case "$remote_ip" in
             127.*|::1|0.0.0.0) continue ;;
+            172.1[6-9].*|172.2[0-9].*|172.3[01].*) continue ;;
         esac
 
         outbound_count=$((outbound_count + 1))

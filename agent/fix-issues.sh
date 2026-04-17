@@ -360,7 +360,8 @@ $(git diff --name-only main..HEAD)
 
 ---
 *Automated fix by Marvin's issue-fixer agent.*
-*Fixes #${FIXED_ISSUE:-unknown}*"
+
+Closes #${FIXED_ISSUE:-unknown}"
 
 # Create PR via github_api directly — branch was already pushed above, so
 # skip github_create_pr which would double-push and pollute stdout with
@@ -382,104 +383,12 @@ fi
 
 marvin_log "INFO" "Created PR #${pr_number}"
 
-# Wait for CI checks to complete before merging (fixes #100)
-pr_sha=$(echo "$pr_response" | jq -r '.head.sha // empty' 2>/dev/null || echo "")
-MERGE_OK=false
-
-if [[ -n "$pr_sha" && ! "$pr_sha" =~ ^[0-9a-f]{40}$ ]]; then
-    marvin_log "WARN" "Unexpected PR SHA format: ${pr_sha:0:20} — skipping auto-merge"
-    pr_sha=""
-fi
-
-if [[ -n "$pr_sha" ]]; then
-    marvin_log "INFO" "Waiting for CI checks on ${pr_sha:0:7}..."
-    CI_RESOLVED=false
-    no_ci_count=0
-    for attempt in $(seq 1 30); do
-        sleep 10
-        checks_json=$(github_api GET "/repos/${GITHUB_REPO}/commits/${pr_sha}/check-runs" 2>/dev/null || echo "{}")
-        # Detect API errors (response contains .message instead of .total_count)
-        if echo "$checks_json" | jq -e '.message' &>/dev/null; then
-            marvin_log "WARN" "GitHub API error on attempt ${attempt}: $(echo "$checks_json" | jq -r '.message' 2>/dev/null)"
-            continue
-        fi
-        total_checks=$(echo "$checks_json" | jq -r '.total_count // 0' 2>/dev/null || echo "0")
-        # If no checks are registered yet, keep waiting (up to ~2 min of no-CI responses)
-        if [[ "$total_checks" -eq 0 ]]; then
-            no_ci_count=$((no_ci_count + 1))
-            if [[ "$no_ci_count" -le 12 ]]; then
-                continue
-            fi
-            # Still no checks after 12 consecutive no-CI responses — repo may have no CI
-            marvin_log "WARN" "No CI checks found after ${no_ci_count} checks — proceeding with merge"
-            MERGE_OK=true
-            CI_RESOLVED=true
-            break
-        fi
-        # Reset no-CI counter if we ever see checks (handles transient API blips)
-        no_ci_count=0
-        # Check if all runs are completed
-        pending=$(echo "$checks_json" | jq '[.check_runs[] | select(.status != "completed")] | length' 2>/dev/null || echo "1")
-        if [[ "$pending" -gt 0 ]]; then
-            continue
-        fi
-        # All completed — check conclusions
-        failures=$(echo "$checks_json" | jq '[.check_runs[] | select(.conclusion != "success" and .conclusion != "neutral" and .conclusion != "skipped")] | length' 2>/dev/null || echo "0")
-        if [[ "$failures" -gt 0 ]]; then
-            marvin_log "WARN" "CI checks failed (${failures} failure(s)) — skipping auto-merge for PR #${pr_number}"
-            CI_RESOLVED=true
-            break
-        fi
-        marvin_log "INFO" "All CI checks passed for PR #${pr_number}"
-        MERGE_OK=true
-        CI_RESOLVED=true
-        break
-    done
-    if [[ "$CI_RESOLVED" != "true" ]]; then
-        marvin_log "WARN" "CI checks timed out after 5 min — skipping auto-merge for PR #${pr_number}"
-    fi
-else
-    marvin_log "WARN" "Could not determine PR head SHA — skipping auto-merge"
-fi
-
-if [[ "$MERGE_OK" == "true" ]] && github_merge_pr "$pr_number" "fix: resolve #${FIXED_ISSUE:-unknown} — ${FIXED_TITLE}" 2>/dev/null; then
-    marvin_log "INFO" "PR #${pr_number} merged successfully"
-
-    # ─── Post-merge validation ───────────────────────────────────────────
-    # Pull the merge and verify the code is still valid
-    git checkout main 2>/dev/null || true
-    git pull origin main 2>/dev/null || true
-
-    POST_MERGE_OK=true
-    while IFS= read -r script; do
-        if ! bash -n "$script" 2>/dev/null; then
-            POST_MERGE_OK=false
-            marvin_log "CRITICAL" "POST-MERGE: syntax error in $(basename "$script")"
-        fi
-    done < <(find "${MARVIN_DIR}/agent" -name "*.sh" -type f)
-
-    if [[ "$POST_MERGE_OK" != "true" ]]; then
-        marvin_log "CRITICAL" "Post-merge validation FAILED — code may be broken!"
-        # Create a GitHub issue about the broken merge
-        github_create_issue \
-            "CRITICAL: Post-merge validation failed after PR #${pr_number}" \
-            "PR #${pr_number} (fix for #${FIXED_ISSUE:-unknown}) was merged but post-merge syntax validation failed. Manual review required.\n\n— Marvin (automated)" \
-            "marvin-auto,incident" 2>/dev/null || true
-    else
-        marvin_log "INFO" "Post-merge validation passed"
-
-        # Close the fixed issue
-        if [[ -n "$FIXED_ISSUE" ]]; then
-            github_comment_issue "$FIXED_ISSUE" \
-                "Fixed in PR #${pr_number} and merged to main.\n\n${FIX_DESCRIPTION}\n\n— Marvin (automated issue fixer)" 2>/dev/null || true
-            github_close_issue "$FIXED_ISSUE" 2>/dev/null || true
-            marvin_log "INFO" "Closed issue #${FIXED_ISSUE}"
-        fi
-    fi
-else
-    marvin_log "WARN" "Could not auto-merge PR #${pr_number} — may have conflicts or require review"
-    # Don't close the issue — PR needs manual merge
-fi
+# Do NOT attempt auto-merge. Branch protection requires at least 1 approving
+# review before merge is allowed (HTTP 405). The CI wait loop was also removed
+# (fixes #588) — it polled for up to 5 min but MERGE_OK was never used after
+# the merge call was deleted. PRs are merged by Pavel after review.
+# See lessons-learned.json: branch-protection-no-auto-merge
+marvin_log "INFO" "PR #${pr_number} created for issue #${FIXED_ISSUE:-unknown} — awaiting review (branch protection requires approval)"
 
 # Save run log
 cat >> "${LOGS_DIR}/fix-issues-${TODAY}.log" << EOF
