@@ -360,7 +360,8 @@ $(git diff --name-only main..HEAD)
 
 ---
 *Automated fix by Marvin's issue-fixer agent.*
-*Fixes #${FIXED_ISSUE:-unknown}*"
+
+Closes #${FIXED_ISSUE:-unknown}"
 
 # Create PR via github_api directly — branch was already pushed above, so
 # skip github_create_pr which would double-push and pollute stdout with
