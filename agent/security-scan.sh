@@ -335,6 +335,7 @@ fi
 # _ip_in_docker_cidr — check if an IP falls within any active Docker subnet
 # Uses bitwise arithmetic to support arbitrary prefix lengths (e.g. /16, /20, /24).
 _ip_in_docker_cidr() {
+    local IFS
     local ip="$1"
     local ip_a ip_b ip_c ip_d
     IFS='.' read -r ip_a ip_b ip_c ip_d <<< "$ip"
@@ -343,6 +344,7 @@ _ip_in_docker_cidr() {
     local ip_int net_int mask_int
     for cidr in $_docker_bridges; do
         IFS='/' read -r net mask <<< "$cidr"
+        [[ "$mask" =~ ^[0-9]+$ ]] || continue
         IFS='.' read -r net_a net_b net_c net_d <<< "$net"
         net_d=${net_d:-0}
         ip_int=$(( (ip_a << 24) | (ip_b << 16) | (ip_c << 8) | ip_d ))
