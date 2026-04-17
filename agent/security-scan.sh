@@ -333,22 +333,22 @@ if command -v docker &>/dev/null; then
 fi
 
 # _ip_in_docker_cidr — check if an IP falls within any active Docker subnet
-# Uses bash arithmetic on /16 and /24 boundaries (covers Docker defaults).
+# Uses bitwise arithmetic to support arbitrary prefix lengths (e.g. /16, /20, /24).
 _ip_in_docker_cidr() {
     local ip="$1"
-    local IFS='.'
-    # shellcheck disable=SC2086
-    set -- $ip
-    local ip_a=$1 ip_b=$2 ip_c=$3
-    local cidr net_a net_b net_c mask
+    local ip_a ip_b ip_c ip_d
+    IFS='.' read -r ip_a ip_b ip_c ip_d <<< "$ip"
+    ip_d=${ip_d:-0}
+    local cidr net mask net_a net_b net_c net_d
+    local ip_int net_int mask_int
     for cidr in $_docker_bridges; do
         IFS='/' read -r net mask <<< "$cidr"
-        IFS='.' read -r net_a net_b net_c _ <<< "$net"
-        case "$mask" in
-            16) [[ "$ip_a" -eq "$net_a" && "$ip_b" -eq "$net_b" ]] && return 0 ;;
-            24) [[ "$ip_a" -eq "$net_a" && "$ip_b" -eq "$net_b" && "$ip_c" -eq "$net_c" ]] && return 0 ;;
-            *)  [[ "$ip_a" -eq "$net_a" && "$ip_b" -eq "$net_b" ]] && return 0 ;;
-        esac
+        IFS='.' read -r net_a net_b net_c net_d <<< "$net"
+        net_d=${net_d:-0}
+        ip_int=$(( (ip_a << 24) | (ip_b << 16) | (ip_c << 8) | ip_d ))
+        net_int=$(( (net_a << 24) | (net_b << 16) | (net_c << 8) | net_d ))
+        mask_int=$(( 0xFFFFFFFF << (32 - mask) & 0xFFFFFFFF ))
+        [[ $(( ip_int & mask_int )) -eq $(( net_int & mask_int )) ]] && return 0
     done
     return 1
 }
