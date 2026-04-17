@@ -29,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **Replace deprecated `X-XSS-Protection "1; mode=block"` with `"0"`** (`setup/nginx-site.conf`) — The `1; mode=block` value is deprecated in all modern browsers and can introduce XSS vulnerabilities via response splitting attacks. Changed to `"0"` to explicitly disable the removed XSS auditor, per current OWASP guidance. (fixes #579)
 - **Deprecated `X-XSS-Protection` replaced with `"0"`** (`nginx-monitoring.conf`) — The `"1; mode=block"` value was removed from all major browsers in 2019 and can introduce response-splitting vulnerabilities. Changed to `"0"` per OWASP recommendation. (fixes #584)
 - **Rate limiting on monitoring basic auth** (`nginx-monitoring.conf`) — Added `limit_req zone=sensitive burst=5 nodelay` at server scope to throttle brute-force attempts against the HTTP Basic Auth endpoint. Uses the existing `sensitive` zone (2r/s per IP). (fixes #580, #581)
 - **Blog content sensitive data screening** — Added `screen_blog_content()` defense-in-depth check that scans blog posts for CVE identifiers, kernel versions, API key patterns (including Anthropic `sk-ant-` format), SSH private key material, and sensitive file paths before publishing. Blocks publication if detected. Applied to both evening and morning blog workflows, including when Claude writes files directly via tools. (fixes #563, #569, #570)
