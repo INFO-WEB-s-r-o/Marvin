@@ -322,6 +322,37 @@ SAFE_OUTBOUND_PORTS="22 25 53 80 123 443 465 587 11371"
 LOCAL_SERVICE_PORTS="22 25 80 443 465 587 993 3000 6379 8043 11332 11333 11334"
 
 outbound_output=$(ss -tnp state established 2>/dev/null || echo "")
+
+# Collect active Docker bridge CIDRs dynamically (fixes #591)
+# Only skip traffic to subnets actually in use by Docker, not the entire 172.16/12 range.
+_docker_bridges=""
+if command -v docker &>/dev/null; then
+    _docker_bridges=$(docker network ls --format '{{.ID}}' 2>/dev/null \
+        | xargs -I{} docker network inspect {} --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null \
+        | tr ' ' '\n' | grep -E '^[0-9]+\.' | sort -u || true)
+fi
+
+# _ip_in_docker_cidr — check if an IP falls within any active Docker subnet
+# Uses bash arithmetic on /16 and /24 boundaries (covers Docker defaults).
+_ip_in_docker_cidr() {
+    local ip="$1"
+    local IFS='.'
+    # shellcheck disable=SC2086
+    set -- $ip
+    local ip_a=$1 ip_b=$2 ip_c=$3
+    local cidr net_a net_b net_c mask
+    for cidr in $_docker_bridges; do
+        IFS='/' read -r net mask <<< "$cidr"
+        IFS='.' read -r net_a net_b net_c _ <<< "$net"
+        case "$mask" in
+            16) [[ "$ip_a" -eq "$net_a" && "$ip_b" -eq "$net_b" ]] && return 0 ;;
+            24) [[ "$ip_a" -eq "$net_a" && "$ip_b" -eq "$net_b" && "$ip_c" -eq "$net_c" ]] && return 0 ;;
+            *)  [[ "$ip_a" -eq "$net_a" && "$ip_b" -eq "$net_b" ]] && return 0 ;;
+        esac
+    done
+    return 1
+}
+
 if [[ -n "$outbound_output" ]]; then
     # Build outbound connection inventory: connections FROM this server TO remote hosts
     # Filter: local port must NOT be a known service port (those are inbound)
@@ -339,11 +370,15 @@ if [[ -n "$outbound_output" ]]; then
             continue
         fi
 
-        # Skip loopback and Docker bridge networks (internal container traffic)
+        # Skip loopback
         case "$remote_ip" in
             127.*|::1|0.0.0.0) continue ;;
-            172.1[6-9].*|172.2[0-9].*|172.3[01].*) continue ;;
         esac
+
+        # Skip traffic to active Docker bridge subnets (narrowed from blanket 172.16/12)
+        if [[ -n "$_docker_bridges" ]] && _ip_in_docker_cidr "$remote_ip"; then
+            continue
+        fi
 
         outbound_count=$((outbound_count + 1))
 
