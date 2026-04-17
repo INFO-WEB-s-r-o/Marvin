@@ -339,9 +339,10 @@ if [[ -n "$outbound_output" ]]; then
             continue
         fi
 
-        # Skip loopback
+        # Skip loopback and Docker bridge networks (internal container traffic)
         case "$remote_ip" in
             127.*|::1|0.0.0.0) continue ;;
+            172.1[6-9].*|172.2[0-9].*|172.3[01].*) continue ;;
         esac
 
         outbound_count=$((outbound_count + 1))
