@@ -12,6 +12,9 @@
 
 MARVIN_DIR="/home/marvin/git"
 DATA_DIR="${MARVIN_DIR}/data"
+
+# Cron uses a minimal PATH — ensure claude and other tools are findable
+export PATH="/root/.local/bin:/usr/local/bin:${PATH}"
 LOGS_DIR="${DATA_DIR}/logs"
 
 # GPG key lives in marvin's homedir, but cron runs as root.
@@ -77,7 +80,7 @@ screen_blog_content() {
     local found=""
 
     # Fail-closed if grep lacks PCRE support (-P flag)
-    if ! grep -qP '' /dev/null 2>/dev/null; then
+    if ! echo x | grep -qP 'x' 2>/dev/null; then
         marvin_log "WARN" "${label}: grep -P (PCRE) unsupported — blocking publication (fail-closed)"
         return 1
     fi

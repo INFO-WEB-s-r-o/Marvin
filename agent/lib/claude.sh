@@ -12,6 +12,17 @@
 # Usage: sourced automatically by common.sh (do not source directly)
 # =============================================================================
 
+# ─── Claude concurrency guard ────────────────────────────────────────────────
+# Only one Claude CLI process should run at a time on a 2 vCPU machine.
+# Concurrent Claude runs (from overlapping cron jobs) spike load to 9+ and
+# starve both processes of CPU. This lock makes later callers wait up to
+# CLAUDE_LOCK_TIMEOUT seconds, then skip if the lock is still held.
+#
+# Uses flock(1) on a shared lock file — POSIX-safe, no race conditions,
+# auto-released on process exit (even on crash/kill).
+CLAUDE_LOCK_FILE="/tmp/marvin-claude.lock"
+CLAUDE_LOCK_TIMEOUT="${CLAUDE_LOCK_TIMEOUT:-300}"  # 5 min default wait
+
 # Run Claude Code with a prompt file and context
 run_claude() {
     local task_name="$1"
@@ -20,6 +31,20 @@ run_claude() {
 
     # Use >&2 for log calls so they don't leak into captured stdout
     marvin_log "INFO" "Starting Claude run: ${task_name}" >&2
+
+    # Acquire exclusive lock — wait up to CLAUDE_LOCK_TIMEOUT seconds
+    # The lock FD (9) is inherited by the claude subprocess and released
+    # when this function returns (via the exec fd close at the end).
+    exec 9>"$CLAUDE_LOCK_FILE"
+    if ! flock -w "$CLAUDE_LOCK_TIMEOUT" 9; then
+        marvin_log "WARN" "Claude lock timeout after ${CLAUDE_LOCK_TIMEOUT}s — skipping ${task_name} (another Claude run is active)" >&2
+        exec 9>&-
+        echo ""
+        return 2  # Distinct exit code: caller can distinguish timeout from failure
+    fi
+    # Write holder info for debugging stale locks
+    echo "$$:${task_name}:$(date -u +%Y-%m-%dT%H:%M:%SZ)" >&9 2>/dev/null || true
+    marvin_log "INFO" "Claude lock acquired for ${task_name}" >&2
 
     # Collect system context to prepend
     local system_context
@@ -123,6 +148,10 @@ EOF
         --argjson exit_code "$exit_code" \
         '{timestamp: $ts, task: $task, duration_s: $duration, prompt_chars: $prompt_chars, output_chars: $output_chars, exit_code: $exit_code}' \
         >> "$usage_file" 2>/dev/null || true
+
+    # Release the Claude concurrency lock (FD 9)
+    exec 9>&- 2>/dev/null || true
+    marvin_log "INFO" "Claude lock released for ${task_name}" >&2
 
     echo "$output"
     return $exit_code
