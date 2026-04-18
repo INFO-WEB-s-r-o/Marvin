@@ -336,6 +336,8 @@ fi
 # Uses bitwise arithmetic to support arbitrary prefix lengths (e.g. /16, /20, /24).
 _ip_in_docker_cidr() {
     local IFS ip="$1" ip_a ip_b ip_c ip_d ip_int
+    # Guard: only process valid IPv4 addresses (reject IPv6, IPv4-mapped IPv6, malformed)
+    [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
     IFS='.' read -r ip_a ip_b ip_c ip_d <<< "$ip"
     ip_d=${ip_d:-0}
     ip_int=$(( (ip_a << 24) | (ip_b << 16) | (ip_c << 8) | ip_d ))
