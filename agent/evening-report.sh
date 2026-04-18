@@ -183,7 +183,7 @@ if [[ "$CLAUDE_WROTE_FILES" == "true" ]]; then
         rm -f "$EN_FILE" "$CS_FILE" "${BLOG_DIR}/${TODAY}-evening.md" 2>/dev/null || true
         exit 1
     fi
-elif echo "$OUTPUT" | grep -q '---CZECH---'; then
+elif echo "$OUTPUT" | grep -qF -- '---CZECH---'; then
     # Claude returned blog content in stdout with bilingual separator
     EN_CONTENT=$(echo "$OUTPUT" | sed '/---CZECH---/,$d')
     CS_CONTENT=$(echo "$OUTPUT" | sed '1,/---CZECH---/d')
