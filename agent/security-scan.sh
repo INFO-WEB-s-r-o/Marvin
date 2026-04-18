@@ -343,7 +343,7 @@ _ip_in_docker_cidr() {
     local cidr net mask net_a net_b net_c net_d net_int mask_int
     for cidr in $_docker_bridges; do
         IFS='/' read -r net mask <<< "$cidr"
-        [[ "$mask" =~ ^[0-9]+$ && "$mask" -le 32 ]] || continue
+        [[ "$mask" =~ ^[0-9]+$ && "$mask" -ge 1 && "$mask" -le 32 ]] || continue
         IFS='.' read -r net_a net_b net_c net_d <<< "$net"
         net_d=${net_d:-0}
         net_int=$(( (net_a << 24) | (net_b << 16) | (net_c << 8) | net_d ))
