@@ -322,6 +322,39 @@ SAFE_OUTBOUND_PORTS="22 25 53 80 123 443 465 587 11371"
 LOCAL_SERVICE_PORTS="22 25 80 443 465 587 993 3000 6379 8043 11332 11333 11334"
 
 outbound_output=$(ss -tnp state established 2>/dev/null || echo "")
+
+# Collect active Docker bridge CIDRs dynamically (fixes #591)
+# Only skip traffic to subnets actually in use by Docker, not the entire 172.16/12 range.
+_docker_bridges=""
+if command -v docker &>/dev/null; then
+    _docker_bridges=$(docker network ls --format '{{.ID}}' 2>/dev/null \
+        | xargs -I{} docker network inspect {} --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null \
+        | tr ' ' '\n' | grep -E '^[0-9]+\.' | sort -u || true)
+fi
+
+# _ip_in_docker_cidr — check if an IP falls within any active Docker subnet
+# Uses bitwise arithmetic to support arbitrary prefix lengths (e.g. /16, /20, /24).
+_ip_in_docker_cidr() {
+    local IFS ip="$1" ip_a ip_b ip_c ip_d ip_int
+    # Guard: only process valid IPv4 addresses (reject IPv6, IPv4-mapped IPv6, malformed)
+    [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+    IFS='.' read -r ip_a ip_b ip_c ip_d <<< "$ip"
+    ip_d=${ip_d:-0}
+    ip_int=$(( (ip_a << 24) | (ip_b << 16) | (ip_c << 8) | ip_d ))
+    IFS=$' \t\n'   # reset before iterating — IFS='.' from read persists in local scope
+    local cidr net mask net_a net_b net_c net_d net_int mask_int
+    for cidr in $_docker_bridges; do
+        IFS='/' read -r net mask <<< "$cidr"
+        [[ "$mask" =~ ^[0-9]+$ && "$mask" -ge 1 && "$mask" -le 32 ]] || continue
+        IFS='.' read -r net_a net_b net_c net_d <<< "$net"
+        net_d=${net_d:-0}
+        net_int=$(( (net_a << 24) | (net_b << 16) | (net_c << 8) | net_d ))
+        mask_int=$(( 0xFFFFFFFF << (32 - mask) & 0xFFFFFFFF ))
+        [[ $(( ip_int & mask_int )) -eq $(( net_int & mask_int )) ]] && return 0
+    done
+    return 1
+}
+
 if [[ -n "$outbound_output" ]]; then
     # Build outbound connection inventory: connections FROM this server TO remote hosts
     # Filter: local port must NOT be a known service port (those are inbound)
@@ -339,11 +372,15 @@ if [[ -n "$outbound_output" ]]; then
             continue
         fi
 
-        # Skip loopback and Docker bridge networks (internal container traffic)
+        # Skip loopback
         case "$remote_ip" in
             127.*|::1|0.0.0.0) continue ;;
-            172.1[6-9].*|172.2[0-9].*|172.3[01].*) continue ;;
         esac
+
+        # Skip traffic to active Docker bridge subnets (narrowed from blanket 172.16/12)
+        if [[ -n "$_docker_bridges" ]] && _ip_in_docker_cidr "$remote_ip"; then
+            continue
+        fi
 
         outbound_count=$((outbound_count + 1))
 
