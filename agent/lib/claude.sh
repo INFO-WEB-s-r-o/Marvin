@@ -105,7 +105,12 @@ ${prompt}"
     # Run claude at lowered CPU/IO priority so kernel threads (notably rcu_preempt)
     # and other system tasks get scheduled on this 2-vCPU box. Fixes #606 —
     # recurring rcu_preempt kthread starvation during sustained Claude runs.
-    printf '%s' "${full_prompt}" | nice -n 10 ionice -c 2 -n 7 claude -p > "$output_file" 2>&1 && exit_code=$? || exit_code=$?
+    # Priority lowering is best-effort: if nice/ionice are missing from PATH,
+    # fall back to bare `claude -p` so cron agents don't go dark. Fixes #613.
+    local prio_prefix=""
+    command -v nice &>/dev/null && prio_prefix="nice -n 10 "
+    command -v ionice &>/dev/null && prio_prefix="${prio_prefix}ionice -c 2 -n 7 "
+    printf '%s' "${full_prompt}" | ${prio_prefix}claude -p > "$output_file" 2>&1 && exit_code=$? || exit_code=$?
     local end_time
     end_time=$(date +%s)
     local duration=$((end_time - start_time))
