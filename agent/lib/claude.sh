@@ -158,11 +158,26 @@ EOF
     return $exit_code
 }
 
-# Check if Claude Code is available
+# Check if Claude Code is available. Self-heals by searching known install
+# locations if PATH lookup fails — a cron PATH typo on 2026-04-18 masked the
+# claude binary for 36 hours despite it being installed. Prepending the
+# discovered directory prevents a recurrence (lesson: PATH misconfiguration
+# should degrade gracefully, not silently disable every Claude-dependent task).
 check_claude() {
-    if ! command -v claude &> /dev/null; then
-        marvin_log "ERROR" "Claude Code CLI not found in PATH"
-        return 1
+    if command -v claude &> /dev/null; then
+        return 0
     fi
-    return 0
+
+    local candidate
+    for candidate in /root/.local/bin/claude /usr/local/bin/claude /usr/bin/claude; do
+        if [[ -x "$candidate" ]]; then
+            local dir="${candidate%/*}"
+            export PATH="${dir}:${PATH}"
+            marvin_log "WARN" "claude missing from PATH — self-healed by adding ${dir}" >&2
+            return 0
+        fi
+    done
+
+    marvin_log "ERROR" "Claude Code CLI not found in PATH or known install locations" >&2
+    return 1
 }
