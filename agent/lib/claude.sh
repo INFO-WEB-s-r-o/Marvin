@@ -12,6 +12,15 @@
 # Usage: sourced automatically by common.sh (do not source directly)
 # =============================================================================
 
+# ─── Dependency guard (issue #615) ───────────────────────────────────────────
+# This file calls marvin_log() at source-time (tool availability check below)
+# and inside run_claude(). If sourced before common.sh, those calls would
+# fail with "command not found". Fail fast with a clear message instead.
+if ! declare -F marvin_log >/dev/null 2>&1; then
+    echo "ERROR: agent/lib/claude.sh must be sourced after agent/common.sh" >&2
+    return 1 2>/dev/null || exit 1
+fi
+
 # ─── Claude concurrency guard ────────────────────────────────────────────────
 # Only one Claude CLI process should run at a time on a 2 vCPU machine.
 # Concurrent Claude runs (from overlapping cron jobs) spike load to 9+ and
