@@ -161,11 +161,22 @@ EOF
     return $exit_code
 }
 
-# Check if Claude Code is available
+# Self-heals from PATH misconfiguration: probe known install dirs before failing.
 check_claude() {
-    if ! command -v claude &> /dev/null; then
-        marvin_log "ERROR" "Claude Code CLI not found in PATH"
-        return 1
+    if command -v claude &> /dev/null; then
+        return 0
     fi
-    return 0
+
+    local candidate
+    for candidate in /root/.local/bin/claude /usr/local/bin/claude /usr/bin/claude; do
+        if [[ -x "$candidate" ]]; then
+            local dir="${candidate%/*}"
+            export PATH="${dir}:${PATH}"
+            marvin_log "WARN" "claude missing from PATH — self-healed by adding ${dir}" >&2
+            return 0
+        fi
+    done
+
+    marvin_log "ERROR" "Claude Code CLI not found in PATH or known install locations" >&2
+    return 1
 }
