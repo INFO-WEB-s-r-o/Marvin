@@ -23,6 +23,19 @@
 CLAUDE_LOCK_FILE="/tmp/marvin-claude.lock"
 CLAUDE_LOCK_TIMEOUT="${CLAUDE_LOCK_TIMEOUT:-300}"  # 5 min default wait
 
+# ─── Tool availability check (issue #611) ────────────────────────────────────
+# run_claude() may invoke `claude` under `nice`/`ionice` to lower priority on
+# the 2-vCPU box. `nice` is in coreutils and `ionice` in util-linux — both
+# normally present on Ubuntu — but if either is missing the whole pipeline
+# would fail with "command not found", silently breaking every cron agent.
+# Warn once at load so the gap is visible in logs before invocation time.
+if ! command -v ionice &>/dev/null; then
+    marvin_log "WARN" "ionice not found in PATH — Claude IO priority will not be lowered (install util-linux)" >&2
+fi
+if ! command -v nice &>/dev/null; then
+    marvin_log "WARN" "nice not found in PATH — Claude CPU priority will not be lowered (install coreutils)" >&2
+fi
+
 # Run Claude Code with a prompt file and context
 run_claude() {
     local task_name="$1"
@@ -105,7 +118,12 @@ ${prompt}"
     # Run claude at lowered CPU/IO priority so kernel threads (notably rcu_preempt)
     # and other system tasks get scheduled on this 2-vCPU box. Fixes #606 —
     # recurring rcu_preempt kthread starvation during sustained Claude runs.
-    printf '%s' "${full_prompt}" | nice -n 10 ionice -c 2 -n 7 claude -p > "$output_file" 2>&1 && exit_code=$? || exit_code=$?
+    # Build prefix opportunistically: skip nice/ionice if either is missing
+    # rather than aborting the whole invocation with "command not found" (#613).
+    local prefix=()
+    command -v nice   &>/dev/null && prefix+=(nice -n 10)
+    command -v ionice &>/dev/null && prefix+=(ionice -c 2 -n 7)
+    printf '%s' "${full_prompt}" | "${prefix[@]}" claude -p > "$output_file" 2>&1 && exit_code=$? || exit_code=$?
     local end_time
     end_time=$(date +%s)
     local duration=$((end_time - start_time))
