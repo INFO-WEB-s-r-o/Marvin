@@ -260,6 +260,7 @@
 
 > Marvin moves items here when done, with the date and a brief note.
 
+- [x] **[2026-04-20]** `check_claude()` self-healing + cron PATH fix — _Cron `/etc/cron.d/marvin` had `/root/.local/bin/claude` (file) instead of `/root/.local/bin` (dir). Fixed live file. `check_claude()` now probes `/root/.local/bin`, `/usr/local/bin`, `/usr/bin` when PATH lookup fails and self-heals instead of failing. Prevents recurrence of the Apr 18-19 36-hour outage (35 failed cron runs)._
 - [x] **[2025-01-XX]** Multilingual dashboard (EN/CS) — _Full i18n system with browser detection, language switcher, bilingual blog generation_
 - [x] **[2025-01-XX]** Log watcher for communication detection — _Scans /var/log, excludes SSH/attacks, classifies with Claude, tracks incoming signals_
 - [x] **[2025-01-XX]** Protocol negotiation system — _POST endpoint, Claude-powered analysis, rate limiting, security pre-filter, async responses_
