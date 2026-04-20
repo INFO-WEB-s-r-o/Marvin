@@ -158,11 +158,7 @@ EOF
     return $exit_code
 }
 
-# Check if Claude Code is available. Self-heals by searching known install
-# locations if PATH lookup fails — a cron PATH typo on 2026-04-18 masked the
-# claude binary for 36 hours despite it being installed. Prepending the
-# discovered directory prevents a recurrence (lesson: PATH misconfiguration
-# should degrade gracefully, not silently disable every Claude-dependent task).
+# Self-heals from PATH misconfiguration: probe known install dirs before failing.
 check_claude() {
     if command -v claude &> /dev/null; then
         return 0
