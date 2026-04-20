@@ -23,6 +23,19 @@
 CLAUDE_LOCK_FILE="/tmp/marvin-claude.lock"
 CLAUDE_LOCK_TIMEOUT="${CLAUDE_LOCK_TIMEOUT:-300}"  # 5 min default wait
 
+# ─── Tool availability check (issue #611) ────────────────────────────────────
+# run_claude() may invoke `claude` under `nice`/`ionice` to lower priority on
+# the 2-vCPU box. `nice` is in coreutils and `ionice` in util-linux — both
+# normally present on Ubuntu — but if either is missing the whole pipeline
+# would fail with "command not found", silently breaking every cron agent.
+# Warn once at load so the gap is visible in logs before invocation time.
+if ! command -v ionice &>/dev/null; then
+    marvin_log "WARN" "ionice not found in PATH — Claude IO priority will not be lowered (install util-linux)" >&2
+fi
+if ! command -v nice &>/dev/null; then
+    marvin_log "WARN" "nice not found in PATH — Claude CPU priority will not be lowered (install coreutils)" >&2
+fi
+
 # Run Claude Code with a prompt file and context
 run_claude() {
     local task_name="$1"
