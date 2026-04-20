@@ -102,7 +102,10 @@ ${prompt}"
     output_file=$(mktemp "${LOGS_DIR}/claude-output-XXXXXX.tmp")
     trap 'rm -f "${output_file:-}"' RETURN
 
-    printf '%s' "${full_prompt}" | claude -p > "$output_file" 2>&1 && exit_code=$? || exit_code=$?
+    # Run claude at lowered CPU/IO priority so kernel threads (notably rcu_preempt)
+    # and other system tasks get scheduled on this 2-vCPU box. Fixes #606 —
+    # recurring rcu_preempt kthread starvation during sustained Claude runs.
+    printf '%s' "${full_prompt}" | nice -n 10 ionice -c 2 -n 7 claude -p > "$output_file" 2>&1 && exit_code=$? || exit_code=$?
     local end_time
     end_time=$(date +%s)
     local duration=$((end_time - start_time))
