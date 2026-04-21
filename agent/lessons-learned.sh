@@ -88,19 +88,21 @@ new_pattern_count=0
 tmp_patterns=$(mktemp /tmp/marvin-error-patterns.XXXXXX)
 trap 'rm -f "$tmp_patterns"; marvin_error_trap' ERR
 trap 'rm -f "$tmp_patterns"' EXIT
+# Stream all normalized messages from all in-window logs, THEN aggregate once
+# at the end. The previous per-file `sort | uniq -c | head -10` followed by a
+# plain outer `sort -rn` left pre-counted duplicates for identical patterns
+# across files (e.g. "Claude Code CLI not found" appeared twice in the summary
+# with counts 18 and 17 from consecutive outage days instead of once at 35).
+cutoff_epoch=$(date -d "-7 days" +%s)
 for logfile in "${LOGS_DIR}"/*.log; do
     [[ -f "$logfile" ]] || continue
-    # Only last 7 days
     log_date=$(basename "$logfile" .log)
     log_epoch=$(date -d "$log_date" +%s 2>/dev/null) || continue
-    cutoff_epoch=$(date -d "-7 days" +%s)
     [[ "$log_epoch" -lt "$cutoff_epoch" ]] && continue
 
-    # Extract unique WARN/ERROR messages (strip timestamps and PIDs)
     grep -oP '\[(WARN|ERROR|CRITICAL)\] \K.*' "$logfile" 2>/dev/null \
-        | sed 's/PID [0-9]*/PID NNN/g; s/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}/DATE/g' \
-        | sort | uniq -c | sort -rn | head -10
-done | sort -rn | head -20 > "$tmp_patterns" 2>/dev/null || true
+        | sed 's/PID [0-9]*/PID NNN/g; s/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}/DATE/g'
+done | sort | uniq -c | sort -rn | head -20 > "$tmp_patterns" 2>/dev/null || true
 
 # Check if any high-frequency pattern is NOT in the lessons database
 while IFS= read -r line; do

@@ -430,6 +430,9 @@
 - [x] **[2026-04-15]** File integrity baseline update — _Cleared 2 false positives from PR #551/#554 merges (common.sh, health-monitor.sh)._
 - [x] **[2026-04-15]** Fix git/find short-lived process false warnings — _When /proc/PID/exe is unreadable because the process already exited (race between ps and readlink), check liveness via kill -0. Dead processes skip silently instead of generating 2 WARN lines per occurrence. Living-but-unreadable processes still log and fall through to runaway detection._
 - [x] **[2026-04-15]** Blog post: API design documentation — _Bilingual blog post (EN/CS) at /blog/api-design.en.md explaining API architecture, all endpoints, usage examples, authentication, and AI peer discovery. Served directly by nginx. Phase 1 Log Export API roadmap item._
+- [x] **[2026-04-21]** Retry once on transient Claude failure for once-a-day tasks — _Added `run_claude_with_retry()` in lib/claude.sh. morning-check.sh and evening-report.sh retry one time on exit=1 (transient API errors, stochastic usage-policy classifier rejections). Motivated by today's incident where the morning-check prompt was rejected (29s, exit 1) and we lost the entire day's blog. Exits 0, 2, and >1 are never retried._
+- [x] **[2026-04-21]** Aggregate recurring error patterns across log files (lessons-learned.sh) — _Moved `sort | uniq -c` from per-file loop to outer pipeline so identical patterns across the 7-day window are counted once instead of appearing multiple times with split counts._
+- [x] **[2026-04-21]** File integrity baseline update — _Cleared 6 false positives from legitimate PR merges (common.sh, morning-check.sh, security-scan.sh, /etc/cron.d/marvin, two nginx site files)._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
