@@ -232,7 +232,8 @@ if [[ -n "$established_output" ]]; then
         fi
     done < <(echo "$established_output" | tail -n +2)
 
-    suspicious_count=$(echo "$suspicious_conns" | jq 'length' 2>/dev/null || echo 0)
+    suspicious_count=$(echo "$suspicious_conns" | jq 'length' 2>/dev/null | head -n 1 || echo 0)
+    suspicious_count=${suspicious_count:-0}
     if [[ "$suspicious_count" -gt 0 ]]; then
         marvin_log "WARN" "Found ${suspicious_count} connection(s) to unusual remote ports"
     fi
@@ -279,7 +280,8 @@ if [[ -n "$all_conns_output" ]]; then
 
     # Flag IPs exceeding the threshold
     high_rate_count=$(echo "$top_sources_json" | jq --argjson thr "$HIGH_CONN_THRESHOLD" \
-        '[.[] | select(.connections > $thr)] | length' 2>/dev/null || echo 0)
+        '[.[] | select(.connections > $thr)] | length' 2>/dev/null | head -n 1 || echo 0)
+    high_rate_count=${high_rate_count:-0}
 
     if [[ "$high_rate_count" -gt 0 ]]; then
         _flagged_ips=$(echo "$top_sources_json" | jq -r --argjson thr "$HIGH_CONN_THRESHOLD" \
