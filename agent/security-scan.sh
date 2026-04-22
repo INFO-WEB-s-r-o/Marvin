@@ -232,7 +232,14 @@ if [[ -n "$established_output" ]]; then
         fi
     done < <(echo "$established_output" | tail -n +2)
 
+    # Capture, then trim to first line via parameter expansion. Avoids the
+    # `jq | head -n 1 || echo 0` pipefail+SIGPIPE trap (#621): when jq emits
+    # multiple lines, head exits after line 1, jq gets SIGPIPE → exit 141, and
+    # under `set -o pipefail` the `|| echo 0` fallback fires and silently
+    # zeroes a real count. Parameter expansion avoids the pipe entirely.
     suspicious_count=$(echo "$suspicious_conns" | jq 'length' 2>/dev/null || echo 0)
+    suspicious_count=${suspicious_count%%$'\n'*}
+    [[ "$suspicious_count" =~ ^[0-9]+$ ]] || suspicious_count=0
     if [[ "$suspicious_count" -gt 0 ]]; then
         marvin_log "WARN" "Found ${suspicious_count} connection(s) to unusual remote ports"
     fi
@@ -278,8 +285,11 @@ if [[ -n "$all_conns_output" ]]; then
         | jq -s '.' 2>/dev/null || echo "[]")
 
     # Flag IPs exceeding the threshold
+    # See suspicious_count above for the SIGPIPE+pipefail rationale (#621).
     high_rate_count=$(echo "$top_sources_json" | jq --argjson thr "$HIGH_CONN_THRESHOLD" \
         '[.[] | select(.connections > $thr)] | length' 2>/dev/null || echo 0)
+    high_rate_count=${high_rate_count%%$'\n'*}
+    [[ "$high_rate_count" =~ ^[0-9]+$ ]] || high_rate_count=0
 
     if [[ "$high_rate_count" -gt 0 ]]; then
         _flagged_ips=$(echo "$top_sources_json" | jq -r --argjson thr "$HIGH_CONN_THRESHOLD" \
