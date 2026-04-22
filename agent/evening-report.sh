@@ -125,8 +125,10 @@ FULL_PROMPT="${EVENING_PROMPT}
 
 ${EXTRA_CONTEXT}"
 
-# Run Claude for the evening blog
-OUTPUT=$(run_claude "evening-report" "$FULL_PROMPT")
+# Run Claude for the evening blog. One retry on transient exit=1: same
+# reasoning as morning-check — once-per-day task, transient failures would
+# otherwise cost us a whole day's blog.
+OUTPUT=$(run_claude_with_retry "evening-report" "$FULL_PROMPT" 1)
 
 # Save the evening blog — split into EN and CS versions
 DAY_NUM=$(( ($(date +%s) - $(date -d "2026-01-01" +%s 2>/dev/null || echo $(date +%s))) / 86400 ))
