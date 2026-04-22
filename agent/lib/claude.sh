@@ -188,6 +188,52 @@ EOF
     return $exit_code
 }
 
+# Run Claude with bounded retries on transient failures (exit code 1 only).
+# Intended for once-a-day tasks (morning-check, evening-report) where a single
+# transient API error or stochastic usage-policy classifier rejection would
+# otherwise lose the whole day's output until the next cycle. For high-frequency
+# tasks (every-5-min, hourly), the next cron cycle is a cheaper retry — use
+# run_claude() directly there.
+#
+# Does NOT retry on:
+#   - exit code 2 (lock timeout — another run is already active)
+#   - exit code 0 (success)
+#   - exit codes >1 (likely a persistent error: missing binary, SIGKILL, etc.)
+#
+# Usage: run_claude_with_retry "task" "prompt" [max_retries=1]
+run_claude_with_retry() {
+    local task="$1"
+    local prompt="$2"
+    local max_retries="${3:-1}"
+    local attempt=0
+    local exit_code=0
+    local output=""
+    local retry_delay=15
+
+    while :; do
+        exit_code=0
+        output=$(run_claude "$task" "$prompt") || exit_code=$?
+
+        # Success or non-transient failure — stop
+        if [[ "$exit_code" -ne 1 ]]; then
+            break
+        fi
+
+        # Retry budget exhausted
+        if [[ "$attempt" -ge "$max_retries" ]]; then
+            marvin_log "WARN" "All ${max_retries} retries exhausted for ${task} (last exit: ${exit_code})" >&2
+            break
+        fi
+
+        attempt=$((attempt + 1))
+        marvin_log "WARN" "Claude exit 1 for ${task} — retry ${attempt}/${max_retries} after ${retry_delay}s" >&2
+        sleep "$retry_delay"
+    done
+
+    echo "$output"
+    return $exit_code
+}
+
 # Self-heals from PATH misconfiguration: probe known install dirs before failing.
 check_claude() {
     if command -v claude &> /dev/null; then
