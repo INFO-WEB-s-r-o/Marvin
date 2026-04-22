@@ -78,8 +78,14 @@ marvin_log "INFO" "Database: ${lesson_count} lessons, ${anti_pattern_count} anti
 marvin_log "INFO" "Summary generated: ${LESSONS_SUMMARY}"
 
 # ─── 3. Detect potential new lessons from recent errors ──────────────────────
-# Scan the last 7 days of logs for repeated error patterns that aren't
+# Scan the last 2 days of logs for repeated error patterns that aren't
 # already captured in the lessons database.
+#
+# Narrow window (2d, not 7d) so resolved issues stop appearing as "potential
+# new lessons" after the fix lands. Example: the 2026-04-18/19 "Claude Code
+# CLI not found in PATH" pattern (35+ hits) was fixed on 2026-04-20 via
+# check_claude() self-heal, but the 7-day window kept flagging it daily for
+# four more days.
 
 NEW_PATTERNS=""
 new_pattern_count=0
@@ -93,7 +99,7 @@ trap 'rm -f "$tmp_patterns"' EXIT
 # plain outer `sort -rn` left pre-counted duplicates for identical patterns
 # across files (e.g. "Claude Code CLI not found" appeared twice in the summary
 # with counts 18 and 17 from consecutive outage days instead of once at 35).
-cutoff_epoch=$(date -d "-7 days" +%s)
+cutoff_epoch=$(date -d "-2 days" +%s)
 for logfile in "${LOGS_DIR}"/*.log; do
     [[ -f "$logfile" ]] || continue
     log_date=$(basename "$logfile" .log)

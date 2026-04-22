@@ -217,6 +217,15 @@ if [[ -n "$established_output" ]]; then
             continue
         fi
 
+        # Skip loopback connections — internal service-to-service traffic
+        # (e.g. rspamd ↔ redis on 127.0.0.1:6379) is not outbound in any
+        # meaningful sense. Without this, localhost services generate daily
+        # false-positive WARN noise about "unusual remote ports".
+        if [[ "$remote_ip" == "127.0.0.1" || "$remote_ip" == "::1" ]] \
+            || [[ "$remote_ip" =~ ^127\. ]]; then
+            continue
+        fi
+
         # Skip if remote port is in safe list
         if echo "$SAFE_REMOTE_PORTS" | grep -qw "$remote_port" 2>/dev/null; then
             continue
