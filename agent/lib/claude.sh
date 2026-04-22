@@ -221,6 +221,7 @@ run_claude_with_retry() {
 
         # Retry budget exhausted
         if [[ "$attempt" -ge "$max_retries" ]]; then
+            marvin_log "WARN" "All ${max_retries} retries exhausted for ${task} (last exit: ${exit_code})" >&2
             break
         fi
 
