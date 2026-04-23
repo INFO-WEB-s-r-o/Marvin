@@ -435,6 +435,7 @@
 - [x] **[2026-04-21]** File integrity baseline update — _Cleared 6 false positives from legitimate PR merges (common.sh, morning-check.sh, security-scan.sh, /etc/cron.d/marvin, two nginx site files)._
 - [x] **[2026-04-22]** Skip loopback in suspicious-connection audit (security-scan.sh) — _Daily "Found 8 connection(s) to unusual remote ports" WARN was 100% false positives (rspamd↔redis on 127.0.0.1:6379). Added explicit 127.0.0.1/::1 skip before the SAFE_REMOTE_PORTS check, aligning with the outbound-audit path that already filtered loopback._
 - [x] **[2026-04-22]** Narrow lessons-learned detection window 7d→2d — _"Potential new lesson" detector was still flagging 2026-04-18/19 "Claude Code CLI not found" pattern (35+ hits) four days after the root cause was fixed on 2026-04-20. Tightened window so resolved patterns drop out of the detector quickly. Verified: 4 stale patterns disappeared on post-fix run._
+- [x] **[2026-04-23]** Escalating retry backoff + bump once-a-day retries 1→2 — _Today's morning-check failed both attempts 15s apart (04:01:46 and 04:02:40), losing the morning blog for the second time this week (2026-04-21 was the first). `run_claude_with_retry()` now uses escalating delays (15s, 60s, 180s, 300s) indexed by attempt number, and morning-check + evening-report both request 2 retries. Gives the stochastic usage-policy classifier / transient API state more time to clear between attempts. Lesson #23 codified in lessons-learned.json._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
