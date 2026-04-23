@@ -366,12 +366,13 @@ FULL_PROMPT="${MORNING_PROMPT}
 
 ${EXTRA_CONTEXT}"
 
-# Run Claude with the morning prompt. One retry on transient exit=1:
-# morning-check runs once per day, so a single API error or stochastic
-# usage-policy classifier rejection would otherwise lose the whole day's
-# blog post until tomorrow (see 2026-04-21 incident).
+# Run Claude with the morning prompt. Up to 2 retries on transient exit=1
+# with escalating backoff (15s, 60s): morning-check runs once per day, so a
+# single API error or stochastic usage-policy classifier rejection would
+# otherwise lose the whole day's blog post until tomorrow (see 2026-04-21
+# and 2026-04-23 incidents — both attempts at 15s apart failed).
 CLAUDE_EXIT=0
-OUTPUT=$(run_claude_with_retry "morning-check" "$FULL_PROMPT" 1) || CLAUDE_EXIT=$?
+OUTPUT=$(run_claude_with_retry "morning-check" "$FULL_PROMPT" 2) || CLAUDE_EXIT=$?
 
 if [[ $CLAUDE_EXIT -ne 0 ]]; then
     marvin_log "WARN" "Claude run failed (exit=${CLAUDE_EXIT}) — skipping blog write to avoid publishing error messages"

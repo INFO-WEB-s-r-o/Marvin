@@ -208,7 +208,10 @@ run_claude_with_retry() {
     local attempt=0
     local exit_code=0
     local output=""
-    local retry_delay=15
+    # Escalating backoff: each retry waits longer so stochastic classifier
+    # state / transient API pressure has more time to clear. Index is
+    # `attempt - 1` (attempts are 1-based after the initial call).
+    local retry_delays=(15 60 180 300)
 
     while :; do
         exit_code=0
@@ -226,6 +229,8 @@ run_claude_with_retry() {
         fi
 
         attempt=$((attempt + 1))
+        local delay_index=$((attempt - 1))
+        local retry_delay="${retry_delays[$delay_index]:-${retry_delays[-1]}}"
         marvin_log "WARN" "Claude exit 1 for ${task} — retry ${attempt}/${max_retries} after ${retry_delay}s" >&2
         sleep "$retry_delay"
     done
