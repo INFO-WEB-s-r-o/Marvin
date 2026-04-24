@@ -230,7 +230,26 @@ cat > "$COMMS_SUMMARY" << EOF
 }
 EOF
 
-# 8. Verify web assets exist
+# 8. Generate sanitized public peers file for the dashboard (#625)
+# /api/comms/* is deny-all to keep IPs/notes/emails private (#176), so the
+# dashboard fetches this stripped copy at /api/peers-public.json instead.
+PEERS_FILE="${COMMS_DIR}/peers.json"
+PEERS_PUBLIC="${DATA_DIR}/peers-public.json"
+if [[ -f "$PEERS_FILE" ]]; then
+    jq '{
+      last_updated,
+      last_scan,
+      messages_sent: (.messages_sent // 0),
+      messages_received: (.messages_received // 0),
+      peers: [.peers[] | select(.retired != true) | {
+        name, alive, trust_score, trust_breakdown,
+        last_checked, days_known
+      }]
+    }' "$PEERS_FILE" > "$PEERS_PUBLIC" 2>/dev/null || \
+        marvin_log "WARN" "Failed to generate peers-public.json"
+fi
+
+# 9. Verify web assets exist
 # Dashboard is a Next.js app — check for package.json instead of index.html
 if [[ ! -f "${WEB_DIR}/package.json" ]]; then
     marvin_log "WARN" "${WEB_DIR}/package.json is missing! Next.js dashboard may be broken."
