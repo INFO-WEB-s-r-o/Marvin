@@ -337,7 +337,13 @@ EXTRA_CONTEXT+=$(cat << 'CONTEXT'
 ```
 CONTEXT
 )
-EXTRA_CONTEXT+=$(fail2ban-client status sshd 2>/dev/null || echo "fail2ban not available")
+# Strip the raw IP list — long unstructured IP lists in the prompt have
+# tripped the Anthropic usage-policy classifier (3 consecutive morning-check
+# failures 2026-04-21..23, blocking the email-reply step inside the prompt).
+# Counts (currently/total banned) above the list are the actionable signal.
+EXTRA_CONTEXT+=$(fail2ban-client status sshd 2>/dev/null \
+    | sed -E 's/(Banned IP list:[[:space:]]*).*/\1[list omitted — see fail2ban-client directly]/' \
+    || echo "fail2ban not available")
 EXTRA_CONTEXT+=$(cat << 'CONTEXT'
 ```
 
