@@ -34,7 +34,7 @@ export default function PeersSection() {
 
   const fetchData = useCallback(async () => {
     try {
-      const resp = await fetch(`${API_BASE}/comms/peers.json?t=${Date.now()}`);
+      const resp = await fetch(`${API_BASE}/peers-public.json?t=${Date.now()}`);
       if (resp.ok) setData(await resp.json());
     } catch (e) {
       console.warn('Failed to fetch peers:', e);
