@@ -228,9 +228,20 @@ if [[ ${#GIT_SYNCED[@]} -gt 0 && ${#CHANGED[@]} -eq 0 && ${#MISSING[@]} -eq 0 &&
     prev_ts=$(jq -r '.created // "unknown"' "$BASELINE_FILE" 2>/dev/null || echo "unknown")
     prev_count=$(jq '(.files // {}) | keys | length' "$BASELINE_FILE" 2>/dev/null || echo 0)
     prev_hash=$(sha256sum "$BASELINE_FILE" 2>/dev/null | awk '{print $1}' || echo "unknown")
-    jq -n --argjson files "$current" --arg ts "$NOW" --arg caller "auto-git-sync" \
-        --arg prev_ts "$prev_ts" --arg prev_hash "$prev_hash" --argjson prev_count "$prev_count" \
-        '{created: $ts, updated_by: $caller, previous_baseline: {timestamp: $prev_ts, sha256: $prev_hash, file_count: $prev_count}, files: $files}' > "$BASELINE_FILE"
+    # Atomic write (#634): jq to a temp file in the same directory, then mv-f
+    # into place. A direct `> "$BASELINE_FILE"` truncates before jq runs; if
+    # jq fails mid-execution (disk full, OOM) the baseline is left empty and
+    # integrity monitoring is silently down. mv on the same filesystem is
+    # atomic, so a crash between jq and mv leaves the old baseline intact.
+    tmp_baseline=$(mktemp "${BASELINE_FILE}.XXXXXX")
+    if ! jq -n --argjson files "$current" --arg ts "$NOW" --arg caller "auto-git-sync" \
+            --arg prev_ts "$prev_ts" --arg prev_hash "$prev_hash" --argjson prev_count "$prev_count" \
+            '{created: $ts, updated_by: $caller, previous_baseline: {timestamp: $prev_ts, sha256: $prev_hash, file_count: $prev_count}, files: $files}' > "$tmp_baseline"; then
+        rm -f "$tmp_baseline"
+        marvin_log "ERROR" "File integrity: jq failed during auto-refresh; baseline preserved"
+        exit 1
+    fi
+    mv -f "$tmp_baseline" "$BASELINE_FILE"
     chmod 600 "$BASELINE_FILE"
     marvin_log "INFO" "File integrity: baseline auto-refreshed (${#GIT_SYNCED[@]} git-synced change(s), prev baseline ${prev_ts})"
 fi
