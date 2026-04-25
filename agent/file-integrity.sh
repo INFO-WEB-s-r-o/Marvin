@@ -216,11 +216,15 @@ while IFS= read -r filepath; do
 done < <(echo "$current" | jq -r 'keys[]')
 
 # Auto-refresh baseline when ALL changes are git-synced (provably from
-# legitimate upstream commits). If even one tampered (CHANGED) or missing
-# file exists, leave the baseline alone — we want those alerts to persist
-# until investigated. This eliminates the recurring toil where every PR
-# merge triggered a stale baseline alert until manual --update.
-if [[ ${#GIT_SYNCED[@]} -gt 0 && ${#CHANGED[@]} -eq 0 && ${#MISSING[@]} -eq 0 ]]; then
+# legitimate upstream commits). If even one tampered (CHANGED), missing,
+# or NEW file exists, leave the baseline alone — we want those situations
+# investigated rather than silently baked into the baseline. New files in
+# dynamically-monitored paths (/etc/nginx/sites-enabled/*,
+# /etc/fail2ban/jail.d/*) are outside MARVIN_DIR and can never be
+# git-tracked; auto-trusting them would let a rogue config slip in
+# whenever a legitimate agent-script pull happened in the same window
+# (issue #633). New files still require an explicit --update call.
+if [[ ${#GIT_SYNCED[@]} -gt 0 && ${#CHANGED[@]} -eq 0 && ${#MISSING[@]} -eq 0 && ${#NEW_FILES[@]} -eq 0 ]]; then
     prev_ts=$(jq -r '.created // "unknown"' "$BASELINE_FILE" 2>/dev/null || echo "unknown")
     prev_count=$(jq '(.files // {}) | keys | length' "$BASELINE_FILE" 2>/dev/null || echo 0)
     prev_hash=$(sha256sum "$BASELINE_FILE" 2>/dev/null | awk '{print $1}' || echo "unknown")
