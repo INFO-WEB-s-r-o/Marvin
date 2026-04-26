@@ -110,8 +110,11 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
 
                 # Reset file integrity baseline if monitored scripts changed.
                 # Without this, every PR merge triggers false positive alerts
-                # that persist until the next security-scan at 04:00 UTC.
-                if echo "$INCOMING_DIFF" | grep -qE '^(diff --git|---|\+\+\+).*(agent/|/etc/)'; then
+                # that persist until the next security-scan at 02:00 UTC.
+                # INCOMING_DIFF is `git diff --stat` output (e.g.
+                # " agent/foo.sh | 10 ++++++----"), not full-diff format —
+                # the old pattern ^(diff --git|---|\+\+\+) never matched.
+                if echo "$INCOMING_DIFF" | grep -q ' agent/'; then
                     integrity_script="${MARVIN_DIR}/agent/file-integrity.sh"
                     if [[ -x "$integrity_script" ]]; then
                         if "$integrity_script" --update 2>&1; then
@@ -334,7 +337,13 @@ EXTRA_CONTEXT+=$(cat << 'CONTEXT'
 ```
 CONTEXT
 )
-EXTRA_CONTEXT+=$(fail2ban-client status sshd 2>/dev/null || echo "fail2ban not available")
+# Strip the raw IP list — long unstructured IP lists in the prompt have
+# tripped the Anthropic usage-policy classifier (3 consecutive morning-check
+# failures 2026-04-21..23, blocking the email-reply step inside the prompt).
+# Counts (currently/total banned) above the list are the actionable signal.
+EXTRA_CONTEXT+=$(fail2ban-client status sshd 2>/dev/null \
+    | sed -E 's/(Banned IP list:[[:space:]]*).*/\1[list omitted — see fail2ban-client directly]/' \
+    || echo "fail2ban not available")
 EXTRA_CONTEXT+=$(cat << 'CONTEXT'
 ```
 
