@@ -138,9 +138,13 @@ marvin_log "INFO" "File integrity check starting"
 if [[ ! -f "$BASELINE_FILE" ]]; then
     marvin_log "INFO" "No baseline found — creating initial baseline"
     checksums=$(compute_checksums)
+    tmp_baseline=$(mktemp --tmpdir="$SECURITY_DIR" .baseline.XXXXXX)
+    trap 'rm -f "$tmp_baseline"' EXIT
     jq -n --argjson files "$checksums" --arg ts "$NOW" \
-        '{created: $ts, files: $files}' > "$BASELINE_FILE"
-    chmod 600 "$BASELINE_FILE"
+        '{created: $ts, files: $files}' > "$tmp_baseline"
+    chmod 600 "$tmp_baseline"
+    mv -f "$tmp_baseline" "$BASELINE_FILE"
+    trap - EXIT
 
     # Report: baseline created, no changes to report
     cat > "$REPORT_FILE" << EOF
