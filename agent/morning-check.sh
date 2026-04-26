@@ -110,8 +110,11 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
 
                 # Reset file integrity baseline if monitored scripts changed.
                 # Without this, every PR merge triggers false positive alerts
-                # that persist until the next security-scan at 04:00 UTC.
-                if echo "$INCOMING_DIFF" | grep -qE '^(diff --git|---|\+\+\+).*(agent/|/etc/)'; then
+                # that persist until the next security-scan at 02:00 UTC.
+                # INCOMING_DIFF is `git diff --stat` output (e.g.
+                # " agent/foo.sh | 10 ++++++----"), not full-diff format —
+                # the old pattern ^(diff --git|---|\+\+\+) never matched.
+                if echo "$INCOMING_DIFF" | grep -q ' agent/'; then
                     integrity_script="${MARVIN_DIR}/agent/file-integrity.sh"
                     if [[ -x "$integrity_script" ]]; then
                         if "$integrity_script" --update 2>&1; then
