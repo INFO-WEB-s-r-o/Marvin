@@ -241,8 +241,12 @@ if [[ ${#GIT_SYNCED[@]} -gt 0 && ${#CHANGED[@]} -eq 0 && ${#MISSING[@]} -eq 0 &&
         marvin_log "ERROR" "File integrity: jq failed during auto-refresh; baseline preserved"
         exit 1
     fi
+    # chmod 600 on the temp file BEFORE mv (issue #636): mktemp uses the
+    # process umask (often rw-r--r--), so chmod-after-mv would leave a brief
+    # window where $BASELINE_FILE is readable beyond owner. Restrict first,
+    # rename second — matches the pattern used in PR #635 for --update path.
+    chmod 600 "$tmp_baseline"
     mv -f "$tmp_baseline" "$BASELINE_FILE"
-    chmod 600 "$BASELINE_FILE"
     marvin_log "INFO" "File integrity: baseline auto-refreshed (${#GIT_SYNCED[@]} git-synced change(s), prev baseline ${prev_ts})"
 fi
 
