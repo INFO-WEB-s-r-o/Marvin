@@ -85,7 +85,8 @@ resolved_patterns='[]'
 # Collect signatures from past days
 _past_signatures_file=$(mktemp)
 _today_signatures_file=$(mktemp)
-trap 'rm -f "$_past_signatures_file" "$_today_signatures_file"' EXIT
+_analysis_tmp=""
+trap 'rm -f "$_past_signatures_file" "$_today_signatures_file" "${_analysis_tmp:-}"' EXIT
 
 # Today's signatures
 echo "$error_clusters" | jq -r '.[].signature' 2>/dev/null > "$_today_signatures_file" || true
@@ -202,6 +203,7 @@ recurring_count=$(echo "$recurring_patterns" | jq 'length' 2>/dev/null || echo 0
 new_count=$(echo "$new_patterns" | jq 'length' 2>/dev/null || echo 0)
 resolved_count=$(echo "$resolved_patterns" | jq 'length' 2>/dev/null || echo 0)
 
+_analysis_tmp=$(mktemp --tmpdir="$(dirname "$ANALYSIS_FILE")" .analysis.XXXXXX)
 jq -n \
     --arg date "$TODAY" \
     --arg ts "$NOW" \
@@ -233,7 +235,9 @@ jq -n \
         },
         error_trend_7d: $error_trend,
         component_health: $components
-    }' > "$ANALYSIS_FILE"
+    }' > "$_analysis_tmp"
+mv -f "$_analysis_tmp" "$ANALYSIS_FILE"
+_analysis_tmp=""
 
 cp "$ANALYSIS_FILE" "$ANALYSIS_LATEST"
 
