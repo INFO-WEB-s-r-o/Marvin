@@ -85,7 +85,9 @@ resolved_patterns='[]'
 # Collect signatures from past days
 _past_signatures_file=$(mktemp)
 _today_signatures_file=$(mktemp)
-trap 'rm -f "$_past_signatures_file" "$_today_signatures_file"' EXIT
+_analysis_tmp=""
+_latest_tmp=""
+trap 'rm -f "$_past_signatures_file" "$_today_signatures_file" "${_analysis_tmp:-}" "${_latest_tmp:-}"' EXIT INT TERM
 
 # Today's signatures
 echo "$error_clusters" | jq -r '.[].signature' 2>/dev/null > "$_today_signatures_file" || true

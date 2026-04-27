@@ -118,10 +118,14 @@ if [[ "${1:-}" == "--update" ]]; then
 
     marvin_log "WARN" "File integrity: baseline reset by ${caller_name} (PID ${caller_pid}), previous baseline: ${prev_ts} (${prev_count} files, sha256:${prev_hash:0:16}…)"
     checksums=$(compute_checksums)
+    tmp_baseline=$(mktemp --tmpdir="$SECURITY_DIR" .baseline.XXXXXX)
+    trap 'rm -f "$tmp_baseline"' EXIT
     jq -n --argjson files "$checksums" --arg ts "$NOW" --arg caller "${caller_name}[${caller_pid}]" \
         --arg prev_ts "$prev_ts" --arg prev_hash "$prev_hash" --argjson prev_count "$prev_count" \
-        '{created: $ts, updated_by: $caller, previous_baseline: {timestamp: $prev_ts, sha256: $prev_hash, file_count: $prev_count}, files: $files}' > "$BASELINE_FILE"
-    chmod 600 "$BASELINE_FILE"
+        '{created: $ts, updated_by: $caller, previous_baseline: {timestamp: $prev_ts, sha256: $prev_hash, file_count: $prev_count}, files: $files}' > "$tmp_baseline"
+    chmod 600 "$tmp_baseline"
+    mv -f "$tmp_baseline" "$BASELINE_FILE"
+    trap - EXIT
     marvin_log "WARN" "File integrity baseline updated: $(echo "$checksums" | jq 'keys | length') files (reset by ${caller_name})"
     exit 0
 fi
@@ -134,9 +138,13 @@ marvin_log "INFO" "File integrity check starting"
 if [[ ! -f "$BASELINE_FILE" ]]; then
     marvin_log "INFO" "No baseline found — creating initial baseline"
     checksums=$(compute_checksums)
+    tmp_baseline=$(mktemp --tmpdir="$SECURITY_DIR" .baseline.XXXXXX)
+    trap 'rm -f "$tmp_baseline"' EXIT
     jq -n --argjson files "$checksums" --arg ts "$NOW" \
-        '{created: $ts, files: $files}' > "$BASELINE_FILE"
-    chmod 600 "$BASELINE_FILE"
+        '{created: $ts, files: $files}' > "$tmp_baseline"
+    chmod 600 "$tmp_baseline"
+    mv -f "$tmp_baseline" "$BASELINE_FILE"
+    trap - EXIT
 
     # Report: baseline created, no changes to report
     cat > "$REPORT_FILE" << EOF
@@ -159,7 +167,23 @@ current=$(compute_checksums)
 baseline_files=$(jq '.files' "$BASELINE_FILE")
 baseline_ts=$(jq -r '.created' "$BASELINE_FILE")
 
+# Helper: returns 0 if file's current content matches its blob at git HEAD.
+# Used to distinguish legitimate updates pulled from upstream commits (which
+# are auto-trusted) from genuine tampering. Files outside MARVIN_DIR or not
+# tracked in git always return 1 (treated as tampered if changed).
+_matches_git_head() {
+    local filepath="$1"
+    [[ "$filepath" != "$MARVIN_DIR"/* ]] && return 1
+    command -v git >/dev/null 2>&1 || return 1
+    local relpath="${filepath#"$MARVIN_DIR"/}"
+    local git_sha disk_sha
+    git_sha=$(git -C "$MARVIN_DIR" rev-parse "HEAD:${relpath}" 2>/dev/null) || return 1
+    disk_sha=$(git -C "$MARVIN_DIR" hash-object "$filepath" 2>/dev/null) || return 1
+    [[ -n "$git_sha" && "$git_sha" == "$disk_sha" ]]
+}
+
 CHANGED=()
+GIT_SYNCED=()
 NEW_FILES=()
 MISSING=()
 
@@ -177,8 +201,15 @@ while IFS= read -r filepath; do
             marvin_log "WARN" "File integrity: MISSING — ${filepath}"
         fi
     elif [[ "$baseline_hash" != "$current_hash" ]]; then
-        CHANGED+=("$filepath")
-        marvin_log "WARN" "File integrity: CHANGED — ${filepath}"
+        if _matches_git_head "$filepath"; then
+            # Changed contents match git HEAD — legitimate pull from upstream.
+            # Keeps the file out of the alert path and lets us auto-refresh.
+            GIT_SYNCED+=("$filepath")
+            marvin_log "INFO" "File integrity: git-synced — ${filepath} (matches HEAD)"
+        else
+            CHANGED+=("$filepath")
+            marvin_log "WARN" "File integrity: CHANGED — ${filepath}"
+        fi
     fi
 done < <(echo "$baseline_files" | jq -r 'keys[]')
 
@@ -191,6 +222,41 @@ while IFS= read -r filepath; do
         marvin_log "INFO" "File integrity: NEW — ${filepath}"
     fi
 done < <(echo "$current" | jq -r 'keys[]')
+
+# Auto-refresh baseline when ALL changes are git-synced (provably from
+# legitimate upstream commits). If even one tampered (CHANGED), missing,
+# or NEW file exists, leave the baseline alone — we want those situations
+# investigated rather than silently baked into the baseline. New files in
+# dynamically-monitored paths (/etc/nginx/sites-enabled/*,
+# /etc/fail2ban/jail.d/*) are outside MARVIN_DIR and can never be
+# git-tracked; auto-trusting them would let a rogue config slip in
+# whenever a legitimate agent-script pull happened in the same window
+# (issue #633). New files still require an explicit --update call.
+if [[ ${#GIT_SYNCED[@]} -gt 0 && ${#CHANGED[@]} -eq 0 && ${#MISSING[@]} -eq 0 && ${#NEW_FILES[@]} -eq 0 ]]; then
+    prev_ts=$(jq -r '.created // "unknown"' "$BASELINE_FILE" 2>/dev/null || echo "unknown")
+    prev_count=$(jq '(.files // {}) | keys | length' "$BASELINE_FILE" 2>/dev/null || echo 0)
+    prev_hash=$(sha256sum "$BASELINE_FILE" 2>/dev/null | awk '{print $1}' || echo "unknown")
+    # Atomic write (#634): jq to a temp file in the same directory, then mv-f
+    # into place. A direct `> "$BASELINE_FILE"` truncates before jq runs; if
+    # jq fails mid-execution (disk full, OOM) the baseline is left empty and
+    # integrity monitoring is silently down. mv on the same filesystem is
+    # atomic, so a crash between jq and mv leaves the old baseline intact.
+    tmp_baseline=$(mktemp "${BASELINE_FILE}.XXXXXX")
+    if ! jq -n --argjson files "$current" --arg ts "$NOW" --arg caller "auto-git-sync" \
+            --arg prev_ts "$prev_ts" --arg prev_hash "$prev_hash" --argjson prev_count "$prev_count" \
+            '{created: $ts, updated_by: $caller, previous_baseline: {timestamp: $prev_ts, sha256: $prev_hash, file_count: $prev_count}, files: $files}' > "$tmp_baseline"; then
+        rm -f "$tmp_baseline"
+        marvin_log "ERROR" "File integrity: jq failed during auto-refresh; baseline preserved"
+        exit 1
+    fi
+    # chmod 600 on the temp file BEFORE mv (issue #636): mktemp uses the
+    # process umask (often rw-r--r--), so chmod-after-mv would leave a brief
+    # window where $BASELINE_FILE is readable beyond owner. Restrict first,
+    # rename second — matches the pattern used in PR #635 for --update path.
+    chmod 600 "$tmp_baseline"
+    mv -f "$tmp_baseline" "$BASELINE_FILE"
+    marvin_log "INFO" "File integrity: baseline auto-refreshed (${#GIT_SYNCED[@]} git-synced change(s), prev baseline ${prev_ts})"
+fi
 
 # Determine status
 status="clean"
@@ -214,6 +280,11 @@ if [[ ${#NEW_FILES[@]} -gt 0 ]]; then
     new_json=$(printf '%s\n' "${NEW_FILES[@]}" | jq -R . | jq -s .)
 fi
 
+git_synced_json="[]"
+if [[ ${#GIT_SYNCED[@]} -gt 0 ]]; then
+    git_synced_json=$(printf '%s\n' "${GIT_SYNCED[@]}" | jq -R . | jq -s .)
+fi
+
 # Write report
 cat > "$REPORT_FILE" << EOF
 {
@@ -222,6 +293,7 @@ cat > "$REPORT_FILE" << EOF
   "baseline_created": "${baseline_ts}",
   "files_monitored": $(echo "$current" | jq 'keys | length'),
   "changes": ${changed_json},
+  "git_synced": ${git_synced_json},
   "new_files": ${new_json},
   "missing_files": ${missing_json}
 }
