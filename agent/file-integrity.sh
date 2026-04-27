@@ -118,10 +118,14 @@ if [[ "${1:-}" == "--update" ]]; then
 
     marvin_log "WARN" "File integrity: baseline reset by ${caller_name} (PID ${caller_pid}), previous baseline: ${prev_ts} (${prev_count} files, sha256:${prev_hash:0:16}…)"
     checksums=$(compute_checksums)
+    tmp_baseline=$(mktemp --tmpdir="$SECURITY_DIR" .baseline.XXXXXX)
+    trap 'rm -f "$tmp_baseline"' EXIT
     jq -n --argjson files "$checksums" --arg ts "$NOW" --arg caller "${caller_name}[${caller_pid}]" \
         --arg prev_ts "$prev_ts" --arg prev_hash "$prev_hash" --argjson prev_count "$prev_count" \
-        '{created: $ts, updated_by: $caller, previous_baseline: {timestamp: $prev_ts, sha256: $prev_hash, file_count: $prev_count}, files: $files}' > "$BASELINE_FILE"
-    chmod 600 "$BASELINE_FILE"
+        '{created: $ts, updated_by: $caller, previous_baseline: {timestamp: $prev_ts, sha256: $prev_hash, file_count: $prev_count}, files: $files}' > "$tmp_baseline"
+    chmod 600 "$tmp_baseline"
+    mv -f "$tmp_baseline" "$BASELINE_FILE"
+    trap - EXIT
     marvin_log "WARN" "File integrity baseline updated: $(echo "$checksums" | jq 'keys | length') files (reset by ${caller_name})"
     exit 0
 fi
@@ -134,9 +138,13 @@ marvin_log "INFO" "File integrity check starting"
 if [[ ! -f "$BASELINE_FILE" ]]; then
     marvin_log "INFO" "No baseline found — creating initial baseline"
     checksums=$(compute_checksums)
+    tmp_baseline=$(mktemp --tmpdir="$SECURITY_DIR" .baseline.XXXXXX)
+    trap 'rm -f "$tmp_baseline"' EXIT
     jq -n --argjson files "$checksums" --arg ts "$NOW" \
-        '{created: $ts, files: $files}' > "$BASELINE_FILE"
-    chmod 600 "$BASELINE_FILE"
+        '{created: $ts, files: $files}' > "$tmp_baseline"
+    chmod 600 "$tmp_baseline"
+    mv -f "$tmp_baseline" "$BASELINE_FILE"
+    trap - EXIT
 
     # Report: baseline created, no changes to report
     cat > "$REPORT_FILE" << EOF
