@@ -196,11 +196,30 @@ fi
 
 # ─── Phase 6: Build analysis report ────────────────────────────────────────
 
+# Sanitize count captures: trim to first line + numeric guard. See PR #619
+# (issues #618/#621) — `jq | head` + pipefail can leave fallback text spliced
+# onto producer output, breaking downstream consumers.
 error_cluster_count=$(echo "$error_clusters" | jq 'length' 2>/dev/null || echo 0)
+error_cluster_count=${error_cluster_count%%$'\n'*}
+[[ "$error_cluster_count" =~ ^[0-9]+$ ]] || error_cluster_count=0
 warning_cluster_count=$(echo "$warning_clusters" | jq 'length' 2>/dev/null || echo 0)
+warning_cluster_count=${warning_cluster_count%%$'\n'*}
+[[ "$warning_cluster_count" =~ ^[0-9]+$ ]] || warning_cluster_count=0
 recurring_count=$(echo "$recurring_patterns" | jq 'length' 2>/dev/null || echo 0)
+recurring_count=${recurring_count%%$'\n'*}
+[[ "$recurring_count" =~ ^[0-9]+$ ]] || recurring_count=0
 new_count=$(echo "$new_patterns" | jq 'length' 2>/dev/null || echo 0)
+new_count=${new_count%%$'\n'*}
+[[ "$new_count" =~ ^[0-9]+$ ]] || new_count=0
 resolved_count=$(echo "$resolved_patterns" | jq 'length' 2>/dev/null || echo 0)
+resolved_count=${resolved_count%%$'\n'*}
+[[ "$resolved_count" =~ ^[0-9]+$ ]] || resolved_count=0
+
+# Atomic write: mktemp + mv -f. Direct `> "$ANALYSIS_FILE"` would truncate
+# the destination before jq runs; under `set -euo pipefail` a jq failure
+# leaves the file empty (issue #638). Mirrors PR #635's baseline-write fix.
+_analysis_tmp=$(mktemp --tmpdir="${DATA_DIR}/logs" .analysis.XXXXXX)
+trap 'rm -f "$_past_signatures_file" "$_today_signatures_file" "$_analysis_tmp"' EXIT
 
 jq -n \
     --arg date "$TODAY" \
@@ -233,7 +252,10 @@ jq -n \
         },
         error_trend_7d: $error_trend,
         component_health: $components
-    }' > "$ANALYSIS_FILE"
+    }' > "$_analysis_tmp"
+
+chmod 644 "$_analysis_tmp"
+mv -f "$_analysis_tmp" "$ANALYSIS_FILE"
 
 cp "$ANALYSIS_FILE" "$ANALYSIS_LATEST"
 
