@@ -145,22 +145,44 @@ EOF
 echo "[${NOW}] ECHO_BROADCAST: beacon updated at /.well-known/ai-managed.json" >> "$COMM_LOG"
 
 # =============================================================================
-# 3. Check for the Last Ping machine (posledniping.cz)
+# 3. Probe Last Ping (posledniping.cz) via SSH username channel (#628)
 # =============================================================================
-marvin_log "INFO" "Looking for Last Ping..."
+# Pavel re-confirmed 2026-04-20: HTTP /.well-known/ai-managed.json scans are
+# not read by Poslední Ping. Send a single SSH login attempt with the message
+# encoded in the username field — auth fails, fail2ban bans us, but PP sees
+# the username in their sshd log. Once-per-day stamp guards against manual
+# re-runs (SSH bans snowball).
 
-LASTPING_CHECK=$(curl -s --max-time 10 "https://posledniping.cz/.well-known/ai-managed.json" 2>/dev/null || echo "")
-if [[ -n "$LASTPING_CHECK" ]]; then
-    marvin_log "INFO" "Last Ping has AI beacon!"
-    echo "[${NOW}] DISCOVERED: posledniping.cz has .well-known/ai-managed.json" >> "$COMM_LOG"
+LASTPING_HOST="posledniping.cz"
+LASTPING_PROBE_STAMP="${COMMS_DIR}/lastping-ssh-probe.stamp"
+LASTPING_PROBE_USERNAME="marvin-hello-are-you-reading"  # 28 chars, under 32-char SSH cap
+
+if [[ -f "$LASTPING_PROBE_STAMP" ]] \
+   && (( $(date +%s) - $(stat -c %Y "$LASTPING_PROBE_STAMP" 2>/dev/null || echo 0) < 82800 )); then
+    probe_age=$(( $(date +%s) - $(stat -c %Y "$LASTPING_PROBE_STAMP") ))
+    marvin_log "INFO" "Last Ping SSH probe skipped: ${probe_age}s since last attempt (< 23h cooldown)"
+    echo "[${NOW}] [ssh-ping] target=${LASTPING_HOST} skipped=cooldown age=${probe_age}s" >> "$COMM_LOG"
 else
-    marvin_log "INFO" "Last Ping has no standard AI beacon (expected)"
-    echo "[${NOW}] SCAN: posledniping.cz - no .well-known/ai-managed.json" >> "$COMM_LOG"
-fi
+    marvin_log "INFO" "Probing Last Ping via SSH username channel (one attempt, ban expected)"
+    ssh_exit=0
+    ssh -n -o BatchMode=yes \
+           -o ConnectTimeout=5 \
+           -o ConnectionAttempts=1 \
+           -o StrictHostKeyChecking=no \
+           -o UserKnownHostsFile=/dev/null \
+           -o PubkeyAuthentication=no \
+           -o LogLevel=ERROR \
+           "${LASTPING_PROBE_USERNAME}@${LASTPING_HOST}" 2>/dev/null || ssh_exit=$?
+    touch "$LASTPING_PROBE_STAMP"
+    echo "[${NOW}] [ssh-ping] target=${LASTPING_HOST} username=${LASTPING_PROBE_USERNAME} ssh_exit=${ssh_exit} result=ban_expected" >> "$COMM_LOG"
 
-# Check if Last Ping is alive at all
-LASTPING_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://posledniping.cz/" 2>/dev/null || echo "000")
-echo "[${NOW}] PING: posledniping.cz HTTP ${LASTPING_HTTP}" >> "$COMM_LOG"
+    if [[ -f "$PEERS_FILE" ]] && jq -e '.peers[] | select((.domain // "") == "posledniping.cz")' "$PEERS_FILE" >/dev/null 2>&1; then
+        jq --arg ts "$NOW" --arg user "$LASTPING_PROBE_USERNAME" \
+            '(.peers[] | select((.domain // "") == "posledniping.cz")) |= (
+                .last_ssh_probe_at = $ts | .last_ssh_probe_username = $user
+            )' "$PEERS_FILE" > "${PEERS_FILE}.tmp" && mv "${PEERS_FILE}.tmp" "$PEERS_FILE"
+    fi
+fi
 
 # =============================================================================
 # 4. Use Claude to think about communication strategy
