@@ -196,11 +196,30 @@ fi
 
 # ─── Phase 6: Build analysis report ────────────────────────────────────────
 
+# Sanitize numeric captures: trim past first newline + numeric regex guard.
+# Mirrors the security-scan.sh pattern from PRs #619/#621 — `jq | … || echo 0`
+# can leave partial output spliced with the fallback when jq fails mid-stream.
 error_cluster_count=$(echo "$error_clusters" | jq 'length' 2>/dev/null || echo 0)
+error_cluster_count=${error_cluster_count%%$'\n'*}
+[[ "$error_cluster_count" =~ ^[0-9]+$ ]] || error_cluster_count=0
 warning_cluster_count=$(echo "$warning_clusters" | jq 'length' 2>/dev/null || echo 0)
+warning_cluster_count=${warning_cluster_count%%$'\n'*}
+[[ "$warning_cluster_count" =~ ^[0-9]+$ ]] || warning_cluster_count=0
 recurring_count=$(echo "$recurring_patterns" | jq 'length' 2>/dev/null || echo 0)
+recurring_count=${recurring_count%%$'\n'*}
+[[ "$recurring_count" =~ ^[0-9]+$ ]] || recurring_count=0
 new_count=$(echo "$new_patterns" | jq 'length' 2>/dev/null || echo 0)
+new_count=${new_count%%$'\n'*}
+[[ "$new_count" =~ ^[0-9]+$ ]] || new_count=0
 resolved_count=$(echo "$resolved_patterns" | jq 'length' 2>/dev/null || echo 0)
+resolved_count=${resolved_count%%$'\n'*}
+[[ "$resolved_count" =~ ^[0-9]+$ ]] || resolved_count=0
+
+# Atomic write: `>` truncates the destination before jq runs, so a jq failure
+# under `set -euo pipefail` leaves analysis-YYYY-MM-DD.json zero bytes (#638).
+# Mirrors the file-integrity.sh baseline-write hardening from PRs #632/#635.
+_tmp_analysis=$(mktemp --tmpdir="${DATA_DIR}/logs" .analysis.XXXXXX)
+trap 'rm -f "$_past_signatures_file" "$_today_signatures_file" "$_tmp_analysis"' EXIT
 
 jq -n \
     --arg date "$TODAY" \
@@ -233,7 +252,9 @@ jq -n \
         },
         error_trend_7d: $error_trend,
         component_health: $components
-    }' > "$ANALYSIS_FILE"
+    }' > "$_tmp_analysis"
+
+mv -f "$_tmp_analysis" "$ANALYSIS_FILE"
 
 cp "$ANALYSIS_FILE" "$ANALYSIS_LATEST"
 
