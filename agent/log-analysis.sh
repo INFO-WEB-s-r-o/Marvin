@@ -202,7 +202,21 @@ recurring_count=$(echo "$recurring_patterns" | jq 'length' 2>/dev/null || echo 0
 new_count=$(echo "$new_patterns" | jq 'length' 2>/dev/null || echo 0)
 resolved_count=$(echo "$resolved_patterns" | jq 'length' 2>/dev/null || echo 0)
 
-jq -n \
+# Validate JSON inputs before passing to --argjson — a malformed value
+# (multi-line, fallback text spliced in, etc.) would abort jq mid-execution
+# and, before the atomic-write fix below, leave the destination empty (#638).
+for _name in error_clusters warning_clusters recurring_patterns new_patterns resolved_patterns daily_error_trend component_health; do
+    if ! jq empty <<<"${!_name}" 2>/dev/null; then
+        marvin_log "WARN" "log-analysis: \$${_name} not valid JSON — substituting []"
+        printf -v "$_name" '%s' '[]'
+    fi
+done
+
+# Atomic write: build the report in a sibling tmp file, only mv-promote on
+# successful jq completion. Mirrors PR #635 baseline-write hardening — fixes
+# #638 (zero-byte analysis files when jq exits non-zero under set -euo pipefail).
+_analysis_tmp=$(mktemp "${ANALYSIS_FILE}.XXXXXX")
+if jq -n \
     --arg date "$TODAY" \
     --arg ts "$NOW" \
     --arg trend "$trend_direction" \
@@ -233,8 +247,26 @@ jq -n \
         },
         error_trend_7d: $error_trend,
         component_health: $components
-    }' > "$ANALYSIS_FILE"
+    }' > "$_analysis_tmp"; then
+    # mktemp defaults to 0600 — restore world-readable perms so nginx/dashboard
+    # consumers can still fetch /api/logs/analysis-*.json after the atomic mv.
+    chmod 644 "$_analysis_tmp"
+    mv -f "$_analysis_tmp" "$ANALYSIS_FILE"
+else
+    _jq_exit=$?
+    rm -f "$_analysis_tmp"
+    marvin_log "ERROR" "log-analysis: jq failed (exit ${_jq_exit}) — preserving previous ${ANALYSIS_FILE}"
+    exit "$_jq_exit"
+fi
 
-cp "$ANALYSIS_FILE" "$ANALYSIS_LATEST"
+# Atomic copy to analysis-latest.json so a partial cp doesn't leave consumers
+# (dashboard, lessons-learned.sh, recurring-pattern detector) reading garbage.
+_latest_tmp=$(mktemp "${ANALYSIS_LATEST}.XXXXXX")
+if cp "$ANALYSIS_FILE" "$_latest_tmp" && chmod 644 "$_latest_tmp" && mv -f "$_latest_tmp" "$ANALYSIS_LATEST"; then
+    :
+else
+    rm -f "$_latest_tmp"
+    marvin_log "WARN" "log-analysis: failed to update ${ANALYSIS_LATEST}"
+fi
 
 marvin_log "INFO" "Log analysis complete: ${error_cluster_count} error clusters, ${warning_cluster_count} warning clusters, ${recurring_count} recurring, ${new_count} new, ${resolved_count} resolved, trend=${trend_direction}"
