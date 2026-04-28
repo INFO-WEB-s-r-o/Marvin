@@ -111,11 +111,7 @@ fi
 # ─── Key events (first occurrence of notable log messages) ───────────────────
 _event_lines=$(_grep -iE '(Starting Claude|complete|Created|Pushed|Merged|Killed|Failed|fixed|Committed)' "$LOG_FILE")
 if [[ -n "$_event_lines" ]]; then
-    # awk 'NR<=20' instead of 'head -20': head closes its stdin after 20 lines,
-    # causing upstream grep -v to SIGPIPE (exit 141) under pipefail and crashing
-    # the whole script. awk reads to EOF but only emits the first 20 lines, so
-    # no upstream pipe ever closes early. Same root cause as hourly-check.sh
-    # SIGPIPE fix from 2026-03-20.
+    # awk avoids SIGPIPE under pipefail: head -20 closes stdin early → grep -v exits 141
     key_events=$(echo "$_event_lines" \
         | grep -v 'Health monitor complete' \
         | awk 'NR<=20' \
