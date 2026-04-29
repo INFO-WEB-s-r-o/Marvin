@@ -15,13 +15,6 @@
       "host": "ai4shops.com",
       "url": "https://ai4shops.com/",
       "checks": ["http", "ssl", "dns"]
-    },
-    {
-      "id": "vedos-ewm",
-      "name": "Vedos EWM",
-      "host": "vedos.cz",
-      "url": "https://vedos.cz/ewm/",
-      "checks": ["http", "ssl", "dns"]
     }
   ]
 }
