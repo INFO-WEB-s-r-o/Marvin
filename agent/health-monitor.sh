@@ -436,24 +436,44 @@ if ! systemctl is-active --quiet marvin-web 2>/dev/null; then
 fi
 
 # ─── Website selfcheck ─────────────────────────────────────────────────────
-# Verify the live site is actually serving content
+# Verify the live site is actually serving content. Single curl call gets
+# both body and HTTP code, fixing two bugs from the previous two-curl flow:
+#   (a) "HTTP 000000" log artifact — when curl --max-time fired, both
+#       `-w '%{http_code}'` ("000") and the `|| echo "000"` fallback ran,
+#       concatenating two "000" strings. Visible in 2026-04-19 17:20:12 log.
+#   (b) Flaky WARN "Website body missing expected content" from a body fetch
+#       that succeeded with HTTP 200 but returned truncated/empty bytes
+#       (4 false positives across April 2026: 04-18, 04-26, 04-29, etc.).
+# Now retries once on any transient failure before alerting — same approach
+# used by the JS asset check below (line ~511) for non-404 HTTP errors.
 SITE_URL="https://robot-marvin.cz"
 SITE_OK=true
+http_code="000"
+page_body=""
 
-# Check 1: Main page returns 200 and contains expected content
-http_code=$(curl -so /dev/null -w '%{http_code}' --max-time 10 "${SITE_URL}/" 2>/dev/null || echo "000")
-if [[ "$http_code" != "200" ]]; then
-    ISSUES+=("CRITICAL: Website ${SITE_URL} returned HTTP ${http_code}")
-    marvin_log "CRITICAL" "Website returned HTTP ${http_code}"
-    SITE_OK=false
-else
-    # Verify page contains the expected footer/header marker
-    page_body=$(curl -s --max-time 10 "${SITE_URL}/" 2>/dev/null || echo "")
-    if ! echo "$page_body" | grep -q 'Marvin'; then
-        ISSUES+=("WARNING: Website returned 200 but missing 'Marvin' marker in body")
-        marvin_log "WARN" "Website body missing expected content"
-        SITE_OK=false
+for _attempt in 1 2; do
+    # \x1F (Unit Separator) is a control character that won't appear in HTML.
+    # Splitting on it lets us extract the HTTP code without a second round trip.
+    site_response=$(curl -s --max-time 10 -w $'\x1F%{http_code}' "${SITE_URL}/" 2>/dev/null || true)
+    http_code="${site_response##*$'\x1F'}"
+    page_body="${site_response%$'\x1F'*}"
+    # Defensive: a corrupted/partial response could leave http_code non-numeric
+    [[ "$http_code" =~ ^[0-9]{3}$ ]] || http_code="000"
+
+    if [[ "$http_code" == "200" ]] && grep -q 'Marvin' <<< "$page_body"; then
+        break
     fi
+    [[ "$_attempt" -eq 1 ]] && sleep 3
+done
+
+if [[ "$http_code" != "200" ]]; then
+    ISSUES+=("CRITICAL: Website ${SITE_URL} returned HTTP ${http_code} (after retry)")
+    marvin_log "CRITICAL" "Website returned HTTP ${http_code} (after retry)"
+    SITE_OK=false
+elif ! grep -q 'Marvin' <<< "$page_body"; then
+    ISSUES+=("WARNING: Website returned 200 but missing 'Marvin' marker in body (after retry)")
+    marvin_log "WARN" "Website body missing expected content (after retry)"
+    SITE_OK=false
 fi
 
 # Check 2: Blog API returns dates
