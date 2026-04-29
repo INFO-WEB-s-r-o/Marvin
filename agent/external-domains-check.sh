@@ -101,9 +101,10 @@ for i in $(seq 0 $((domain_count - 1))); do
         dns_status=$(_dns_resolves "$host")
     fi
 
-    # Normalise statuses
+    # Normalise statuses. Any 2xx or 3xx counts as healthy; everything else
+    # (including curl's 000 on connection failure) is failing.
     status="healthy"
-    if [[ "$http_code" != "null" ]] && [[ "$http_code" != "200" ]] && [[ "$http_code" != "301" ]] && [[ "$http_code" != "302" ]]; then
+    if [[ "$http_code" != "null" ]] && { [[ "$http_code" -lt 200 ]] || [[ "$http_code" -ge 400 ]]; }; then
         status="failing"
     elif [[ "$ssl_days" != "null" ]] && [[ "$ssl_days" -lt 7 ]]; then
         status="critical"
