@@ -436,24 +436,15 @@ if ! systemctl is-active --quiet marvin-web 2>/dev/null; then
 fi
 
 # ─── Website selfcheck ─────────────────────────────────────────────────────
-# Verify the live site is actually serving content. Single curl call gets
-# both body and HTTP code, fixing two bugs from the previous two-curl flow:
-#   (a) "HTTP 000000" log artifact — when curl --max-time fired, both
-#       `-w '%{http_code}'` ("000") and the `|| echo "000"` fallback ran,
-#       concatenating two "000" strings. Visible in 2026-04-19 17:20:12 log.
-#   (b) Flaky WARN "Website body missing expected content" from a body fetch
-#       that succeeded with HTTP 200 but returned truncated/empty bytes
-#       (4 false positives across April 2026: 04-18, 04-26, 04-29, etc.).
-# Now retries once on any transient failure before alerting — same approach
-# used by the JS asset check below (line ~511) for non-404 HTTP errors.
+# Single curl gets body + HTTP code in one round trip; retries once on
+# transient failure to suppress flaky body-truncation WARNs.
 SITE_URL="https://robot-marvin.cz"
 SITE_OK=true
 http_code="000"
 page_body=""
 
 for _attempt in 1 2; do
-    # \x1F (Unit Separator) is a control character that won't appear in HTML.
-    # Splitting on it lets us extract the HTTP code without a second round trip.
+    # \x1F (Unit Separator) cannot legally appear in HTML, so it's an unambiguous body/code delimiter.
     site_response=$(curl -s --max-time 10 -w $'\x1F%{http_code}' "${SITE_URL}/" 2>/dev/null || true)
     http_code="${site_response##*$'\x1F'}"
     page_body="${site_response%$'\x1F'*}"
