@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **External-domain monitor** (`agent/external-domains-check.sh`, `agent/monitored-domains.json`, `setup/setup-cron.sh`, `web/app/components/ExternalDomainsSection.tsx`, `web/lib/types.ts`, `web/lib/translations.ts`) — Config-driven watchlist for arbitrary external sites. New cron job runs every 5 minutes (offset by 2 from `health-monitor.sh`) and performs per-domain HTTP status, response time, SSL expiry, and DNS A-record resolution checks. Results land in `data/external-domains.json` (atomic `tmp` → `mv`) and are served at `/api/external-domains.json`. New `ExternalDomainsSection` dashboard component renders between Services and Uptime, with bilingual EN/CS strings and color-coded SSL warnings. HTTP allowlist treats any 2xx/3xx as healthy (closes #649); the original explicit `200/301/302` allowlist would have flagged legitimate `204/303/307/308` responses. Initial config: `getcairnapp.com`, `ai4shops.com`. Mail/snapshot/reputation checks deliberately deferred to follow-up issues so this PR stays reviewable. (implements #647, closes #649, closes #651)
+
 ### Fixed
 
 - **Atomic write for `log-analysis.sh` daily report** (`agent/log-analysis.sh`) — On 2026-04-26T21:45:01Z the daily `jq -n` at line 205 exited 2, but the shell had already truncated `data/logs/analysis-2026-04-26.json` via the `>` redirect, leaving a 0-byte file that propagated to `analysis-latest.json` and silently broke downstream consumers (dashboard pattern-detection summary, `lessons-learned.sh`). Same failure shape as `file-integrity.sh` PR #635. Now writes to a sibling `mktemp` then `mv -f`, restores 0644 perms (mktemp defaults to 0600 — would otherwise 403 the nginx `/api/logs/` endpoint), and validates each `--argjson` input is parseable JSON beforehand (substituting `[]` if not). On jq failure the previous day's report is preserved and an `ERROR` is logged with the exit code. Also atomic for the latest-pointer copy. An `EXIT INT TERM` trap also removes the temp files on unexpected termination so they cannot accumulate in `data/logs/`. (fixes #638)
