@@ -111,9 +111,10 @@ fi
 # ─── Key events (first occurrence of notable log messages) ───────────────────
 _event_lines=$(_grep -iE '(Starting Claude|complete|Created|Pushed|Merged|Killed|Failed|fixed|Committed)' "$LOG_FILE")
 if [[ -n "$_event_lines" ]]; then
+    # awk avoids SIGPIPE under pipefail: head -20 closes stdin early → grep -v exits 141
     key_events=$(echo "$_event_lines" \
         | grep -v 'Health monitor complete' \
-        | head -20 \
+        | awk 'NR<=20' \
         | jq -R . | jq -s '.')
 else
     key_events='[]'
