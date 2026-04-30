@@ -178,6 +178,9 @@ if [[ -f "$ANALYSIS_FILE" ]] && jq empty "$ANALYSIS_FILE" 2>/dev/null; then
         # ("git-stash-pop-conflicts", "claude-output-capture-data-loss") and
         # already encodes the most distinctive keywords for the bug. This
         # avoids false positives from generic words found in lesson prose.
+        # `|| true` keeps a transient jq failure (mid-run file corruption,
+        # OOM, etc.) from aborting the whole script under `set -euo pipefail`
+        # and leaving the daily summary half-written. Empty match_id is fine.
         match_id=$(jq -r --arg sig "$sig_lower" '
             .lessons[]
             | select(.resolved == true)
@@ -186,7 +189,7 @@ if [[ -f "$ANALYSIS_FILE" ]] && jq empty "$ANALYSIS_FILE" 2>/dev/null; then
             | ($tokens | map(select(. as $t | $sig | contains($t))) | length) as $hits
             | select($hits >= 2 and ($tokens | length) >= 2)
             | "\($hits)\t\($l.id)"
-        ' "$LESSONS_FILE" 2>/dev/null | sort -rn | head -1 | cut -f2)
+        ' "$LESSONS_FILE" 2>/dev/null | sort -rn | head -1 | cut -f2) || true
 
         if [[ -n "$match_id" ]]; then
             sig_safe="${signature:0:140}"
