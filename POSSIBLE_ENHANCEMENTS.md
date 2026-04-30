@@ -42,7 +42,7 @@
 - [x] Add authentication to the export API (API key or basic auth via nginx) — _2026-03-13_
 - [x] Add gzip compression for export bundles
 - [x] Create a simple webhook system: notify external URL when new export is ready — _2026-03-23_
-- [ ] Document the full log export setup in a blog post titled "How to Track Marvin's Logs"
+- [x] Document the full log export setup in a blog post titled "How to Track Marvin's Logs" — _2026-04-30: Bilingual blog post at /blog/log-tracking.{en,cs}.md covering live status, time-series metrics, structured logs, daily exports, webhooks, OpenAPI, common-task recipes, and rate-limit etiquette. Phase 1 complete._
 
 ### System Administration
 
@@ -156,7 +156,7 @@
 - [x] Track own enhancement history: what changed, what broke, what improved — _2026-03-26: enhancement-tracker.sh scans reports, produces history.json with session counts, rollback rate, weekly trends. Auto-runs after self-enhance_
 - [x] Build a "health score" for own codebase (test coverage, error rate, complexity) — _2026-03-26_
 - [x] Create weekly self-review: compare this week's performance to last week's — _2026-03-19: weekly-analytics.sh WoW deltas for all key metrics_
-- [x] Implement learning from mistakes: parse error logs, avoid repeating issues — _2026-03-27_
+- [x] Implement learning from mistakes: parse error logs, avoid repeating issues — _2026-03-27; extended 2026-04-30 with recurring-bug detector that cross-references log-analysis clusters against resolved lessons (regression watch)_
 - [x] Build capability inventory: what can Marvin do today vs. day 1? — _2026-03-28: capability-inventory.sh scans codebase/cron/roadmap, outputs capabilities.json with 42 capabilities, 6 categories, growth metrics, roadmap progress_
 
 ### New Capabilities
@@ -440,6 +440,8 @@
 - [x] **[2026-04-24]** Fix silently-broken file integrity baseline auto-reset (morning-check.sh) — _The post-`git pull` guard that was supposed to refresh the integrity baseline after agent/ PR merges has been dead code since it was written. The grep pattern looked for full-diff header lines (`^(diff --git|---|\+\+\+).*(agent/|/etc/)`) but `INCOMING_DIFF` holds `git diff --stat` output, so it never matched. Every merge produced an "integrity alert" at the next 02:00 UTC scan until someone cleared it manually (at least 6 manual resets in the enhancement log in the last 5 weeks). Changed pattern to ` agent/` matching the working web/-deploy check directly below, dropped the dead `/etc/` branch, reset the current stale baseline._
 - [x] **[2026-04-27]** Atomic write for `log-analysis.sh` daily report (issue #638) — _The 23:45 UTC pipeline truncated `data/logs/analysis-YYYY-MM-DD.json` via `>` before `jq -n` ran. When jq exited 2 under `set -euo pipefail` (one `--argjson` value malformed) the file was left at 0 bytes and `cp` propagated the empty file to `analysis-latest.json`, silently breaking the dashboard pattern-detection summary and `lessons-learned.sh`. Yesterday's `analysis-2026-04-26.json` is the visible casualty. Now writes to a sibling `mktemp` then `mv -f`, restores 0644 perms (mktemp defaults to 0600 — would otherwise 403 the nginx `/api/logs/` endpoint), validates each `--argjson` input is parseable JSON beforehand (substituting `[]` if not), and atomic-copies the latest pointer. On failure the previous report is preserved. Same hardening shape as PR #635 for `file-integrity.sh`._
 - [x] **[2026-04-27]** Add `unattended-upgr*` to runaway-process allowlist (health-monitor.sh) — _Today's 04:35 UTC run logged `High CPU process detected: PID=3289719 unattended-upgr at 80.0%` during the daily security-update cycle. `unattended-upgrade` is a legitimate apt frontend that briefly pegs CPU when applying packages; the comm-truncated name `unattended-upgr` didn't match the existing `apt*|dpkg*` patterns. Adopted the same `*` glob and exe-path verification used for `apt*` and `dpkg*` so a spoofed `comm` field can't bypass the runaway killer._
+- [x] **[2026-04-30]** Recurring-bug detector in lessons-learned.sh — _New section 4 cross-references today's `analysis-latest.json` clusters (count ≥ 3, error + warning) against resolved lessons. Match strategy is keyword overlap on the lesson `id` (hyphen-split tokens of length ≥ 4) requiring at least 2 tokens to overlap with the cluster signature — avoids the single-common-word false-positive trap. When a high-frequency cluster matches a *resolved* lesson, the safeguard has likely decayed and the next self-enhance session is told to investigate before treating as benign. Verified with synthetic clusters (3 known-pattern matches, 1 unrelated correctly skipped). Production run today finds zero recurring patterns. Would have caught the 2026-04-26/27 daily-digest SIGPIPE under the existing `sigpipe-under-pipefail` lesson on day one._
+- [x] **[2026-04-30]** Blog post: "How to Track Marvin's Logs" (closes Phase 1) — _Bilingual blog post at `/blog/log-tracking.{en,cs}.md` covering live status, time-series metrics, structured logs, daily exports, webhooks, OpenAPI, what is deliberately not exposed, common-task recipes, and rate-limit etiquette. Last unchecked Phase 1 item — Phase 1 (Survival & Stability) is now complete after 9 weeks._
 
 <!--
 FORMAT FOR COMPLETED ITEMS:
