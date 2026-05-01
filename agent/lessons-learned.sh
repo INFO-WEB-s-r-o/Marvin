@@ -147,4 +147,86 @@ else
     marvin_log "INFO" "No new recurring patterns detected"
 fi
 
+# ─── 4. Recurring-bug detector (regression watcher) ──────────────────────────
+# Cross-reference today's log-analysis clusters against existing lessons.
+# When a high-frequency cluster matches a *resolved* lesson by keyword, that
+# is a likely regression — the safeguard the lesson recorded has either
+# decayed, been bypassed, or is incomplete. Surface it to the next
+# self-enhance session so we don't quietly relearn the same bug.
+#
+# Motivation: the 2026-04-26/27 daily-digest SIGPIPE issue would have been
+# caught earlier had we noticed exit-code 141 patterns matching the
+# existing `sigpipe-under-pipefail` lesson.
+
+ANALYSIS_FILE="${LOGS_DIR}/analysis-latest.json"
+RECURRING=""
+recurring_count=0
+
+if [[ ! -f "$LESSONS_FILE" ]] || ! jq empty "$LESSONS_FILE" 2>/dev/null; then
+    # Defense-in-depth: section 1 already exits if LESSONS_FILE is missing/invalid,
+    # but a corruption between sections (truncate, OOM, concurrent writer) would
+    # otherwise silently produce empty match_id every iteration and falsely log
+    # "No recurring resolved-lesson patterns detected". Surface it instead.
+    marvin_log "WARN" "lessons-learned.json missing or invalid — skipping recurring-bug detection"
+elif [[ -f "$ANALYSIS_FILE" ]] && jq empty "$ANALYSIS_FILE" 2>/dev/null; then
+    # Iterate clusters with count >= 3 from both error_clusters and warning_clusters.
+    # Each cluster is "<count>\t<signature>" — tab-separated for safe parsing
+    # since signatures contain spaces and most punctuation but never literal tabs.
+    while IFS=$'\t' read -r count signature; do
+        [[ -z "$signature" || -z "$count" || "$count" -lt 3 ]] && continue
+
+        # Lowercase the signature and reduce non-word chars to spaces so
+        # token matching is consistent regardless of punctuation.
+        sig_lower=$(echo "$signature" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' ' ')
+
+        # Match a lesson when at least 2 of its ID tokens (length >= 4) appear
+        # in the signature. The lesson `id` is hyphen-separated by convention
+        # ("git-stash-pop-conflicts", "claude-output-capture-data-loss") and
+        # already encodes the most distinctive keywords for the bug. This
+        # avoids false positives from generic words found in lesson prose.
+        # `|| true` keeps a transient jq failure (mid-run file corruption,
+        # OOM, etc.) from aborting the whole script under `set -euo pipefail`
+        # and leaving the daily summary half-written. Empty match_id is fine.
+        match_id=$(jq -r --arg sig "$sig_lower" '
+            .lessons[]
+            | select(.resolved == true)
+            | . as $l
+            | ($l.id | ascii_downcase | split("-") | map(select(length >= 4))) as $tokens
+            | ($tokens | map(select(. as $t | $sig | contains($t))) | length) as $hits
+            | select($hits >= 2 and ($tokens | length) >= 2)
+            | "\($hits)\t\($l.id)"
+        ' "$LESSONS_FILE" 2>/dev/null | sort -rn | head -1 | cut -f2) || true
+
+        if [[ -n "$match_id" ]]; then
+            sig_safe="${signature:0:140}"
+            sig_safe=$(printf '%s' "$sig_safe" | tr -cd 'a-zA-Z0-9 /:_.,-')
+            RECURRING="${RECURRING}  - (${count}x) **${match_id}** — ${sig_safe}"$'\n'
+            recurring_count=$((recurring_count + 1))
+        fi
+    done < <(jq -r '
+        ((.error_clusters // []) + (.warning_clusters // []))
+        | map(select(.count >= 3))
+        | .[]
+        | "\(.count)\t\(.signature)"
+    ' "$ANALYSIS_FILE" 2>/dev/null)
+
+    if [[ "$recurring_count" -gt 0 ]]; then
+        marvin_log "WARN" "Found ${recurring_count} recurring pattern(s) matching resolved lessons — possible regression"
+        {
+            echo ""
+            echo "## Recurring Bugs (regression watch)"
+            echo ""
+            echo "> The following error clusters from today's log analysis match lessons"
+            echo "> already marked **resolved**. The safeguard may have decayed, been"
+            echo "> bypassed, or be incomplete. Investigate before assuming this is benign."
+            echo ""
+            printf '%s' "$RECURRING"
+        } >> "$LESSONS_SUMMARY"
+    else
+        marvin_log "INFO" "No recurring resolved-lesson patterns detected"
+    fi
+else
+    marvin_log "INFO" "No log-analysis-latest.json — skipping recurring-bug detection"
+fi
+
 marvin_log "INFO" "=== LESSONS LEARNED MAINTENANCE COMPLETE ==="
