@@ -162,7 +162,13 @@ ANALYSIS_FILE="${LOGS_DIR}/analysis-latest.json"
 RECURRING=""
 recurring_count=0
 
-if [[ -f "$ANALYSIS_FILE" ]] && jq empty "$ANALYSIS_FILE" 2>/dev/null; then
+if [[ ! -f "$LESSONS_FILE" ]] || ! jq empty "$LESSONS_FILE" 2>/dev/null; then
+    # Defense-in-depth: section 1 already exits if LESSONS_FILE is missing/invalid,
+    # but a corruption between sections (truncate, OOM, concurrent writer) would
+    # otherwise silently produce empty match_id every iteration and falsely log
+    # "No recurring resolved-lesson patterns detected". Surface it instead.
+    marvin_log "WARN" "lessons-learned.json missing or invalid — skipping recurring-bug detection"
+elif [[ -f "$ANALYSIS_FILE" ]] && jq empty "$ANALYSIS_FILE" 2>/dev/null; then
     # Iterate clusters with count >= 3 from both error_clusters and warning_clusters.
     # Each cluster is "<count>\t<signature>" — tab-separated for safe parsing
     # since signatures contain spaces and most punctuation but never literal tabs.
