@@ -95,6 +95,24 @@ export interface ThoughtsData {
   source_count: number;
 }
 
+export interface ExternalDomainData {
+  id: string;
+  name: string;
+  host: string;
+  url: string;
+  status: 'healthy' | 'warning' | 'critical' | 'failing';
+  http_code: number | null;
+  response_ms: number | null;
+  ssl_days: number | null;
+  dns: 'ok' | 'failing' | 'skipped';
+}
+
+export interface ExternalDomainsData {
+  timestamp: string;
+  count: number;
+  domains: ExternalDomainData[];
+}
+
 export interface BlogPostData {
   id: number;
   date: string;
