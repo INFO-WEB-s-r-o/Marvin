@@ -52,8 +52,15 @@ if command -v rkhunter &>/dev/null; then
 
     # Parse the log for summary
     if [[ -f "$RKHUNTER_LOG" ]]; then
-        rkhunter_warnings=$(grep -c '\[ Warning \]' "$RKHUNTER_LOG" 2>/dev/null | tr -d '[:space:]' || echo 0)
-        rkhunter_infected=$(grep -c '\[ Infected \]' "$RKHUNTER_LOG" 2>/dev/null | tr -d '[:space:]' || echo 0)
+        # `grep -c` always prints a count to stdout. With `|| echo 0`, when there
+        # are 0 matches grep exits 1 *after* printing "0", causing `||` to also
+        # print "0" — yielding "0\n0" or "00" (with `tr`), which corrupts the
+        # downstream JSON. Use `|| true` so we keep grep's count and only swallow
+        # the exit code. (Lesson: grep -c-double-output, 2026-05-01.)
+        rkhunter_warnings=$(grep -c '\[ Warning \]' "$RKHUNTER_LOG" 2>/dev/null || true)
+        rkhunter_infected=$(grep -c '\[ Infected \]' "$RKHUNTER_LOG" 2>/dev/null || true)
+        rkhunter_warnings=${rkhunter_warnings:-0}
+        rkhunter_infected=${rkhunter_infected:-0}
         rkhunter_summary=$(grep -E '\[ Warning \]|\[ Infected \]' "$RKHUNTER_LOG" 2>/dev/null | head -20 || echo "")
 
         if [[ "$rkhunter_infected" -gt 0 ]]; then
@@ -70,7 +77,8 @@ if command -v rkhunter &>/dev/null; then
         # suppressing unrelated warnings that might contain "root access".
         if [[ "$rkhunter_status" == "warnings" ]]; then
             _other_warnings=$(grep '\[ Warning \]' "$RKHUNTER_LOG" 2>/dev/null \
-                | grep -cv 'Checking if SSH root access is allowed' | tr -d '[:space:]' || echo 0)
+                | grep -cv 'Checking if SSH root access is allowed' || true)
+            _other_warnings=${_other_warnings:-0}
             if [[ "$_other_warnings" -eq 0 ]]; then
                 rkhunter_status="clean"
                 rkhunter_warnings=$(( rkhunter_warnings > 0 ? rkhunter_warnings - 1 : 0 ))
@@ -93,7 +101,8 @@ if command -v chkrootkit &>/dev/null; then
     CHKROOTKIT_OUTPUT=$(chkrootkit 2>&1) || true
 
     # chkrootkit reports "INFECTED" for actual findings
-    chkrootkit_infected=$(echo "$CHKROOTKIT_OUTPUT" | grep -c "INFECTED" 2>/dev/null | tr -d '[:space:]' || echo 0)
+    chkrootkit_infected=$(echo "$CHKROOTKIT_OUTPUT" | grep -c "INFECTED" 2>/dev/null || true)
+    chkrootkit_infected=${chkrootkit_infected:-0}
     chkrootkit_summary=$(echo "$CHKROOTKIT_OUTPUT" | grep "INFECTED" 2>/dev/null | head -20 || echo "")
 
     if [[ "$chkrootkit_infected" -gt 0 ]]; then
@@ -138,7 +147,8 @@ EXPECTED_PORTS="22 25 53 80 443 465 587 993 3000 3001 4317 4318 6379 8043 8889 9
 # Extract unique port numbers from listening sockets
 active_ports=$(echo "$listening_ports" | awk '{print $4}' | grep -oP '\d+$' | sort -un)
 # Count from deduplicated list to stay consistent with active_ports (avoids IPv4+IPv6 double-counting)
-port_count=$(echo "$active_ports" | grep -c '[0-9]' 2>/dev/null || echo 0)
+port_count=$(echo "$active_ports" | grep -c '[0-9]' 2>/dev/null || true)
+port_count=${port_count:-0}
 unexpected_ports=""
 unexpected_count=0
 unexpected_details_json="[]"
@@ -196,7 +206,8 @@ suspicious_conns="[]"
 suspicious_count=0
 
 if [[ -n "$established_output" ]]; then
-    established_count=$(echo "$established_output" | tail -n +2 | grep -c '[0-9]' 2>/dev/null || echo 0)
+    established_count=$(echo "$established_output" | tail -n +2 | grep -c '[0-9]' 2>/dev/null || true)
+    established_count=${established_count:-0}
 
     # Known safe destination ports: 80/443 (HTTP/S), 53 (DNS), 123 (NTP),
     # 587/465/25 (email sending), 22 (SSH from us)
@@ -486,7 +497,8 @@ if command -v geoiplookup &>/dev/null; then
         } | sort -u \
           | grep -Ev '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|::1|0\.0\.0\.0|$)' || true
     )
-    geo_total_ips=$(echo "$unique_ips" | grep -cE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' 2>/dev/null || echo 0)
+    geo_total_ips=$(echo "$unique_ips" | grep -cE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' 2>/dev/null || true)
+    geo_total_ips=${geo_total_ips:-0}
 
     if [[ "$geo_total_ips" -gt 0 ]]; then
         # Lookup each IP (cap at 500 to bound runtime), extract "CC, Country Name"
@@ -526,7 +538,7 @@ cat > "$GEO_FILE" << GEOEOF
   "geo_available": ${geo_available},
   "total_unique_ips": ${geo_total_ips},
   "country_count": ${geo_country_count},
-  "top_country": $(echo "$geo_top_country" | jq -Rs '.' 2>/dev/null || echo '"Unknown"'),
+  "top_country": $(printf '%s' "$geo_top_country" | jq -Rs '.' 2>/dev/null || echo '"Unknown"'),
   "countries": ${geo_data}
 }
 GEOEOF
@@ -678,7 +690,7 @@ cat > "$REPORT_FILE" << EOF
     "geo_available": ${geo_available},
     "geo_unique_ips": ${geo_total_ips},
     "geo_countries": ${geo_country_count},
-    "geo_top_country": $(echo "$geo_top_country" | jq -Rs '.' 2>/dev/null || echo '"Unknown"')
+    "geo_top_country": $(printf '%s' "$geo_top_country" | jq -Rs '.' 2>/dev/null || echo '"Unknown"')
   }
 }
 EOF

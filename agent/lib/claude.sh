@@ -65,8 +65,10 @@ run_claude() {
         echo ""
         return 2  # Distinct exit code: caller can distinguish timeout from failure
     fi
-    # Write holder info for debugging stale locks
-    echo "$$:${task_name}:$(date -u +%Y-%m-%dT%H:%M:%SZ)" >&"$lock_fd" 2>/dev/null || true
+    # Write holder info for debugging stale locks. Brace group prevents
+    # the redirection from competing with `2>/dev/null` when $lock_fd
+    # happens to resolve to fd 2 (shellcheck SC2261).
+    { echo "$$:${task_name}:$(date -u +%Y-%m-%dT%H:%M:%SZ)" >&"$lock_fd"; } 2>/dev/null || true
     marvin_log "INFO" "Claude lock acquired for ${task_name}" >&2
 
     # Collect system context to prepend
