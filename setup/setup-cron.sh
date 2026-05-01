@@ -30,6 +30,10 @@ MARVIN_DIR=/home/marvin/git
 # Collects system metrics, checks service health
 */5 * * * * root ${MARVIN_DIR}/agent/health-monitor.sh >> /var/log/marvin-health.log 2>&1
 
+# External-domain monitor — every 5 minutes (offset by 2 to spread load)
+# Reads agent/monitored-domains.json, checks HTTP/SSL/DNS for each
+2-59/5 * * * * root ${MARVIN_DIR}/agent/external-domains-check.sh >> /var/log/marvin-external.log 2>&1
+
 # Morning check — 06:00 UTC
 # Full system maintenance: updates, cleanup, security audit
 0 6 * * * root ${MARVIN_DIR}/agent/morning-check.sh >> /var/log/marvin-morning.log 2>&1

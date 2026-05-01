@@ -1,0 +1,20 @@
+{
+  "$schema": "Marvin external-domain monitor config",
+  "version": 1,
+  "domains": [
+    {
+      "id": "getcairnapp",
+      "name": "Cairn App",
+      "host": "getcairnapp.com",
+      "url": "https://getcairnapp.com/",
+      "checks": ["http", "ssl", "dns"]
+    },
+    {
+      "id": "ai4shops",
+      "name": "AI4Shops",
+      "host": "ai4shops.com",
+      "url": "https://ai4shops.com/",
+      "checks": ["http", "ssl", "dns"]
+    }
+  ]
+}

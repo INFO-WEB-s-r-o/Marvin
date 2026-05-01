@@ -7,6 +7,7 @@ import AlertsSection from './components/AlertsSection';
 import MetricsSection from './components/MetricsSection';
 import ChartSection from './components/ChartSection';
 import ServicesSection from './components/ServicesSection';
+import ExternalDomainsSection from './components/ExternalDomainsSection';
 import UptimeHeatmap from './components/UptimeHeatmap';
 import BlogSection from './components/BlogSection';
 import EvolutionSection from './components/EvolutionSection';
@@ -27,6 +28,7 @@ export default function Home() {
         <MetricsSection />
         <ChartSection />
         <ServicesSection />
+        <ExternalDomainsSection />
         <UptimeHeatmap />
         <BlogSection />
         <EvolutionSection />

@@ -49,6 +49,14 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     label_ping: "Ping (8.8.8.8):",
     label_https_rt: "HTTPS response:",
 
+    // External domains (issue #647)
+    section_external: "$ marvin --watchlist",
+    external_status_healthy: "UP",
+    external_status_warning: "WARN",
+    external_status_critical: "CRIT",
+    external_status_failing: "DOWN",
+    external_no_domains: "No external domains configured.",
+
     // Alerts / Incidents
     section_alerts: "$ marvin --alerts",
     alerts_critical: "{n} active alert(s) \u2014 CRITICAL",
@@ -202,6 +210,14 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     label_dns: "DNS:",
     label_ping: "Ping (8.8.8.8):",
     label_https_rt: "Odezva HTTPS:",
+
+    // External domains (issue #647)
+    section_external: "$ marvin --watchlist",
+    external_status_healthy: "UP",
+    external_status_warning: "WARN",
+    external_status_critical: "KRIT",
+    external_status_failing: "DOWN",
+    external_no_domains: "\u017d\u00e1dn\u00e9 extern\u00ed dom\u00e9ny.",
 
     // Alerts / Incidents
     section_alerts: "$ marvin --alerts",
