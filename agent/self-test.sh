@@ -215,10 +215,13 @@ _cron_combined=""
 [[ -f "$_cron_log_yesterday" ]] && _cron_combined="${_cron_combined}
 $(cat "$_cron_log_yesterday")"
 
-# Expected tasks and their log markers (task_name:log_marker)
+# Expected tasks and their log markers (task_name:log_marker).
+# Markers must match what the script ACTUALLY logs — health-monitor and
+# morning-check use marvin_log_json() which emits "Health monitor"/"Morning
+# check" rather than the all-caps banners the other scripts use.
 _cron_tasks=(
-    "health-monitor:HEALTH CHECK"
-    "morning-check:MORNING CHECK"
+    "health-monitor:Health monitor"
+    "morning-check:Morning check"
     "security-scan:SECURITY SCAN"
     "log-export:LOG EXPORT"
     "hourly-check:HOURLY CHECK"
@@ -229,7 +232,13 @@ _cron_missing=0
 for entry in "${_cron_tasks[@]}"; do
     task_name="${entry%%:*}"
     marker="${entry##*:}"
-    if echo "$_cron_combined" | grep -q "$marker" 2>/dev/null; then
+    # Use bash glob match instead of `echo "$big" | grep -q`. Under
+    # `set -o pipefail`, grep -q closes the pipe after the first match,
+    # echo gets SIGPIPE and exits 141, the pipeline exits 141, and
+    # `set -e` kills the script — or worse, the if-condition reads it
+    # as "no match" and reports a present cron task as missing. Same
+    # SIGPIPE-under-pipefail trap as daily-digest.sh (lesson 2026-04-28).
+    if [[ "$_cron_combined" == *"$marker"* ]]; then
         test_pass "cron ran: ${task_name}"
         _cron_ok=$((_cron_ok + 1))
     else
@@ -317,11 +326,20 @@ else
 fi
 
 # 9f. Security scan results (from security-scan.sh)
+# Validate JSON before extracting fields — a corrupt latest-scan.json (e.g.
+# from a buggy run that wrote malformed values like "0\n0") would otherwise
+# crash self-test under `set -e` with jq exit 5. Fall through to the
+# "no data" branch instead, so self-test still produces a report.
 LATEST_SCAN="${DATA_DIR}/security/latest-scan.json"
-if [[ -f "$LATEST_SCAN" ]]; then
+if [[ -f "$LATEST_SCAN" ]] && jq empty "$LATEST_SCAN" 2>/dev/null; then
     scan_status=$(jq -r '.overall_status // "unknown"' "$LATEST_SCAN" 2>/dev/null)
-    scan_infected=$(($(jq -r '.rkhunter.infected // 0' "$LATEST_SCAN" 2>/dev/null) + $(jq -r '.chkrootkit.infected // 0' "$LATEST_SCAN" 2>/dev/null)))
+    rk_infected=$(jq -r '.rkhunter.infected // 0' "$LATEST_SCAN" 2>/dev/null)
+    ck_infected=$(jq -r '.chkrootkit.infected // 0' "$LATEST_SCAN" 2>/dev/null)
+    [[ "$rk_infected" =~ ^[0-9]+$ ]] || rk_infected=0
+    [[ "$ck_infected" =~ ^[0-9]+$ ]] || ck_infected=0
+    scan_infected=$((rk_infected + ck_infected))
     world_writable=$(jq -r '.file_integrity.world_writable_count // 0' "$LATEST_SCAN" 2>/dev/null)
+    [[ "$world_writable" =~ ^[0-9]+$ ]] || world_writable=0
 
     if [[ "$scan_infected" -gt 0 ]]; then
         SEC_DETAILS+=("rootkit_scan: INFECTED (-40)")
