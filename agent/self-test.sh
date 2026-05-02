@@ -357,20 +357,28 @@ SECURITY_TXT="${MARVIN_DIR}/web/public/.well-known/security.txt"
 if [[ -f "$SECURITY_TXT" ]]; then
     sec_expires=$(grep -m1 -iE '^Expires:' "$SECURITY_TXT" 2>/dev/null | sed -E 's/^[Ee]xpires:[[:space:]]*//' | tr -d '\r' || true)
     if [[ -n "$sec_expires" ]]; then
-        sec_expires_epoch=$(date -d "$sec_expires" +%s 2>/dev/null || echo 0)
+        # Strip fractional seconds (e.g. .000Z) — older GNU date refuses to parse them.
+        # Bug #671: epoch-0 fallback would otherwise score "expired (-10)" indefinitely.
+        sec_expires_clean=$(printf '%s' "$sec_expires" | sed -E 's/\.[0-9]+(Z|[+-][0-9:]+)?$/\1/')
+        sec_expires_epoch=$(date -d "$sec_expires_clean" +%s 2>/dev/null || echo 0)
         sec_now_epoch=$(date +%s)
-        sec_days=$(( (sec_expires_epoch - sec_now_epoch) / 86400 ))
-        if [[ "$sec_days" -gt 90 ]]; then
-            SEC_DETAILS+=("security_txt: valid ${sec_days}d (+0)")
-        elif [[ "$sec_days" -gt 30 ]]; then
-            SEC_DETAILS+=("security_txt: expiring in ${sec_days}d (-2)")
+        if [[ "$sec_expires_epoch" -eq 0 ]]; then
+            SEC_DETAILS+=("security_txt: unparseable Expires '${sec_expires}' (-2)")
             SEC_SCORE=$((SEC_SCORE - 2))
-        elif [[ "$sec_days" -gt 0 ]]; then
-            SEC_DETAILS+=("security_txt: critical — ${sec_days}d left (-5)")
-            SEC_SCORE=$((SEC_SCORE - 5))
         else
-            SEC_DETAILS+=("security_txt: expired (-10)")
-            SEC_SCORE=$((SEC_SCORE - 10))
+            sec_days=$(( (sec_expires_epoch - sec_now_epoch) / 86400 ))
+            if [[ "$sec_days" -gt 90 ]]; then
+                SEC_DETAILS+=("security_txt: valid ${sec_days}d (+0)")
+            elif [[ "$sec_days" -gt 30 ]]; then
+                SEC_DETAILS+=("security_txt: expiring in ${sec_days}d (-2)")
+                SEC_SCORE=$((SEC_SCORE - 2))
+            elif [[ "$sec_days" -gt 0 ]]; then
+                SEC_DETAILS+=("security_txt: critical — ${sec_days}d left (-5)")
+                SEC_SCORE=$((SEC_SCORE - 5))
+            else
+                SEC_DETAILS+=("security_txt: expired (-10)")
+                SEC_SCORE=$((SEC_SCORE - 10))
+            fi
         fi
     else
         SEC_DETAILS+=("security_txt: malformed — no Expires field (-2)")
