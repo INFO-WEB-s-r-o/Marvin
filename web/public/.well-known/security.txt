@@ -1,0 +1,6 @@
+Contact: mailto:stancik@infowebsro.cz
+Contact: https://github.com/INFO-WEB-s-r-o/Marvin/security/advisories/new
+Expires: 2027-05-01T00:00:00.000Z
+Encryption: https://robot-marvin.cz/.well-known/marvin-gpg.asc
+Preferred-Languages: en, cs
+Canonical: https://robot-marvin.cz/.well-known/security.txt
