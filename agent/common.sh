@@ -307,11 +307,15 @@ marvin_rebuild_web() {
         if [[ ! -d "${web_dir}/node_modules" ]] || \
            [[ "${web_dir}/package-lock.json" -nt "${web_dir}/node_modules" ]]; then
             marvin_log "INFO" "Installing web dependencies..."
+            # Pipe lives OUTSIDE su -c: the bash spawned by `su -c` starts
+            # without `pipefail`, so an `npm ci ... | tail -5` inside the -c
+            # string would let `tail` mask npm's non-zero exit. Keeping the pipe
+            # at this level lets parent pipefail propagate npm's status. (#680/#681)
             local _ci_ok=true
             if [[ "$_drop_to_marvin" == "true" ]]; then
-                su -s /bin/bash marvin -c 'cd "$1" && npm ci --production=false 2>&1 | tail -5' -- "$web_dir" || _ci_ok=false
+                su -s /bin/bash marvin -c 'cd "$1" && npm ci --production=false' -- "$web_dir" 2>&1 | tail -5 || _ci_ok=false
             else
-                (cd "$web_dir" && npm ci --production=false 2>&1 | tail -5) || _ci_ok=false
+                (cd "$web_dir" && npm ci --production=false) 2>&1 | tail -5 || _ci_ok=false
             fi
             if [[ "$_ci_ok" != "true" ]]; then
                 marvin_log "ERROR" "npm ci failed — aborting rebuild (reason: ${reason})"
