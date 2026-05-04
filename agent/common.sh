@@ -273,6 +273,15 @@ marvin_rebuild_web() {
 
         marvin_log "INFO" "Web rebuild starting (reason: ${reason})"
 
+        # Drop to marvin user for npm operations when running as root.
+        # Cron runs this as root; without privilege drop, npm creates
+        # root-owned files in .next/ and node_modules/. Subsequent
+        # deploy-web.sh runs (which already drop to marvin via su) then
+        # fail with EACCES — see lesson `npm-as-root-creates-bad-ownership`.
+        # Mirrors the _run_npm pattern in deploy-web.sh.
+        local _drop_to_marvin=false
+        [[ $EUID -eq 0 ]] && _drop_to_marvin=true
+
         # Backup current build for rollback
         if [[ -d "${web_dir}/.next" ]]; then
             cp -a "${web_dir}/.next" "$backup_dir" 2>/dev/null || true
@@ -281,11 +290,30 @@ marvin_rebuild_web() {
         # Prune old backups — keep only the 3 most recent
         ls -dt "${web_dir}"/.next-backup-* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/null || true
 
+        # If a previous root-owned run left files behind, fix ownership before
+        # npm runs as marvin — otherwise `npm ci` fails with EACCES on unlink.
+        if [[ "$_drop_to_marvin" == "true" ]]; then
+            if [[ -d "${web_dir}/node_modules" ]] && find "${web_dir}/node_modules" -not -user marvin -print -quit 2>/dev/null | grep -q .; then
+                marvin_log "WARN" "Found root-owned files in node_modules — fixing ownership"
+                chown -R marvin:marvin "${web_dir}/node_modules" 2>/dev/null || true
+            fi
+            if [[ -d "${web_dir}/.next" ]] && find "${web_dir}/.next" -not -user marvin -print -quit 2>/dev/null | grep -q .; then
+                marvin_log "WARN" "Found root-owned files in .next — fixing ownership"
+                chown -R marvin:marvin "${web_dir}/.next" 2>/dev/null || true
+            fi
+        fi
+
         # Install deps if node_modules missing or package-lock.json changed
         if [[ ! -d "${web_dir}/node_modules" ]] || \
            [[ "${web_dir}/package-lock.json" -nt "${web_dir}/node_modules" ]]; then
             marvin_log "INFO" "Installing web dependencies..."
-            if ! (cd "$web_dir" && npm ci --production=false 2>&1 | tail -5); then
+            local _ci_ok=true
+            if [[ "$_drop_to_marvin" == "true" ]]; then
+                su -s /bin/bash marvin -c "cd '$web_dir' && npm ci --production=false 2>&1 | tail -5" || _ci_ok=false
+            else
+                (cd "$web_dir" && npm ci --production=false 2>&1 | tail -5) || _ci_ok=false
+            fi
+            if [[ "$_ci_ok" != "true" ]]; then
                 marvin_log "ERROR" "npm ci failed — aborting rebuild (reason: ${reason})"
                 rm -rf "$backup_dir" 2>/dev/null || true
                 exit 1
@@ -294,8 +322,13 @@ marvin_rebuild_web() {
 
         # Build
         marvin_log "INFO" "Running next build..."
-        local build_output
-        if ! build_output=$(cd "$web_dir" && timeout 300 npm run build 2>&1); then
+        local build_output build_ok=true
+        if [[ "$_drop_to_marvin" == "true" ]]; then
+            build_output=$(su -s /bin/bash marvin -c "cd '$web_dir' && timeout 300 npm run build" 2>&1) || build_ok=false
+        else
+            build_output=$(cd "$web_dir" && timeout 300 npm run build 2>&1) || build_ok=false
+        fi
+        if [[ "$build_ok" != "true" ]]; then
             marvin_log "ERROR" "next build failed — rolling back (reason: ${reason})"
             marvin_log "ERROR" "Build output: $(echo "$build_output" | tail -20)"
             if [[ -d "$backup_dir" ]]; then
@@ -303,6 +336,13 @@ marvin_rebuild_web() {
                 mv "$backup_dir" "${web_dir}/.next"
             fi
             exit 1
+        fi
+
+        # Defense-in-depth: ensure .next is fully marvin-owned regardless of
+        # which path produced it. The marvin-web service runs as marvin and
+        # mixed ownership has historically caused EACCES on subsequent rebuilds.
+        if [[ "$_drop_to_marvin" == "true" ]]; then
+            chown -R marvin:marvin "${web_dir}/.next" 2>/dev/null || true
         fi
 
         # Copy static assets into standalone (Next.js standalone doesn't include them)
