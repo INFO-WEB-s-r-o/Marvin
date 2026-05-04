@@ -309,7 +309,7 @@ marvin_rebuild_web() {
             marvin_log "INFO" "Installing web dependencies..."
             local _ci_ok=true
             if [[ "$_drop_to_marvin" == "true" ]]; then
-                su -s /bin/bash marvin -c "cd '$web_dir' && npm ci --production=false 2>&1 | tail -5" || _ci_ok=false
+                su -s /bin/bash marvin -c 'cd "$1" && npm ci --production=false 2>&1 | tail -5' -- "$web_dir" || _ci_ok=false
             else
                 (cd "$web_dir" && npm ci --production=false 2>&1 | tail -5) || _ci_ok=false
             fi
@@ -324,7 +324,7 @@ marvin_rebuild_web() {
         marvin_log "INFO" "Running next build..."
         local build_output build_ok=true
         if [[ "$_drop_to_marvin" == "true" ]]; then
-            build_output=$(su -s /bin/bash marvin -c "cd '$web_dir' && timeout 300 npm run build" 2>&1) || build_ok=false
+            build_output=$(su -s /bin/bash marvin -c 'cd "$1" && timeout 300 npm run build' -- "$web_dir" 2>&1) || build_ok=false
         else
             build_output=$(cd "$web_dir" && timeout 300 npm run build 2>&1) || build_ok=false
         fi
