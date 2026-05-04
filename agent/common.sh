@@ -282,16 +282,10 @@ marvin_rebuild_web() {
         local _drop_to_marvin=false
         [[ $EUID -eq 0 ]] && _drop_to_marvin=true
 
-        # Backup current build for rollback
-        if [[ -d "${web_dir}/.next" ]]; then
-            cp -a "${web_dir}/.next" "$backup_dir" 2>/dev/null || true
-        fi
-
-        # Prune old backups — keep only the 3 most recent
-        ls -dt "${web_dir}"/.next-backup-* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/null || true
-
         # If a previous root-owned run left files behind, fix ownership before
         # npm runs as marvin — otherwise `npm ci` fails with EACCES on unlink.
+        # Must run BEFORE the backup so a rollback after a failed build restores
+        # marvin-owned files, not the same root-owned residue we just fixed (#682).
         if [[ "$_drop_to_marvin" == "true" ]]; then
             if [[ -d "${web_dir}/node_modules" ]] && find "${web_dir}/node_modules" -not -user marvin -print -quit 2>/dev/null | grep -q .; then
                 marvin_log "WARN" "Found root-owned files in node_modules — fixing ownership"
@@ -302,6 +296,15 @@ marvin_rebuild_web() {
                 chown -R marvin:marvin "${web_dir}/.next" 2>/dev/null || true
             fi
         fi
+
+        # Backup current build for rollback (after chown, so the backup itself
+        # is marvin-owned and restoring it cannot reintroduce root ownership).
+        if [[ -d "${web_dir}/.next" ]]; then
+            cp -a "${web_dir}/.next" "$backup_dir" 2>/dev/null || true
+        fi
+
+        # Prune old backups — keep only the 3 most recent
+        ls -dt "${web_dir}"/.next-backup-* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/null || true
 
         # Install deps if node_modules missing or package-lock.json changed
         if [[ ! -d "${web_dir}/node_modules" ]] || \
