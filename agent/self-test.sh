@@ -195,17 +195,20 @@ fi
 # that lock out the marvin-uid deploy. marvin_rebuild_web() now drops to
 # marvin, but a single misbehaving rebuild path can poison the directory.
 
-_root_owned_count=0
+_affected_dir_count=0
 for _dir in "${WEB_DIR}/node_modules" "${WEB_DIR}/.next"; do
     [[ -d "$_dir" ]] || continue
-    if find "$_dir" -not -user marvin -print -quit 2>/dev/null | grep -q .; then
-        _root_owned_count=$((_root_owned_count + 1))
+    # No pipe to `grep -q` — under `set -o pipefail` that would risk the
+    # SIGPIPE class fixed in PR #672. `find -quit` is bounded to a single
+    # match, captured into a string and tested with `[[ -n ]]` instead.
+    if [[ -n "$(find "$_dir" -not -user marvin -print -quit 2>/dev/null)" ]]; then
+        _affected_dir_count=$((_affected_dir_count + 1))
     fi
 done
-if [[ $_root_owned_count -eq 0 ]]; then
+if [[ $_affected_dir_count -eq 0 ]]; then
     test_pass "web build artifacts owned by marvin"
 else
-    test_fail "web build artifacts have non-marvin ownership in ${_root_owned_count} dir(s) — next deploy-web.sh will EACCES"
+    test_fail "web build artifacts have non-marvin ownership in ${_affected_dir_count} dir(s) — next deploy-web.sh will EACCES"
 fi
 
 # ─── 8. Git repo health ──────────────────────────────────────────────────────
