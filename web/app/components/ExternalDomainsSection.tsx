@@ -50,7 +50,18 @@ export default function ExternalDomainsSection() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  if (!data || data.count === 0) {
+  if (!data) {
+    return (
+      <section>
+        <h2>{t('section_external')}</h2>
+        <div className="info-line">
+          <span style={{ opacity: 0.6 }}>{t('external_loading')}</span>
+        </div>
+      </section>
+    );
+  }
+
+  if (data.count === 0) {
     return (
       <section>
         <h2>{t('section_external')}</h2>

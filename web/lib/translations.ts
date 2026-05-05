@@ -56,6 +56,7 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     external_status_critical: "CRIT",
     external_status_failing: "DOWN",
     external_no_domains: "No external domains configured.",
+    external_loading: "Loading watchlist\u2026",
 
     // Alerts / Incidents
     section_alerts: "$ marvin --alerts",
@@ -218,6 +219,7 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     external_status_critical: "KRIT",
     external_status_failing: "DOWN",
     external_no_domains: "\u017d\u00e1dn\u00e9 extern\u00ed dom\u00e9ny.",
+    external_loading: "Na\u010d\u00edt\u00e1m sledovan\u00e9 dom\u00e9ny\u2026",
 
     // Alerts / Incidents
     section_alerts: "$ marvin --alerts",
