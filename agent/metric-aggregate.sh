@@ -196,7 +196,7 @@ if [[ "$daily_ok" == "true" ]] && jq empty "${DAILY_FILE}.tmp" 2>/dev/null; then
     # health-monitor) because cumulative-so-far vs full-day-baseline always
     # produces escalating sigmas on busy days.
     _net_baseline_files=()
-    for _i in $(seq 1 6); do
+    for _i in {1..6}; do
         _bd=$(date -u -d "${TARGET_DATE} - ${_i} days" +%Y-%m-%d 2>/dev/null || true)
         [[ -n "$_bd" && -f "${METRICS_DIR}/${_bd}-daily.json" ]] && _net_baseline_files+=("${METRICS_DIR}/${_bd}-daily.json")
     done
@@ -207,9 +207,19 @@ if [[ "$daily_ok" == "true" ]] && jq empty "${DAILY_FILE}.tmp" 2>/dev/null; then
             _baseline_vals=$(for _f in "${_net_baseline_files[@]}"; do
                 jq -r ".summary.network.${_metric} // empty" "$_f" 2>/dev/null
             done)
+            # Guard sqrt() against negative variance from floating-point
+            # cancellation when baseline values are nearly identical —
+            # otherwise awk emits "nan", which propagates into _dev and makes
+            # (nan > 2.0) false, silently suppressing real anomaly alerts.
             _stats=$(printf '%s\n' "$_baseline_vals" | sed '/^$/d' | awk '
                 {sum += $1; sumsq += $1*$1; n++}
-                END {if(n>=3) printf "%.2f %.2f", sum/n, sqrt(sumsq/n - (sum/n)^2)}
+                END {
+                    if (n >= 3) {
+                        var = sumsq/n - (sum/n)^2
+                        if (var < 0) var = 0
+                        printf "%.2f %.2f", sum/n, sqrt(var)
+                    }
+                }
             ' 2>/dev/null || echo "")
             [[ -z "$_stats" ]] && continue
             _mean="${_stats%% *}"
