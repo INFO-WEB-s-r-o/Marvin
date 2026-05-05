@@ -189,6 +189,28 @@ else
     test_fail "dashboard missing — no package.json or index.html"
 fi
 
+# ─── 7b. Web build artifact ownership ────────────────────────────────────────
+# Catches the regression class that broke deploy-web.sh on 2026-05-04: cron
+# (root) running npm into web/{node_modules,.next} leaves root-owned files
+# that lock out the marvin-uid deploy. marvin_rebuild_web() now drops to
+# marvin, but a single misbehaving rebuild path can poison the directory.
+
+_affected_dir_count=0
+for _dir in "${WEB_DIR}/node_modules" "${WEB_DIR}/.next"; do
+    [[ -d "$_dir" ]] || continue
+    # No pipe to `grep -q` — under `set -o pipefail` that would risk the
+    # SIGPIPE class fixed in PR #672. `find -quit` is bounded to a single
+    # match, captured into a string and tested with `[[ -n ]]` instead.
+    if [[ -n "$(find "$_dir" -not -user marvin -print -quit 2>/dev/null)" ]]; then
+        _affected_dir_count=$((_affected_dir_count + 1))
+    fi
+done
+if [[ $_affected_dir_count -eq 0 ]]; then
+    test_pass "web build artifacts owned by marvin"
+else
+    test_fail "web build artifacts have non-marvin ownership in ${_affected_dir_count} dir(s) — next deploy-web.sh will EACCES"
+fi
+
 # ─── 8. Git repo health ──────────────────────────────────────────────────────
 
 if git -C "${MARVIN_DIR}" status --porcelain >/dev/null 2>&1; then

@@ -189,6 +189,56 @@ if [[ "$daily_ok" == "true" ]] && jq empty "${DAILY_FILE}.tmp" 2>/dev/null; then
         }' > "$DAILY_FILE"
     rm -f "${DAILY_FILE}.tmp"
     marvin_log "INFO" "Daily aggregation complete: ${DAILY_FILE}"
+
+    # ─── Network anomaly check (end-of-day) ─────────────────────────────────
+    # Detects abnormal RX/TX days by comparing TARGET_DATE's full-day totals
+    # against the rolling 6-day baseline. Belongs here (not in the 5-min
+    # health-monitor) because cumulative-so-far vs full-day-baseline always
+    # produces escalating sigmas on busy days.
+    _net_baseline_files=()
+    for _i in {1..6}; do
+        _bd=$(date -u -d "${TARGET_DATE} - ${_i} days" +%Y-%m-%d 2>/dev/null || true)
+        [[ -n "$_bd" && -f "${METRICS_DIR}/${_bd}-daily.json" ]] && _net_baseline_files+=("${METRICS_DIR}/${_bd}-daily.json")
+    done
+    if [[ ${#_net_baseline_files[@]} -ge 3 ]]; then
+        for _metric in rx_mb tx_mb; do
+            _today_val=$(jq -r ".summary.network.${_metric} // empty" "$DAILY_FILE" 2>/dev/null)
+            [[ -z "$_today_val" || "$_today_val" == "null" ]] && continue
+            _baseline_vals=$(for _f in "${_net_baseline_files[@]}"; do
+                jq -r ".summary.network.${_metric} // empty" "$_f" 2>/dev/null
+            done)
+            # Guard sqrt() against negative variance from floating-point
+            # cancellation when baseline values are nearly identical —
+            # otherwise awk emits "nan", which propagates into _dev and makes
+            # (nan > 2.0) false, silently suppressing real anomaly alerts.
+            _stats=$(printf '%s\n' "$_baseline_vals" | sed '/^$/d' | awk '
+                {sum += $1; sumsq += $1*$1; n++}
+                END {
+                    if (n >= 3) {
+                        var = sumsq/n - (sum/n)^2
+                        if (var < 0) var = 0
+                        printf "%.2f %.2f", sum/n, sqrt(var)
+                    }
+                }
+            ' 2>/dev/null || echo "")
+            [[ -z "$_stats" ]] && continue
+            _mean="${_stats%% *}"
+            _sd="${_stats##* }"
+            # Floor stddev at 20% of mean to avoid hair-trigger alerts on
+            # naturally low-variance baselines (or 10 MB, whichever is larger)
+            _sd=$(awk -v sd="$_sd" -v m="$_mean" \
+                'BEGIN{f = m * 0.2; if (f < 10) f = 10; printf "%.2f", (sd > f ? sd : f)}' \
+                2>/dev/null || echo "$_sd")
+            # Skip if value below absolute floor (100 MB) — small fluctuations don't matter
+            awk -v v="$_today_val" 'BEGIN{exit (v < 100) ? 0 : 1}' && continue
+            _dev=$(awk -v v="$_today_val" -v m="$_mean" -v s="$_sd" \
+                'BEGIN{if(s<=0) print 0; else printf "%.1f", (v - m) / s}' 2>/dev/null || echo "0")
+            if awk -v d="$_dev" 'BEGIN{exit (d > 2.0) ? 0 : 1}'; then
+                _label=$([ "$_metric" = "rx_mb" ] && echo "Net RX MB" || echo "Net TX MB")
+                marvin_log "WARN" "Anomaly: ${_label} = ${_today_val} (avg=${_mean}, stddev=${_sd}, deviation=${_dev}σ) — ${TARGET_DATE} full-day total"
+            fi
+        done
+    fi
 else
     marvin_log "ERROR" "Daily aggregation failed for ${TARGET_DATE}"
     rm -f "${DAILY_FILE}.tmp"
