@@ -22,6 +22,7 @@ LOGS_DIR="${DATA_DIR}/logs"
 export GNUPGHOME="/home/marvin/.gnupg"
 METRICS_DIR="${DATA_DIR}/metrics"
 BLOG_DIR="$(dirname "${MARVIN_DIR}")/blog"  # Outside git tree — blog data is not tracked
+BLOCKED_BLOGS_DIR="$(dirname "${MARVIN_DIR}")/blocked-blogs"  # Outside git + nginx-served trees — forensic store for screen_blog_content() rejections
 COMMS_DIR="${DATA_DIR}/comms"
 ENHANCE_DIR="${DATA_DIR}/enhancements"
 PROMPTS_DIR="${MARVIN_DIR}/agent/prompts"
@@ -74,10 +75,24 @@ _is_private_ip() {
 # Scans blog text for sensitive data patterns before publishing.
 # Prompts already instruct Claude to redact, but this catches anything that
 # slips through. Returns 0 if clean, 1 if sensitive patterns found.
+#
+# When a screen is triggered, the rejected content is preserved at
+# ${BLOCKED_BLOGS_DIR}/LABEL-TIMESTAMP.txt (mode 0600, outside git
+# tree and nginx-served paths) so the operator can post-mortem what tripped
+# the screen without leaking sensitive content publicly. Otherwise we get
+# the bare "kernel version" log message and lose the actual evidence forever
+# — exactly what happened on 2026-05-06 when the morning blog was dropped.
+_screen_blog_first_match_line() {
+    local pattern="$1" content="$2" flags="${3:-}"
+    # shellcheck disable=SC2086  # flags must word-split into separate grep args
+    grep -nP $flags "$pattern" <<< "$content" 2>/dev/null | head -1 | cut -d: -f1
+}
+
 screen_blog_content() {
     local content="$1"
     local label="${2:-blog}"
     local found=""
+    local diagnostics=""
 
     # Fail-closed if grep lacks PCRE support (-P flag)
     if ! echo x | grep -qP 'x' 2>/dev/null; then
@@ -86,33 +101,64 @@ screen_blog_content() {
     fi
 
     # CVE identifiers — vulnerability details should not be public
-    if grep -qPi 'CVE-[0-9]{4}-[0-9]{4,}' <<< "$content"; then
+    local _line
+    _line=$(_screen_blog_first_match_line 'CVE-[0-9]{4}-[0-9]{4,}' "$content" '-i')
+    if [[ -n "$_line" ]]; then
         found+="CVE identifier, "
+        diagnostics+="CVE@line${_line}, "
     fi
 
     # Kernel version with build suffix (e.g., 6.8.0-101-generic)
     # Anchored to Linux-style kernel versions: major.minor.patch-build-flavour
-    if grep -qP '\b[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-(?:generic|lowlatency|cloud|aws|azure|gcp|kvm|virtual)\b' <<< "$content"; then
+    _line=$(_screen_blog_first_match_line '\b[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-(?:generic|lowlatency|cloud|aws|azure|gcp|kvm|virtual)\b' "$content")
+    if [[ -n "$_line" ]]; then
         found+="kernel version, "
+        diagnostics+="kernel@line${_line}, "
     fi
 
     # Common API key/token prefixes (sk-ant- for Anthropic keys with hyphens)
-    if grep -qP '(sk-ant-[a-zA-Z0-9_-]{20,}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{30,}|gho_[a-zA-Z0-9]{30,}|AKIA[A-Z0-9]{16})' <<< "$content"; then
+    _line=$(_screen_blog_first_match_line '(sk-ant-[a-zA-Z0-9_-]{20,}|sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{30,}|gho_[a-zA-Z0-9]{30,}|AKIA[A-Z0-9]{16})' "$content")
+    if [[ -n "$_line" ]]; then
         found+="API key/token, "
+        diagnostics+="token@line${_line}, "
     fi
 
     # SSH private key content (not just path references)
-    if grep -q 'BEGIN [A-Z ]*PRIVATE KEY' <<< "$content"; then
+    _line=$(_screen_blog_first_match_line 'BEGIN [A-Z ]*PRIVATE KEY' "$content")
+    if [[ -n "$_line" ]]; then
         found+="private key material, "
+        diagnostics+="key@line${_line}, "
     fi
 
     # Sensitive file paths that indicate operational details
-    if grep -qPi '(/etc/shadow|/etc/sudoers|\.env\b|id_rsa|private[._-]key)' <<< "$content"; then
+    _line=$(_screen_blog_first_match_line '(/etc/shadow|/etc/sudoers|\.env\b|id_rsa|private[._-]key)' "$content" '-i')
+    if [[ -n "$_line" ]]; then
         found+="sensitive file path, "
+        diagnostics+="path@line${_line}, "
     fi
 
     if [[ -n "$found" ]]; then
         marvin_log "WARN" "${label}: sensitive content detected (${found%, }) — blocking publication"
+        marvin_log "WARN" "${label}: first-match locations: ${diagnostics%, }"
+
+        # Preserve rejected content for forensic review (mode 0600, root-only,
+        # outside the nginx-served tree). Caps retention at last 30 files.
+        local blocked_dir="${BLOCKED_BLOGS_DIR}"
+        if mkdir -p "$blocked_dir" 2>/dev/null; then
+            chmod 700 "$blocked_dir" 2>/dev/null || true
+            local blocked_file="${blocked_dir}/${label}-$(date -u +%Y%m%dT%H%M%SZ).txt"
+            local _saved=true
+            # Subshell umask 177 → file is created mode 0600 atomically; no
+            # TOCTOU window between create and chmod. Umask change is scoped
+            # to the subshell and does not affect the caller.
+            ( umask 177 && printf '%s\n' "$content" > "$blocked_file" ) 2>/dev/null \
+                || _saved=false
+            if [[ "$_saved" == "true" ]]; then
+                marvin_log "INFO" "${label}: rejected content saved to ${blocked_file} for post-mortem"
+                # Retention: keep only the 30 most recent rejections
+                ls -1t "$blocked_dir"/*.txt 2>/dev/null | tail -n +31 | xargs -r rm -f 2>/dev/null || true
+            fi
+        fi
         return 1
     fi
     return 0
