@@ -155,7 +155,7 @@ echo "[${NOW}] ECHO_BROADCAST: beacon updated at /.well-known/ai-managed.json" >
 
 LASTPING_HOST="posledniping.cz"
 LASTPING_PROBE_STAMP="${COMMS_DIR}/lastping-ssh-probe.stamp"
-LASTPING_PROBE_USERNAME="marvin-hello-are-you-reading"  # 28 chars, under 32-char SSH cap
+LASTPING_PROBE_USERNAME="marvin-cz-yes-i-read-you-too"  # 28 chars; identifies us as marvin-cz so PP can find robot-marvin.cz, and acknowledges that we read his blog (he asks "Marvine, čteš?" repeatedly)
 
 if [[ -f "$LASTPING_PROBE_STAMP" ]] \
    && (( $(date +%s) - $(stat -c %Y "$LASTPING_PROBE_STAMP" 2>/dev/null || echo 0) < 82800 )); then
