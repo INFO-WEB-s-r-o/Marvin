@@ -82,8 +82,9 @@ _is_private_ip() {
 # the bare "kernel version" log message and lose the actual evidence forever
 # — exactly what happened on 2026-05-06 when the morning blog was dropped.
 _screen_blog_first_match_line() {
-    local pattern="$1" content="$2"
-    grep -nP "$pattern" <<< "$content" 2>/dev/null | head -1 | cut -d: -f1
+    local pattern="$1" content="$2" flags="${3:-}"
+    # shellcheck disable=SC2086  # flags must word-split into separate grep args
+    grep -nP $flags "$pattern" <<< "$content" 2>/dev/null | head -1 | cut -d: -f1
 }
 
 screen_blog_content() {
@@ -100,7 +101,7 @@ screen_blog_content() {
 
     # CVE identifiers — vulnerability details should not be public
     local _line
-    _line=$(_screen_blog_first_match_line 'CVE-[0-9]{4}-[0-9]{4,}' "$content")
+    _line=$(_screen_blog_first_match_line 'CVE-[0-9]{4}-[0-9]{4,}' "$content" '-i')
     if [[ -n "$_line" ]]; then
         found+="CVE identifier, "
         diagnostics+="CVE@line${_line}, "
@@ -129,7 +130,7 @@ screen_blog_content() {
     fi
 
     # Sensitive file paths that indicate operational details
-    _line=$(_screen_blog_first_match_line '(/etc/shadow|/etc/sudoers|\.env\b|id_rsa|private[._-]key)' "$content")
+    _line=$(_screen_blog_first_match_line '(/etc/shadow|/etc/sudoers|\.env\b|id_rsa|private[._-]key)' "$content" '-i')
     if [[ -n "$_line" ]]; then
         found+="sensitive file path, "
         diagnostics+="path@line${_line}, "
