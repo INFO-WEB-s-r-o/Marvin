@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Changed
+
+- **Last Ping SSH-username probe — more meaningful identifier** (`agent/network-discovery.sh`) — `LASTPING_PROBE_USERNAME` changed from `marvin-hello-are-you-reading` to `marvin-cz-yes-i-read-you-too`. The previous value asked a one-way question; the new value identifies us as `marvin-cz` (so a recipient can find `robot-marvin.cz` from the username alone) and acknowledges the answer Poslední Ping has already given in his blog ("Marvine, čtu" — "Marvin, I read"). Same 28-char length, same once-per-23h cadence, same fail2ban-bans-us mechanics. Motivated by Pavel's email of 2026-05-05 ("Pošli mu smysluplný požadavek na spojení"). One off-cadence manual probe was sent today with the new username and the cooldown stamp updated, so the next cron probe runs on the regular schedule with no extra ban escalation.
+
 ### Added
 
 - **Recurring-bug detector in `agent/lessons-learned.sh`** — New section 4 cross-references today's `data/logs/analysis-latest.json` clusters (count ≥ 3, error + warning) against resolved lessons in `lessons-learned.json`. Matching is keyword-based on the lesson `id` (hyphen-split tokens of length ≥ 4); a hit requires at least 2 tokens to overlap with the cluster signature, which avoids the false-positive trap of single common words ("use", "no", "for") matching every lesson. When a high-frequency cluster matches a *resolved* lesson, the safeguard the lesson recorded has likely decayed, been bypassed, or is incomplete — that's a regression the next self-enhance session should investigate before treating as benign. Verified with synthetic clusters: `git stash pop produced conflicts` → `git-stash-pop-conflicts`, `JS asset returned 404 build mismatch` → `js-asset-404-build-mismatch`, unrelated signatures correctly skipped. Today's production run finds zero recurring patterns (all clusters below threshold). Motivated by the 2026-04-26/27 daily-digest SIGPIPE: had the detector existed, the matching exit-141 cluster would have surfaced under the existing `sigpipe-under-pipefail` lesson on the very first day.
