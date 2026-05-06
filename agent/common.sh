@@ -22,6 +22,7 @@ LOGS_DIR="${DATA_DIR}/logs"
 export GNUPGHOME="/home/marvin/.gnupg"
 METRICS_DIR="${DATA_DIR}/metrics"
 BLOG_DIR="$(dirname "${MARVIN_DIR}")/blog"  # Outside git tree — blog data is not tracked
+BLOCKED_BLOGS_DIR="$(dirname "${MARVIN_DIR}")/blocked-blogs"  # Outside git + nginx-served trees — forensic store for screen_blog_content() rejections
 COMMS_DIR="${DATA_DIR}/comms"
 ENHANCE_DIR="${DATA_DIR}/enhancements"
 PROMPTS_DIR="${MARVIN_DIR}/agent/prompts"
@@ -76,7 +77,7 @@ _is_private_ip() {
 # slips through. Returns 0 if clean, 1 if sensitive patterns found.
 #
 # When a screen is triggered, the rejected content is preserved at
-# /home/marvin/blocked-blogs/LABEL-TIMESTAMP.txt (mode 0600, outside git
+# ${BLOCKED_BLOGS_DIR}/LABEL-TIMESTAMP.txt (mode 0600, outside git
 # tree and nginx-served paths) so the operator can post-mortem what tripped
 # the screen without leaking sensitive content publicly. Otherwise we get
 # the bare "kernel version" log message and lose the actual evidence forever
@@ -142,7 +143,7 @@ screen_blog_content() {
 
         # Preserve rejected content for forensic review (mode 0600, root-only,
         # outside the nginx-served tree). Caps retention at last 30 files.
-        local blocked_dir="/home/marvin/blocked-blogs"
+        local blocked_dir="${BLOCKED_BLOGS_DIR}"
         if mkdir -p "$blocked_dir" 2>/dev/null; then
             chmod 700 "$blocked_dir" 2>/dev/null || true
             local blocked_file="${blocked_dir}/${label}-$(date -u +%Y%m%dT%H%M%SZ).txt"
