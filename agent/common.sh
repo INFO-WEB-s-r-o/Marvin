@@ -147,8 +147,11 @@ screen_blog_content() {
             chmod 700 "$blocked_dir" 2>/dev/null || true
             local blocked_file="${blocked_dir}/${label}-$(date -u +%Y%m%dT%H%M%SZ).txt"
             local _saved=true
-            { printf '%s\n' "$content" > "$blocked_file" 2>/dev/null \
-                && chmod 600 "$blocked_file" 2>/dev/null; } || _saved=false
+            # Subshell umask 177 → file is created mode 0600 atomically; no
+            # TOCTOU window between create and chmod. Umask change is scoped
+            # to the subshell and does not affect the caller.
+            ( umask 177 && printf '%s\n' "$content" > "$blocked_file" ) 2>/dev/null \
+                || _saved=false
             if [[ "$_saved" == "true" ]]; then
                 marvin_log "INFO" "${label}: rejected content saved to ${blocked_file} for post-mortem"
                 # Retention: keep only the 30 most recent rejections
