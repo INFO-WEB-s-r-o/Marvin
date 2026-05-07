@@ -106,9 +106,9 @@ for i in $(seq 0 $((domain_count - 1))); do
     status="healthy"
     if [[ "$http_code" != "null" ]] && { [[ "$http_code" -lt 200 ]] || [[ "$http_code" -ge 400 ]]; }; then
         status="failing"
-    elif [[ "$ssl_days" != "null" ]] && [[ "$ssl_days" -lt 7 ]]; then
-        status="critical"
     elif [[ "$ssl_days" != "null" ]] && [[ "$ssl_days" -lt 14 ]]; then
+        status="critical"
+    elif [[ "$ssl_days" != "null" ]] && [[ "$ssl_days" -lt 30 ]]; then
         status="warning"
     elif [[ "$dns_status" == "failing" ]]; then
         status="failing"
