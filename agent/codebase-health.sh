@@ -71,9 +71,21 @@ shellcheck_errors=0
 shellcheck_warnings=0
 if command -v shellcheck &>/dev/null; then
     while IFS= read -r script; do
-        sc_json=$(shellcheck -f json -S warning "$script" 2>/dev/null || echo '[]')
-        errs=$(echo "$sc_json" | jq '[.[] | select(.level=="error")] | length' 2>/dev/null) || errs=0
-        warns=$(echo "$sc_json" | jq '[.[] | select(.level=="warning")] | length' 2>/dev/null) || warns=0
+        # The shellcheck CLI exits 1 when it finds issues — but it has
+        # already printed the JSON array. The classic `cmd 2>/dev/null
+        # || echo '[]'` pattern then APPENDS another `[]` to stdout,
+        # yielding two top-level JSON values. The downstream
+        # `jq '… | length'` runs once per value and prints "0\n0", which
+        # then crashes `$(( shellcheck_errors + errs ))` with "syntax error
+        # in expression". Same shape as the grep -c double-output
+        # anti-pattern in lessons-learned.json. Swallow only the exit
+        # code; keep the JSON output.
+        sc_json=$(shellcheck -f json -S warning "$script" 2>/dev/null || true)
+        [[ -z "$sc_json" ]] && sc_json='[]'
+        errs=$(echo "$sc_json" | jq '[.[] | select(.level=="error")] | length' 2>/dev/null || true)
+        warns=$(echo "$sc_json" | jq '[.[] | select(.level=="warning")] | length' 2>/dev/null || true)
+        errs=${errs:-0}
+        warns=${warns:-0}
         shellcheck_errors=$((shellcheck_errors + errs))
         shellcheck_warnings=$((shellcheck_warnings + warns))
     done < <(find "$AGENT_DIR" -name "*.sh" -type f)
@@ -146,7 +158,13 @@ for i in $(seq 0 6); do
     log="${LOGS_DIR}/${d}.log"
     if [[ -f "$log" ]]; then
         total_log_days=$((total_log_days + 1))
-        day_errors=$(grep -ci '\[ERROR\]' "$log" 2>/dev/null || echo 0)
+        # `grep -c` always prints the count, including 0 — and exits 1 when
+        # the count is 0. `|| echo 0` then doubles the output to "0\n0",
+        # crashing the next $(( ... + day_errors )) with a syntax error and
+        # silently leaving total_errors at its previous value. Swallow only
+        # the exit code; keep grep's count. (lessons-learned: grep-c-double-output)
+        day_errors=$(grep -ci '\[ERROR\]' "$log" 2>/dev/null || true)
+        day_errors=${day_errors:-0}
         total_errors=$((total_errors + day_errors))
     fi
 done
@@ -228,8 +246,13 @@ roadmap_total=0
 roadmap_done=0
 roadmap_pct=0
 if [[ -f "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" ]]; then
-    roadmap_total=$(grep -c '^\- \[' "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" 2>/dev/null || echo 0)
-    roadmap_done=$(grep -c '^\- \[x\]' "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" 2>/dev/null || echo 0)
+    # Same grep-c-double-output guard as above. Today's roadmap has matches,
+    # but a future restructure could leave one of these counts at zero —
+    # don't leave the latent crash in place.
+    roadmap_total=$(grep -c '^\- \[' "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" 2>/dev/null || true)
+    roadmap_done=$(grep -c '^\- \[x\]' "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" 2>/dev/null || true)
+    roadmap_total=${roadmap_total:-0}
+    roadmap_done=${roadmap_done:-0}
     [[ "$roadmap_total" -gt 0 ]] && roadmap_pct=$((roadmap_done * 100 / roadmap_total))
     evo_notes+=("Roadmap: ${roadmap_done}/${roadmap_total} (${roadmap_pct}%)")
 fi
