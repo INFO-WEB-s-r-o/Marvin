@@ -131,10 +131,7 @@ if [[ "$open_pr_count" -gt 0 ]]; then
     # Generic fix PRs (fix/morning-check-*, fix/sanitize-*) also don't need issue dedup —
     # only branches with "issue" in the name are expected to have extractable numbers.
     if [[ -z "$pr_issue_numbers" ]]; then
-        # `grep -c` prints the count then exits 1 when zero — `|| echo "0"`
-        # would double the output to "0\n0" and crash the [[ -gt ]] arithmetic
-        # comparison below, silently routing to the else branch regardless of
-        # the actual count. (lessons-learned: grep-c-double-output)
+        # grep -c exits 1 on zero matches with "0" already printed — `|| true` swallows only the exit code (lessons-learned: grep-c-double-output)
         _has_issue_pr=$(echo "$open_prs" | jq -r '.[].head.ref // ""' 2>/dev/null \
             | grep -ciP '^fix[/-].*issue' || true)
         _has_issue_pr=${_has_issue_pr:-0}
