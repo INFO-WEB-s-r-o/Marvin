@@ -54,12 +54,23 @@ _normalize_message() {
 
 # ─── Phase 2: Extract and cluster errors/warnings ──────────────────────────
 
-# Extract error/warning lines, normalize, count occurrences
+# Extract error/warning lines, normalize, count occurrences.
+#
+# The capture-then-fallback pattern below replaces the older
+# `pipeline ... || echo '[]'` shape, which under `set -o pipefail` produced
+# `[]\n[]` whenever grep matched nothing: jq -s already wrote `[]` to stdout,
+# then pipefail propagated grep's exit 1 and `|| echo '[]'` appended a second
+# `[]`. The captured value `[]\n[]` then crashed the downstream `--argjson`
+# call with jq exit 2, leaving analysis-YYYY-MM-DD.json missing on every
+# clean-error day. Same root cause family as `grep-c-double-output` lesson —
+# a command that writes to stdout *before* exiting non-zero must not be
+# combined with a `||`-emitting fallback.
 _process_level() {
     local level="$1"
     local pattern="$2"
+    local _out
 
-    grep -E "$pattern" "$LOG_FILE" 2>/dev/null \
+    _out=$(grep -E "$pattern" "$LOG_FILE" 2>/dev/null \
         | sed 's/^\[[^]]*\] //' \
         | _normalize_message \
         | sort | uniq -c | sort -rn \
@@ -68,7 +79,8 @@ _process_level() {
             # Find one raw example for this signature
             jq -nc --argjson c "$count" --arg s "$signature" \
                 '{count: $c, signature: $s}'
-        done | jq -s '.' 2>/dev/null || echo '[]'
+        done | jq -s '.' 2>/dev/null) || true
+    echo "${_out:-[]}"
 }
 
 error_clusters=$(_process_level "errors" '\[(CRITICAL|ERROR)\]')
@@ -111,37 +123,45 @@ for i in $(seq 1 $TREND_DAYS); do
     fi
 done
 
-# Classify patterns
+# Classify patterns. The `grep -cF ... || true; var=${var:-0}` shape below
+# is required because `grep -c` always prints its count (even "0") *and*
+# exits 1 when the count is zero. The older `|| echo 0` shape produced
+# `0\n0`, which then crashed the per-iteration `--argjson pd` with jq exit 2
+# and the per-iteration jq's silent failure dropped the entry from the array.
+# Same root cause family as `grep-c-double-output` lesson.
 if [[ -s "$_today_signatures_file" && -s "$_past_signatures_file" ]]; then
     # Recurring: appears both today and in past days
     _recurring=$(comm -12 <(sort -u "$_today_signatures_file") <(sort -u "$_past_signatures_file"))
     if [[ -n "$_recurring" ]]; then
-        recurring_patterns=$(echo "$_recurring" | while read -r sig; do
-            today_count=$(echo "$error_clusters" | jq -r --arg s "$sig" '.[] | select(.signature == $s) | .count' 2>/dev/null || echo 0)
-            past_count=$(grep -cF "$sig" "$_past_signatures_file" 2>/dev/null || echo 0)
-            jq -nc --arg s "$sig" --argjson tc "${today_count:-0}" --argjson pd "$past_count" \
+        _recurring_out=$(echo "$_recurring" | while read -r sig; do
+            today_count=$(echo "$error_clusters" | jq -r --arg s "$sig" '.[] | select(.signature == $s) | .count' 2>/dev/null || true)
+            past_count=$(grep -cF "$sig" "$_past_signatures_file" 2>/dev/null || true)
+            jq -nc --arg s "$sig" --argjson tc "${today_count:-0}" --argjson pd "${past_count:-0}" \
                 '{signature: $s, today_count: $tc, past_days_seen: $pd, status: "recurring"}'
-        done | jq -s '.' 2>/dev/null || echo '[]')
+        done | jq -s '.' 2>/dev/null) || true
+        recurring_patterns=${_recurring_out:-[]}
     fi
 
     # New: appears today but not in past
     _new=$(comm -23 <(sort -u "$_today_signatures_file") <(sort -u "$_past_signatures_file"))
     if [[ -n "$_new" ]]; then
-        new_patterns=$(echo "$_new" | while read -r sig; do
-            today_count=$(echo "$error_clusters" | jq -r --arg s "$sig" '.[] | select(.signature == $s) | .count' 2>/dev/null || echo 0)
+        _new_out=$(echo "$_new" | while read -r sig; do
+            today_count=$(echo "$error_clusters" | jq -r --arg s "$sig" '.[] | select(.signature == $s) | .count' 2>/dev/null || true)
             jq -nc --arg s "$sig" --argjson tc "${today_count:-0}" \
                 '{signature: $s, today_count: $tc, status: "new"}'
-        done | jq -s '.' 2>/dev/null || echo '[]')
+        done | jq -s '.' 2>/dev/null) || true
+        new_patterns=${_new_out:-[]}
     fi
 
     # Resolved: appeared in past but not today
     _resolved=$(comm -13 <(sort -u "$_today_signatures_file") <(sort -u "$_past_signatures_file"))
     if [[ -n "$_resolved" ]]; then
-        resolved_patterns=$(echo "$_resolved" | sort -u | head -10 | while read -r sig; do
-            past_count=$(grep -cF "$sig" "$_past_signatures_file" 2>/dev/null || echo 0)
-            jq -nc --arg s "$sig" --argjson pd "$past_count" \
+        _resolved_out=$(echo "$_resolved" | sort -u | head -10 | while read -r sig; do
+            past_count=$(grep -cF "$sig" "$_past_signatures_file" 2>/dev/null || true)
+            jq -nc --arg s "$sig" --argjson pd "${past_count:-0}" \
                 '{signature: $s, past_days_seen: $pd, status: "resolved"}'
-        done | jq -s '.' 2>/dev/null || echo '[]')
+        done | jq -s '.' 2>/dev/null) || true
+        resolved_patterns=${_resolved_out:-[]}
     fi
 fi
 
@@ -207,9 +227,14 @@ resolved_count=$(echo "$resolved_patterns" | jq 'length' 2>/dev/null || echo 0)
 # Validate JSON inputs before passing to --argjson — a malformed value
 # (multi-line, fallback text spliced in, etc.) would abort jq mid-execution
 # and, before the atomic-write fix below, leave the destination empty (#638).
+# `jq -s 'length == 1'` (instead of plain `jq empty`) catches multi-document
+# inputs like "[]\n[]" — `jq empty` accepts those as valid JSON, but
+# --argjson rejects them with exit 2. The capture-then-fallback fix in
+# _process_level prevents the multi-doc case at source; this guard remains
+# as defense-in-depth.
 for _name in error_clusters warning_clusters recurring_patterns new_patterns resolved_patterns daily_error_trend component_health; do
-    if ! jq empty <<<"${!_name}" 2>/dev/null; then
-        marvin_log "WARN" "log-analysis: \$${_name} not valid JSON — substituting []"
+    if ! jq -s -e 'length == 1' <<<"${!_name}" >/dev/null 2>&1; then
+        marvin_log "WARN" "log-analysis: \$${_name} not single valid JSON document — substituting []"
         printf -v "$_name" '%s' '[]'
     fi
 done
