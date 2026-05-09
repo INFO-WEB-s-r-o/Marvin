@@ -20,8 +20,17 @@ cat > "$CRON_FILE" << 'EOF'
 # =============================================================================
 # Marvin Experiment — Cron Schedule
 # =============================================================================
-# All times are in UTC. Marvin never sleeps, but he has a routine.
+# Times below run in the SYSTEM TIMEZONE (currently Europe/Rome — CEST/CET),
+# NOT in UTC. The HH values are local clock times. To pin the schedule to
+# UTC across DST transitions, uncomment the `CRON_TZ=UTC` line below; note
+# that this would shift every job by 1-2 hours of wall-clock time.
 #
+# Known correctness gap from the local-time schedule: daily-digest (30 23)
+# and log-analysis (45 23) currently fire at 21:30/21:45 UTC and miss the
+# last ~2 hours of the UTC day. Scripts use `TODAY=$(date -u +%Y-%m-%d)`,
+# so they process the right day but with truncated coverage.
+#
+# CRON_TZ=UTC
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 MARVIN_DIR=/home/marvin/git

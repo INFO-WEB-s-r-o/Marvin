@@ -275,6 +275,36 @@ else
     marvin_log "WARN" "${_cron_missing} cron task(s) not seen in 48h logs"
 fi
 
+# ─── 9b. log-analysis daily output freshness ──────────────────────────────────
+# Catches the missing-analysis-file class of bugs (lessons 2026-05-07/08):
+# log-analysis.sh wrote zero-byte or corrupt files for 2026-05-03/05/07,
+# leaving analysis-latest.json days stale. Operator noticed before self-test
+# did. Now self-test fails fast if the latest pointer is older than 48h or
+# not parseable single-document JSON.
+
+marvin_log "INFO" "Self-test: verifying log-analysis output freshness"
+
+_analysis_latest="${DATA_DIR}/logs/analysis-latest.json"
+if [[ ! -f "$_analysis_latest" ]]; then
+    test_fail "log-analysis output: analysis-latest.json missing"
+elif ! jq -s -e 'length == 1' "$_analysis_latest" >/dev/null 2>&1; then
+    # `jq -s -e 'length == 1'` rejects multi-document files (the 2026-05-08
+    # bug shape) and zero-byte files (the 2026-05-03/05/07 bug shape) —
+    # plain `jq empty` would accept "[]\n[]" as valid.
+    test_fail "log-analysis output: analysis-latest.json not single valid JSON document"
+else
+    # Freshness check: file mtime within last 48h. The cron job runs daily,
+    # so a >48h gap means at least one run was lost (typically the symptom
+    # of a silent crash that left the previous file in place).
+    _latest_age_s=$(( $(date +%s) - $(stat -c %Y "$_analysis_latest" 2>/dev/null || echo 0) ))
+    if [[ "$_latest_age_s" -gt 172800 ]]; then
+        _latest_age_h=$(( _latest_age_s / 3600 ))
+        test_fail "log-analysis output: analysis-latest.json is ${_latest_age_h}h stale (cron not producing daily updates)"
+    else
+        test_pass "log-analysis output: analysis-latest.json valid and fresh"
+    fi
+fi
+
 # ─── 10. Security scoring system ──────────────────────────────────────────────
 # Grades the server A-F across multiple security dimensions
 
