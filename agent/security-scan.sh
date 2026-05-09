@@ -295,6 +295,14 @@ all_conns_output=$(ss -tn state established 2>/dev/null || echo "")
 if [[ -n "$all_conns_output" ]]; then
     # Extract peer IPs only where local side is a known service port
     # $4=Local Address:Port, $5=Peer Address:Port
+    # Capture-then-fallback: under `set -o pipefail`, when grep matches nothing
+    # the pipeline exits 1 *after* `jq -s '.'` has already written `[]` to
+    # stdout. The old `pipeline ... || echo "[]"` shape then appended a second
+    # `[]`, so the captured value was `"[]\n[]"` — which got spliced into
+    # connection-rates.json as invalid JSON ("Expected separator between
+    # values"), corrupting the dashboard data file. Same root-cause family as
+    # the 2026-05-08 log-analysis _process_level fix and the broader
+    # `grep-c-double-output` lesson. Keep jq's stdout, swallow only the exit.
     top_sources_json=$(echo "$all_conns_output" | tail -n +2 \
         | awk '$4 ~ /:(80|443|22|25|587|8080|3000)$/ {print $5}' \
         | grep -oP '^\d+\.\d+\.\d+\.\d+' \
@@ -302,7 +310,8 @@ if [[ -n "$all_conns_output" ]]; then
         | grep -v '^0\.' \
         | sort | uniq -c | sort -rn | head -20 \
         | awk '{printf "{\"ip\":\"%s\",\"connections\":%d}\n", $2, $1}' \
-        | jq -s '.' 2>/dev/null || echo "[]")
+        | jq -s '.' 2>/dev/null) || true
+    top_sources_json=${top_sources_json:-"[]"}
 
     # Flag IPs exceeding the threshold
     # See suspicious_count above for the SIGPIPE+pipefail rationale (#621).
@@ -514,13 +523,17 @@ if command -v geoiplookup &>/dev/null; then
         done | sort | uniq -c | sort -rn | head -20)
 
         # Convert to JSON array (jq handles all escaping — no manual JSON in awk)
+        # Same capture-then-fallback shape as top_sources_json above —
+        # jq -n with `[inputs | ...]` writes `[]` even on empty input, so
+        # `pipeline ... || echo "[]"` would double up on any pipefail.
         geo_data=$(echo "$geo_raw" | awk '
             NF >= 3 {
                 count = $1; code = $2;
                 name = "";
                 for (i = 3; i <= NF; i++) name = name (i>3 ? " " : "") $i;
                 printf "%s\t%s\t%d\n", code, name, count
-            }' | jq -Rn --arg total "$geo_total_ips" '[inputs | split("\t") | {code: .[0], name: .[1], country: .[1], count: (.[2] | tonumber), unique_ips: (.[2] | tonumber), percent: (if ($total | tonumber) > 0 then ((.[2] | tonumber) * 100 / ($total | tonumber) * 10 | round / 10) else 0 end)}]' 2>/dev/null || echo "[]")
+            }' | jq -Rn --arg total "$geo_total_ips" '[inputs | split("\t") | {code: .[0], name: .[1], country: .[1], count: (.[2] | tonumber), unique_ips: (.[2] | tonumber), percent: (if ($total | tonumber) > 0 then ((.[2] | tonumber) * 100 / ($total | tonumber) * 10 | round / 10) else 0 end)}]' 2>/dev/null) || true
+        geo_data=${geo_data:-"[]"}
 
         geo_country_count=$(echo "$geo_data" | jq 'length' 2>/dev/null || echo 0)
         geo_top_country=$(echo "$geo_data" | jq -r '.[0].country // "Unknown"' 2>/dev/null || echo "Unknown")
