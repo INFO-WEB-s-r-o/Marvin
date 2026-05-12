@@ -131,8 +131,14 @@ ENHANCE_FILE="${DATA_DIR}/enhancements.json"
 ENHANCE_SRC="${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md"
 
 if [[ -f "$ENHANCE_SRC" ]]; then
-    TOTAL_ITEMS=$(grep -c '^\- \[' "$ENHANCE_SRC" 2>/dev/null || echo "0")
-    DONE_ITEMS=$(grep -c '^\- \[x\]' "$ENHANCE_SRC" 2>/dev/null || echo "0")
+    # grep-c-double-output lesson: `grep -c X 2>/dev/null || echo 0` produces
+    # "0\n0" on a zero-match file (grep prints its count *then* exits 1, so
+    # `|| echo 0` appends a second 0). The arithmetic on line 136 would then
+    # crash with "syntax error in expression" under set -euo pipefail.
+    TOTAL_ITEMS=$(grep -c '^\- \[' "$ENHANCE_SRC" 2>/dev/null || true)
+    TOTAL_ITEMS="${TOTAL_ITEMS:-0}"
+    DONE_ITEMS=$(grep -c '^\- \[x\]' "$ENHANCE_SRC" 2>/dev/null || true)
+    DONE_ITEMS="${DONE_ITEMS:-0}"
     PENDING_ITEMS=$((TOTAL_ITEMS - DONE_ITEMS))
     
     # Extract recently completed items (last 10 checked)

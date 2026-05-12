@@ -110,7 +110,11 @@ fi
 
 # Test 9: Cron jobs are installed
 if [[ -f /etc/cron.d/marvin ]]; then
-    CRON_JOBS=$(grep -c "MARVIN" /etc/cron.d/marvin 2>/dev/null || echo "0")
+    # grep-c-double-output lesson: avoid the "0\n0" capture shape when no
+    # references match (display-only here, no arithmetic crash — but the
+    # confusing report output is still worth preventing).
+    CRON_JOBS=$(grep -c "MARVIN" /etc/cron.d/marvin 2>/dev/null || true)
+    CRON_JOBS="${CRON_JOBS:-0}"
     TEST_RESULTS+="✅ PASS: Cron file exists with ${CRON_JOBS} references\n"
     ((TEST_PASS++))
 else
