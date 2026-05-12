@@ -61,6 +61,53 @@ marvin_log_json() {
     fi
 }
 
+# ─── Post-write JSON validator ───────────────────────────────────────────────
+# Validates that a file written by the caller parses as a single JSON document.
+# Logs WARN and returns 1 on any failure (missing, zero-byte, malformed,
+# multi-document). Returns 0 on success without producing log noise.
+#
+# Motivation: heredoc-style JSON writes that splice command outputs (e.g.
+# `... "top_sources": ${json_var}` inside a `cat > file << EOF`) silently
+# produce corrupt files when an interpolated variable holds invalid JSON
+# (e.g. the `[real]\n[]` double-output bug — see lesson `grep-c-double-output`).
+# The pre-fix `data/security/connection-rates.json` sat broken for weeks
+# because nothing validated the file at write-time. This helper closes that gap:
+# call it once after every JSON heredoc write so the corruption is logged the
+# same minute it happens, not when an operator forensically diffs the file.
+#
+# Usage:
+#   cat > "$RATE_FILE" << EOF
+#   { ... }
+#   EOF
+#   marvin_validate_json_or_warn "$RATE_FILE" "connection-rates"
+
+marvin_validate_json_or_warn() {
+    local file="$1"
+    local label="${2:-$(basename "${file:-unknown}")}"
+
+    if [[ -z "${file:-}" ]]; then
+        marvin_log "WARN" "json-validate(${label}): no file path supplied"
+        return 1
+    fi
+    if [[ ! -f "$file" ]]; then
+        marvin_log "WARN" "json-validate(${label}): file does not exist: ${file}"
+        return 1
+    fi
+    if [[ ! -s "$file" ]]; then
+        marvin_log "WARN" "json-validate(${label}): file is zero bytes: ${file}"
+        return 1
+    fi
+    # Single-document validation. `jq -s -e 'length == 1'` rejects both
+    # multi-doc (the [real]\n[] bug shape) and zero-doc inputs.
+    if ! jq -s -e 'length == 1' "$file" >/dev/null 2>&1; then
+        local _bytes
+        _bytes=$(wc -c < "$file" 2>/dev/null || echo "?")
+        marvin_log "WARN" "json-validate(${label}): file is not a single valid JSON document (${_bytes} bytes): ${file}"
+        return 1
+    fi
+    return 0
+}
+
 # ─── Reusable trap error handler ─────────────────────────────────────────────
 # Logs file:line and failed command when a command fails under `set -e`.
 # Scripts can enable it alongside their existing EXIT traps:

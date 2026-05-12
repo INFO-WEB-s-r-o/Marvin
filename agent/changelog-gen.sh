@@ -167,17 +167,26 @@ for d in ${sorted_dates}; do
     sessions="${day_sessions["$d"]:-0}"
     risk="${day_risk["$d"]:-none}"
 
-    # Build changes array from newline-separated string
+    # Build changes array from newline-separated string.
+    # NOTE: capture-then-fallback shape (see lesson `grep-c-double-output`).
+    # Under `set -o pipefail`, `head -10` closes its stdin after 10 lines and
+    # any upstream `sed`/`sort` writing more data takes SIGPIPE → pipefail
+    # propagates exit 141. The pre-fix `pipeline ... 2>/dev/null || echo "[]"`
+    # then ran the fallback while jq had ALREADY written a real array,
+    # producing `[real]\n[]` — invalid as a single JSON document, and the
+    # downstream `jq -nc --argjson changes ...` aborts with exit 2.
+    # Reproduces on any day with >10 unique change descriptions.
     changes_json="[]"
     if [[ -n "${day_changes["$d"]:-}" ]]; then
-        # Deduplicate and convert to JSON array
-        changes_json=$(printf '%s' "${day_changes["$d"]}" | sed 's/\\n/\n/g' | sort -u | sed '/^$/d' | head -10 | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]")
+        _out=$(printf '%s' "${day_changes["$d"]}" | sed 's/\\n/\n/g' | sort -u | sed '/^$/d' | head -10 | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null) || true
+        changes_json="${_out:-[]}"
     fi
 
-    # Build PR numbers array
+    # Build PR numbers array (defensive — same capture-then-fallback shape).
     prs_json="[]"
     if [[ -n "${day_prs["$d"]:-}" ]]; then
-        prs_json=$(echo "${day_prs["$d"]}" | tr ',' '\n' | sort -un | jq -R -s 'split("\n") | map(select(. != "") | tonumber)' 2>/dev/null || echo "[]")
+        _out=$(echo "${day_prs["$d"]}" | tr ',' '\n' | sort -un | jq -R -s 'split("\n") | map(select(. != "") | tonumber)' 2>/dev/null) || true
+        prs_json="${_out:-[]}"
     fi
 
     if [[ "$first" != "true" ]]; then

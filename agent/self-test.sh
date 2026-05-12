@@ -305,6 +305,68 @@ else
     fi
 fi
 
+# ─── 9c. Runtime JSON file integrity sweep ────────────────────────────────────
+# Validates that the public-facing runtime JSON files served by nginx parse as
+# single JSON documents. Companion to section 9b (log-analysis) but generalized:
+# yesterday's "Next Time" item explicitly called out
+# `connection-rates.json` / `cve-status.json` / `port-inventory.json` etc. as
+# the next class of files that should be sanity-checked because the dashboard
+# silently accepts whatever bytes they contain.
+#
+# Files were corrupt for weeks (2026-04-XX → 2026-05-08) before someone
+# happened to grep for the pattern. The new `marvin_validate_json_or_warn`
+# write-time guards (PR for 2026-05-11) close the producer side; this section
+# closes the consumer side by detecting any pre-existing or out-of-band
+# corruption that slipped past the producers.
+#
+# Failure is downgraded to WARN rather than FAIL because (a) some files are
+# ephemeral and may not exist if the producer never ran, and (b) we don't want
+# a single corrupt non-load-bearing file to flip the whole self-test grade
+# from A to B until the operator can see the message.
+
+marvin_log "INFO" "Self-test: sweeping runtime JSON file integrity"
+
+# Whitelist — list intentionally to keep the surface bounded and explicit.
+# Each entry is (relative-path-under-data label).
+_runtime_json_targets=(
+    "security/connection-rates.json connection-rates"
+    "security/cve-status.json cve-status"
+    "security/port-inventory.json port-inventory"
+    "security/connection-geo.json connection-geo"
+    "security/outbound-audit.json outbound-audit"
+    "security/connections-latest.json connections-latest"
+    "security/latest-scan.json scan-latest"
+    "logs/analysis-latest.json analysis-latest"
+    "logs/recent.json logs-recent"
+    "metrics/sla.json sla"
+    "metrics/recent.json metrics-recent"
+    "metrics/resource-forecast.json resource-forecast"
+    "metrics/weekly-summary.json weekly-summary"
+    "changelog.json changelog"
+)
+
+for _entry in "${_runtime_json_targets[@]}"; do
+    _rel="${_entry% *}"
+    _label="${_entry##* }"
+    _path="${DATA_DIR}/${_rel}"
+    if [[ ! -f "$_path" ]]; then
+        # Missing files are not flagged — the producer may legitimately not
+        # have run yet (e.g. first hour after a fresh deploy). Section 9b
+        # already enforces freshness for the load-bearing log-analysis file.
+        continue
+    fi
+    if [[ ! -s "$_path" ]]; then
+        test_warn "runtime json: ${_label} is zero bytes (${_rel})"
+        continue
+    fi
+    if ! jq -s -e 'length == 1' "$_path" >/dev/null 2>&1; then
+        _bytes=$(wc -c < "$_path" 2>/dev/null || echo "?")
+        test_warn "runtime json: ${_label} is not a single valid JSON document (${_bytes} bytes, ${_rel})"
+        continue
+    fi
+    test_pass "runtime json: ${_label} valid (${_rel})"
+done
+
 # ─── 10. Security scoring system ──────────────────────────────────────────────
 # Grades the server A-F across multiple security dimensions
 
