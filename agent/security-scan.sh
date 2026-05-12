@@ -194,6 +194,7 @@ cat > "$PORT_INVENTORY" << PORTEOF
 }
 PORTEOF
 chmod 644 "$PORT_INVENTORY"
+marvin_validate_json_or_warn "$PORT_INVENTORY" "port-inventory" || true
 
 # ─── 3b. Active connection tracking & suspicious connection detection ─────────
 # Snapshot established connections and flag unusual destinations
@@ -337,6 +338,7 @@ cat > "$RATE_FILE" << RATEEOF
   "top_sources": ${top_sources_json}
 }
 RATEEOF
+marvin_validate_json_or_warn "$RATE_FILE" "connection-rates" || true
 chmod 644 "$RATE_FILE"
 
 marvin_log "INFO" "Connection rate analysis: ${high_rate_count} high-rate IP(s) above ${HIGH_CONN_THRESHOLD} conns"
@@ -472,6 +474,7 @@ cat > "$OUTBOUND_FILE" << OUTEOF
 }
 OUTEOF
 chmod 644 "$OUTBOUND_FILE"
+marvin_validate_json_or_warn "$OUTBOUND_FILE" "outbound-audit" || true
 
 marvin_log "INFO" "Outbound audit: ${outbound_count} connections, ${outbound_unexpected} to unusual ports"
 
@@ -556,6 +559,7 @@ cat > "$GEO_FILE" << GEOEOF
 }
 GEOEOF
 chmod 644 "$GEO_FILE"
+marvin_validate_json_or_warn "$GEO_FILE" "connection-geo" || true
 
 marvin_log "INFO" "Geographic analysis: ${geo_total_ips} unique IPs from ${geo_country_count} countries"
 
@@ -708,9 +712,15 @@ cat > "$REPORT_FILE" << EOF
 }
 EOF
 
+# Validate the daily report before propagating to latest-scan.json — a
+# corrupt scan-${TODAY}.json silently propagated as latest-scan.json was
+# the root cause of the 2026-05-01 self-test crash (see lessons-learned).
+marvin_validate_json_or_warn "$REPORT_FILE" "scan-daily" || true
+
 # Also maintain a latest scan pointer for the dashboard
 cp "$REPORT_FILE" "${SECURITY_DIR}/latest-scan.json"
 chmod 644 "${SECURITY_DIR}/latest-scan.json"
+marvin_validate_json_or_warn "${SECURITY_DIR}/latest-scan.json" "scan-latest" || true
 
 # ─── 7. Alert escalation for critical findings ──────────────────────────────
 
