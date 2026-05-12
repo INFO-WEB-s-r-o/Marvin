@@ -127,8 +127,15 @@ _add_cap "Hourly Watch"              "content"  "hourly-check.sh"     "Scans log
 roadmap_total=0
 roadmap_done=0
 if [[ -f "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" ]]; then
-    roadmap_total=$(grep -cP '^\s*- \[[ x]\]' "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" 2>/dev/null || echo 0)
-    roadmap_done=$(grep -cP '^\s*- \[x\]' "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" 2>/dev/null || echo 0)
+    # grep-c-double-output lesson: `grep -c X 2>/dev/null || echo 0` writes "0\n0"
+    # on a zero-match file (grep prints "0" then exits 1). Downstream arithmetic
+    # on line 134 (`roadmap_done * 100 / roadmap_total`) would crash on the
+    # multi-line value. Capture-then-fallback keeps grep's count, swallows
+    # only the exit code.
+    roadmap_total=$(grep -cP '^\s*- \[[ x]\]' "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" 2>/dev/null || true)
+    roadmap_total="${roadmap_total:-0}"
+    roadmap_done=$(grep -cP '^\s*- \[x\]' "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" 2>/dev/null || true)
+    roadmap_done="${roadmap_done:-0}"
 fi
 roadmap_pct=0
 [[ "$roadmap_total" -gt 0 ]] && roadmap_pct=$((roadmap_done * 100 / roadmap_total))
