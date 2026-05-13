@@ -144,9 +144,10 @@ screen_blog_content() {
         # Preserve rejected content for forensic review (mode 0600, root-only,
         # outside the nginx-served tree). Caps retention at last 30 files.
         local blocked_dir="${BLOCKED_BLOGS_DIR}"
+        local blocked_file=""
         if mkdir -p "$blocked_dir" 2>/dev/null; then
             chmod 700 "$blocked_dir" 2>/dev/null || true
-            local blocked_file="${blocked_dir}/${label}-$(date -u +%Y%m%dT%H%M%SZ).txt"
+            blocked_file="${blocked_dir}/${label}-$(date -u +%Y%m%dT%H%M%SZ).txt"
             local _saved=true
             # Subshell umask 177 → file is created mode 0600 atomically; no
             # TOCTOU window between create and chmod. Umask change is scoped
@@ -157,8 +158,27 @@ screen_blog_content() {
                 marvin_log "INFO" "${label}: rejected content saved to ${blocked_file} for post-mortem"
                 # Retention: keep only the 30 most recent rejections
                 ls -1t "$blocked_dir"/*.txt 2>/dev/null | tail -n +31 | xargs -r rm -f 2>/dev/null || true
+            else
+                blocked_file=""
             fi
         fi
+
+        # Append a metadata-only JSONL event for observability. No content or
+        # diagnostic line numbers — just the pattern category names already
+        # published to logs via marvin_log above. Lets the dashboard count
+        # how often the screen fires without re-parsing log files.
+        local events_file="${DATA_DIR}/blog-screening-events.jsonl"
+        # Build a JSON array of the unique pattern category names that fired.
+        local patterns_json
+        patterns_json=$(printf '%s' "${found%, }" | jq -Rc 'split(", ") | map(select(. != ""))' 2>/dev/null || echo '[]')
+        jq -nc \
+            --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg label "$label" \
+            --argjson patterns "$patterns_json" \
+            --arg forensic "$blocked_file" \
+            '{timestamp: $ts, label: $label, patterns: $patterns, forensic_path: $forensic}' \
+            >> "$events_file" 2>/dev/null || true
+
         return 1
     fi
     return 0

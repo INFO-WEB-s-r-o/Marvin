@@ -86,6 +86,7 @@ _add_cap "CVE Monitoring"            "security" "cve-monitor.sh"      "Tracks vu
 _add_cap "Connection Rate Monitoring" "security" "security-scan.sh"   "Per-IP connection rates, flags >50 concurrent"                      "2026-03-21"
 _add_cap "Outbound Connection Audit" "security" "security-scan.sh"    "Tracks all outbound connections, flags unusual ports"               "2026-03-23"
 _add_cap "Fail2ban Management"       "security" "health-monitor.sh"   "SSH + nginx jails, auto-restart if down"                            "2026-02-24"
+_add_cap "Backup System"             "security" "backup.sh"           "Daily compressed snapshots of blog/agent/comms/configs, 7d+4w retention" "2026-04-02"
 
 # Data & Analytics
 _add_cap "Metric Aggregation"        "data"     "metric-aggregate.sh" "Hourly/daily/weekly summaries with min/avg/max/p95"                 "2026-03-02"
@@ -98,6 +99,7 @@ _add_cap "Log-Based Alerting"        "data"     "log-alerting.sh"     "Hourly sc
 _add_cap "SLA Tracking"              "data"     "metric-aggregate.sh" "Daily uptime %, 30-day rolling window"                              "2026-03-05"
 _add_cap "Resource Forecasting"      "data"     "metric-aggregate.sh" "Linear regression predicts disk/memory exhaustion"                  "2026-03-20"
 _add_cap "Claude API Usage Tracking" "data"     "common.sh"           "Per-task duration, prompt/output chars, exit codes in JSONL"        "2026-03-07"
+_add_cap "Export Push Client"        "data"     "export-push.sh"      "POSTs daily bundles to configured endpoints with SSRF protection"   "2026-04-04"
 
 # Network & Communication
 _add_cap "Network Discovery"         "network"  "network-discovery.sh" "Scans for AI-managed servers, probes .well-known endpoints"        "2026-02-23"
@@ -107,6 +109,8 @@ _add_cap "Bandwidth Monitoring"      "network"  "health-monitor.sh"   "rx/tx byt
 _add_cap "Protocol Negotiation"      "network"  "negotiate-handler.sh" "POST endpoint, Claude-powered analysis, rate limiting"             "2026-02-23"
 _add_cap "Log Watcher"               "network"  "log-watcher.sh"      "Scans /var/log for communication attempts, filters attacks"         "2026-02-23"
 _add_cap "GPG Identity & Signing"    "network"  "lib/github.sh"       "RSA 4096 key, signed commits/issues, public key serving"           "2026-01-30"
+_add_cap "Negotiate Inbox Listener"  "network"  "negotiate-listener.sh" "HTTP listener on port 8043 accepting POST negotiations from nginx" "2026-02-22"
+_add_cap "External Domain Monitoring" "network" "external-domains-check.sh" "Tracks HTTP/SSL/DNS health of monitored external domains, 5-min cadence" "2026-05-01"
 
 # Self-Evolution
 _add_cap "Self-Enhancement"          "evolution" "self-enhance.sh"    "Reviews and modifies own code, max 3 changes per session"           "2026-02-23"
@@ -118,10 +122,14 @@ _add_cap "Codebase Health Score"     "evolution" "codebase-health.sh" "4-dimensi
 _add_cap "Enhancement Tracker"       "evolution" "enhancement-tracker.sh" "Session counts, success/rollback rate, weekly trends"           "2026-03-26"
 _add_cap "Lessons Learned"           "evolution" "lessons-learned.sh" "Codified lessons + anti-patterns, auto-detected from error logs"    "2026-03-27"
 _add_cap "Capability Inventory"      "evolution" "capability-inventory.sh" "This script — tracks what Marvin can do today"                 "2026-03-28"
+_add_cap "Incident Reports"          "evolution" "incident-report.sh"  "Auto-detects, diagnoses, documents, and resolves incidents (7 types)" "2026-03-30"
+_add_cap "Zero-Downtime Web Deploy"  "evolution" "deploy-web.sh"       "npm ci+build+restart with backup/rollback and JS asset healthcheck" "2026-04-01"
 
 # Content
 _add_cap "Evening Blog Post"         "content"  "evening-report.sh"   "Bilingual (EN/CS) daily blog posts"                                "2026-02-23"
 _add_cap "Hourly Watch"              "content"  "hourly-check.sh"     "Scans logs for actionable errors, reviews GitHub issues"            "2026-02-27"
+_add_cap "Public Changelog Feed"     "content"  "changelog-gen.sh"    "Generates /api/changelog.json from enhancement reports for dashboard timeline" "2026-04-03"
+_add_cap "Thoughts Extractor"        "content"  "thoughts-extract.sh" "Pulls reflections/intentions from enhancement reports for dashboard" "2026-04-07"
 
 # ─── 4. Roadmap progress ─────────────────────────────────────────────────────
 roadmap_total=0
