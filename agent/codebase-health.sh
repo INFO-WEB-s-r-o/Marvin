@@ -179,10 +179,10 @@ if [[ -f "${DATA_DIR}/security/security-score.json" ]]; then
     fi
 fi
 
-# SLA uptime
+# SLA uptime — value lives under .summary, see metric-aggregate.sh:362+
 sla_pct="unknown"
 if [[ -f "${METRICS_DIR}/sla.json" ]]; then
-    sla_pct=$(jq -r '.overall_uptime_pct // "unknown"' "${METRICS_DIR}/sla.json" 2>/dev/null || echo "unknown")
+    sla_pct=$(jq -r '.summary.overall_uptime_pct // "unknown"' "${METRICS_DIR}/sla.json" 2>/dev/null || echo "unknown")
     if [[ "$sla_pct" != "unknown" ]]; then
         sla_int=${sla_pct%%.*}
         if [[ "$sla_int" -lt 99 ]]; then

@@ -21,7 +21,12 @@ LOOKBACK_DAYS=7
 # Collect recent enhancement reports (last N days)
 reports=()
 for i in $(seq 0 "$LOOKBACK_DAYS"); do
-    day=$(date -u -d "${TODAY} - ${i} days" +%Y-%m-%d 2>/dev/null || date -u -v-${i}d +%Y-%m-%d 2>/dev/null || continue)
+    # `|| continue` must live outside the $() — inside it only exits the
+    # command-substitution subshell, leaving $day empty. An empty $day made
+    # the next find match every report in $ENHANCE_DIR (glob "*.md") instead
+    # of skipping the iteration, padding `reports[]` with duplicates.
+    day=$(date -u -d "${TODAY} - ${i} days" +%Y-%m-%d 2>/dev/null \
+        || date -u -v-${i}d +%Y-%m-%d 2>/dev/null) || continue
     while IFS= read -r f; do
         [[ -f "$f" ]] && reports+=("$f")
     done < <(find "$ENHANCE_DIR" -name "${day}*.md" -type f 2>/dev/null | sort -r)
