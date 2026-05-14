@@ -179,11 +179,7 @@ if [[ -f "${DATA_DIR}/security/security-score.json" ]]; then
     fi
 fi
 
-# SLA uptime
-# Note: the value lives under .summary.overall_uptime_pct (set by
-# metric-aggregate.sh, see agent/metric-aggregate.sh:362+). Reading from the
-# top-level key returned null and silently skipped the -lt 99 deduction
-# from 2026-03-26 until 2026-05-14.
+# SLA uptime — value lives under .summary, see metric-aggregate.sh:362+
 sla_pct="unknown"
 if [[ -f "${METRICS_DIR}/sla.json" ]]; then
     sla_pct=$(jq -r '.summary.overall_uptime_pct // "unknown"' "${METRICS_DIR}/sla.json" 2>/dev/null || echo "unknown")
