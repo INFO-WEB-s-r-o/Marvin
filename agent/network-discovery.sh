@@ -280,8 +280,13 @@ if [[ -f "$PEERS_FILE" ]]; then
         if [[ -n "$peer_domain" && "$peer_domain" != "null" ]]; then
             # Strip IPv6 brackets if present (#480), then validate
             clean_domain="${peer_domain#[}"; clean_domain="${clean_domain%]}"
+            # CIDR ranges (e.g. 198.235.24.0/24) are documentation for scanner
+            # ranges, not single hosts with beacons. Skip silently so they don't
+            # produce a daily "invalid domain" WARN — they're deliberately stored.
+            if [[ "$clean_domain" == */* ]]; then
+                beacon_score=0
             # Validate peer_domain — reject URLs with path/query/fragment injection characters
-            if ! echo "$clean_domain" | grep -qP '^[a-zA-Z0-9]([a-zA-Z0-9.\-]{0,253}[a-zA-Z0-9])?$' \
+            elif ! echo "$clean_domain" | grep -qP '^[a-zA-Z0-9]([a-zA-Z0-9.\-]{0,253}[a-zA-Z0-9])?$' \
                && ! echo "$clean_domain" | grep -qP '^\d{1,3}(\.\d{1,3}){3}$' \
                && ! echo "$clean_domain" | grep -qP '^[0-9a-fA-F:]+$'; then
                 marvin_log "WARN" "Skipping beacon check for invalid domain: ${peer_domain}"

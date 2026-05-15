@@ -315,7 +315,22 @@ if ! check_claude; then
     exit 1
 fi
 
-raw_output=$(run_claude "log-analysis" "$analysis_prompt")
+# Lock-acquisition timeout: log-watcher runs every 30 min, so a missed cycle
+# is cheap — the next cron run will pick up the same offset. Waiting the
+# default 5 minutes for the lock burns CPU and trips `set -e` silently when
+# self-enhance (10:00 local / 08:00 UTC) holds the lock for its full run.
+# Cap at 60s and treat exit 2 (lock timeout) as a clean skip.
+export CLAUDE_LOCK_TIMEOUT=60
+raw_output=$(run_claude "log-analysis" "$analysis_prompt") && claude_rc=0 || claude_rc=$?
+
+if [[ "$claude_rc" -eq 2 ]]; then
+    marvin_log "INFO" "log-analysis skipped — Claude lock held by another task; next 30-min run will catch up"
+    exit 0
+fi
+if [[ "$claude_rc" -ne 0 ]]; then
+    marvin_log "WARN" "log-analysis Claude exit ${claude_rc} — skipping this cycle"
+    exit 0
+fi
 
 # Try to extract JSON from the output
 analysis_json=$(echo "$raw_output" | sed -n '/^\[/,/^\]/p' | head -500)
