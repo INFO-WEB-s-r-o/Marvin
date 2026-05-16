@@ -66,6 +66,7 @@ _normalize_message() {
 # a command that writes to stdout *before* exiting non-zero must not be
 # combined with a `||`-emitting fallback.
 _process_level() {
+    # shellcheck disable=SC2034  # $1 ("errors"/"warnings") is documentation at the call site; pattern in $2 does the actual work
     local level="$1"
     local pattern="$2"
     local _out

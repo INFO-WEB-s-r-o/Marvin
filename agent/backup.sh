@@ -39,7 +39,6 @@ source "$(dirname "$0")/common.sh"
 trap marvin_error_trap ERR
 
 BACKUP_BASE="/home/marvin/backups"
-BACKUP_DATE=$(date -u +%Y-%m-%d)
 BACKUP_TS=$(date -u +%Y%m%d-%H%M%S)
 BACKUP_FILE="${BACKUP_BASE}/marvin-backup-${BACKUP_TS}.tar.gz"
 BACKUP_MANIFEST="${BACKUP_BASE}/latest-manifest.json"

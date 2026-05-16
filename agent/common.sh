@@ -25,12 +25,17 @@ BLOG_DIR="$(dirname "${MARVIN_DIR}")/blog"  # Outside git tree — blog data is 
 BLOCKED_BLOGS_DIR="$(dirname "${MARVIN_DIR}")/blocked-blogs"  # Outside git + nginx-served trees — forensic store for screen_blog_content() rejections
 COMMS_DIR="${DATA_DIR}/comms"
 ENHANCE_DIR="${DATA_DIR}/enhancements"
+# shellcheck disable=SC2034  # sourced by ~12 agent scripts (evening-report, fix-issues, github-interact, hourly-check, log-watcher, etc.)
 PROMPTS_DIR="${MARVIN_DIR}/agent/prompts"
 WEB_DIR="${MARVIN_DIR}/web"
+# shellcheck disable=SC2034  # sourced by health-monitor.sh
 SITE_URL="https://robot-marvin.cz"
 
+# shellcheck disable=SC2034  # sourced by codebase-health, daily-digest, email-manage, evening-report, file-integrity, +many
 TODAY=$(date -u +%Y-%m-%d)
+# shellcheck disable=SC2034  # sourced by capability-inventory, codebase-health, cve-monitor, daily-digest, email-manage, +many
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+# shellcheck disable=SC2034  # sourced by fix-issues, hourly-check, log-watcher, morning-check, self-enhance
 TIMESTAMP=$(date +%s)
 
 # ─── Dry-run mode ─────────────────────────────────────────────────────────
@@ -331,11 +336,16 @@ marvin_rebuild_web() {
     # cleanup regardless of how the subshell terminates — including set -e
     # kills, which do NOT fire RETURN traps (fixes #521, #523).
     (
-        trap "rm -rf '${lock_dir}' || true" EXIT
+        # Single quotes defer expansion to trap time, but lock_dir is already
+        # set in the parent scope (line 304) and inherited by this subshell,
+        # so behavior is identical. Single quotes silence SC2064.
+        # shellcheck disable=SC2064  # lock_dir is stable; eager expansion is intentional but late binding works too
+        trap 'rm -rf "${lock_dir}" || true' EXIT
 
         local web_dir="${WEB_DIR}"
         local standalone_dir="${web_dir}/.next/standalone"
-        local backup_dir="${web_dir}/.next-backup-$(date +%s)"
+        local backup_dir
+        backup_dir="${web_dir}/.next-backup-$(date +%s)"
 
         marvin_log "INFO" "Web rebuild starting (reason: ${reason})"
 

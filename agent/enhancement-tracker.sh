@@ -24,7 +24,6 @@ total_sessions=0
 enhance_sessions=0
 sync_sessions=0
 rollback_sessions=0
-weekly_sessions=0
 
 # Per-week tracking (last 4 weeks)
 declare -A week_counts

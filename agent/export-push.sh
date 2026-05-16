@@ -73,14 +73,14 @@ if [[ ! -f "$BUNDLE_FILE" && ! -f "$BUNDLE_GZ" ]]; then
 fi
 
 # Prefer gzipped bundle if available (smaller transfer)
+# The Content-Encoding: gzip header is set directly in the curl args below
+# when USE_GZ=true (see "Build curl args" section).
 USE_GZ=false
 SEND_FILE="$BUNDLE_FILE"
 CONTENT_TYPE="application/json"
-CONTENT_ENCODING=""
 if [[ -f "$BUNDLE_GZ" ]]; then
     USE_GZ=true
     SEND_FILE="$BUNDLE_GZ"
-    CONTENT_ENCODING="gzip"
 fi
 
 BUNDLE_SIZE=$(stat -c%s "$SEND_FILE" 2>/dev/null || echo "0")
