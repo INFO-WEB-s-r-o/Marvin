@@ -108,7 +108,8 @@ EOF
     [[ "${#seen_posts[@]}" -ge 30 ]] && break
 done
 
-echo '],"total":'$(find "${BLOG_DIR}" -name "*.md" -type f 2>/dev/null | wc -l)'}' >> "$BLOG_INDEX"
+_blog_total=$(find "${BLOG_DIR}" -name "*.md" -type f 2>/dev/null | wc -l)
+echo "],\"total\":${_blog_total}}" >> "$BLOG_INDEX"
 
 # 4. Generate uptime data
 UPTIME_SECONDS=$(cat /proc/uptime 2>/dev/null | cut -d' ' -f1 | cut -d'.' -f1 || echo "0")
@@ -187,7 +188,6 @@ NEGOTIATIONS_REG="${COMMS_DIR}/negotiations.json"
 LOG_ANALYSIS="${COMMS_DIR}/log-analysis-${TODAY}.json"
 
 # Defaults
-sig_total=0
 sig_attacks=0
 sig_comms=0
 sig_last=""
@@ -199,7 +199,6 @@ today_ai=0
 recent_signals="[]"
 
 if [[ -f "$SIGNALS_FILE" ]]; then
-    sig_total=$(jq '.total_attacks + .total_communication' "$SIGNALS_FILE" 2>/dev/null || echo 0)
     sig_attacks=$(jq '.total_attacks // 0' "$SIGNALS_FILE" 2>/dev/null || echo 0)
     sig_comms=$(jq '.total_communication // 0' "$SIGNALS_FILE" 2>/dev/null || echo 0)
     sig_last=$(jq -r '.last_updated // ""' "$SIGNALS_FILE" 2>/dev/null || echo "")

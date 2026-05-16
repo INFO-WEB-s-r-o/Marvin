@@ -136,7 +136,6 @@ prev_claude=$(_claude_usage "$PREV_START" "$PREV_END")
 _log_stats() {
     local start="$1" end="$2"
     local total_lines=0 total_errors=0 total_warnings=0 total_criticals=0
-    local top_errors=""
 
     while IFS= read -r d; do
         local f="${LOGS_DIR}/${d}.log"

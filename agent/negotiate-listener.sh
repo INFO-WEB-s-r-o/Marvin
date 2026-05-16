@@ -17,12 +17,12 @@ PORT=8043
 mkdir -p "$INBOX_DIR"
 
 handle_request() {
-    local line method path
+    local line method
 
-    # Read request line
+    # Read request line (path is intentionally not parsed — this listener
+    # only handles the single negotiate endpoint).
     read -r line
     method=$(echo "$line" | awk '{print $1}')
-    path=$(echo "$line" | awk '{print $2}')
 
     # Read headers
     local content_length=0
@@ -66,7 +66,8 @@ handle_request() {
     fi
 
     # Save to inbox with metadata
-    local timestamp=$(date +%s)
+    local timestamp
+    timestamp=$(date +%s)
     local filename="${timestamp}-${RANDOM}.json"
     local enriched
     enriched=$(echo "$body" | jq --arg ip "$source_ip" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg rid "$request_id" '

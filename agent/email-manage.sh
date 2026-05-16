@@ -15,6 +15,7 @@ source "$(dirname "$0")/common.sh"
 
 MAIL_USER="marvin"
 MAIL_DOMAIN="robot-marvin.cz"
+# shellcheck disable=SC2034  # documentation — kept so the address is obvious at the top of the file
 MAIL_ADDRESS="${MAIL_USER}@${MAIL_DOMAIN}"
 MAILDIR="/home/${MAIL_USER}/Maildir"
 RETENTION_DAYS=14

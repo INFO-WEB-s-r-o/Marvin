@@ -25,7 +25,8 @@ track_freed() {
     local bytes="$2"
     if [[ "$bytes" -gt 0 ]]; then
         FREED_BYTES=$((FREED_BYTES + bytes))
-        local human=$(numfmt --to=iec "$bytes" 2>/dev/null || echo "${bytes}B")
+        local human
+        human=$(numfmt --to=iec "$bytes" 2>/dev/null || echo "${bytes}B")
         ACTIONS+=("${desc}: ${human}")
         marvin_log "INFO" "Cleaned ${human}: ${desc}"
     fi

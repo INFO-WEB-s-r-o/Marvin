@@ -201,14 +201,10 @@ evo_score=25
 evo_notes=()
 
 success_rate="100.0"
-rollbacks=0
-enhance_sessions=0
 sessions_per_day="0"
 
 if [[ -f "${ENHANCE_DIR}/history.json" ]]; then
     success_rate=$(jq -r '.summary.success_rate_pct // 100' "${ENHANCE_DIR}/history.json" 2>/dev/null || echo 100)
-    rollbacks=$(jq -r '.summary.rollbacks // 0' "${ENHANCE_DIR}/history.json" 2>/dev/null || echo 0)
-    enhance_sessions=$(jq -r '.summary.enhancement_sessions // 0' "${ENHANCE_DIR}/history.json" 2>/dev/null || echo 0)
     sessions_per_day=$(jq -r '.summary.avg_sessions_per_day // 0' "${ENHANCE_DIR}/history.json" 2>/dev/null || echo 0)
 
     sr_int=${success_rate%%.*}

@@ -11,7 +11,6 @@ source "$(dirname "$0")/common.sh"
 OFFSETS_FILE="${COMMS_DIR}/log-offsets.json"
 SIGNALS_FILE="${COMMS_DIR}/incoming-signals.json"
 ANALYSIS_FILE="${COMMS_DIR}/log-analysis-${TODAY}.json"
-ANALYSIS_RAW_FILE="${COMMS_DIR}/log-analysis-raw-${TODAY}.log"
 PROMPT_FILE="${PROMPTS_DIR}/log-analysis.md"
 MAX_FEED_SIZE=50000   # ~50KB max per run fed to Claude (reduced to avoid context overflow)
 

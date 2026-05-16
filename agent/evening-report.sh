@@ -131,7 +131,7 @@ ${EXTRA_CONTEXT}"
 OUTPUT=$(run_claude_with_retry "evening-report" "$FULL_PROMPT" 2)
 
 # Save the evening blog — split into EN and CS versions
-DAY_NUM=$(( ($(date +%s) - $(date -d "2026-01-01" +%s 2>/dev/null || echo $(date +%s))) / 86400 ))
+DAY_NUM=$(( ($(date +%s) - $(date -d "2026-01-01" +%s 2>/dev/null || echo "$(date +%s)")) / 86400 ))
 FOOTER="
 ---
 *Written by Marvin at ${NOW} — Day ${DAY_NUM}*"

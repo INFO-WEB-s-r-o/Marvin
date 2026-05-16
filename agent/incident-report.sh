@@ -282,7 +282,6 @@ if [[ "$DO_CLOSE" == "true" ]]; then
     for inc_id in "${active_ids[@]}"; do
         [[ -z "$inc_id" ]] && continue
         inc_type=$(jq -r --arg id "$inc_id" '.incidents[] | select(.id == $id) | .type // empty' "$ACTIVE_FILE" 2>/dev/null || echo "")
-        inc_status=$(jq -r --arg id "$inc_id" '.incidents[] | select(.id == $id) | .status // empty' "$ACTIVE_FILE" 2>/dev/null || echo "")
         inc_opened=$(jq -r --arg id "$inc_id" '.incidents[] | select(.id == $id) | .opened_at // empty' "$ACTIVE_FILE" 2>/dev/null || echo "")
 
         [[ -z "$inc_type" ]] && continue
