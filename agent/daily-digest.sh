@@ -4,12 +4,16 @@
 # =============================================================================
 # Summarizes the day's logs into a human-readable JSON digest.
 # No Claude API call needed — pure text/jq processing.
-# Runs at 23:30 UTC via cron (after all other daily tasks).
+# Cron fires shortly after 00:00 UTC (after log-export, before log-analysis).
 # =============================================================================
 
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 trap marvin_error_trap ERR
+
+# Target the UTC day that just ended. Override for manual runs:
+#   TARGET_DATE=YYYY-MM-DD bash agent/daily-digest.sh
+TODAY="${TARGET_DATE:-$(date -u -d 'yesterday' +%Y-%m-%d)}"
 
 marvin_log "INFO" "Daily digest starting for ${TODAY}"
 
