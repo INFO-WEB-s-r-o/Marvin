@@ -13,6 +13,7 @@
 
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+trap marvin_error_trap ERR
 
 ALERTS_DIR="${DATA_DIR}/alerts"
 ALERTS_FILE="${ALERTS_DIR}/active-alerts.json"
