@@ -25,10 +25,10 @@ cat > "$CRON_FILE" << 'EOF'
 # UTC across DST transitions, uncomment the `CRON_TZ=UTC` line below; note
 # that this would shift every job by 1-2 hours of wall-clock time.
 #
-# Known correctness gap from the local-time schedule: daily-digest (30 23)
-# and log-analysis (45 23) currently fire at 21:30/21:45 UTC and miss the
-# last ~2 hours of the UTC day. Scripts use `TODAY=$(date -u +%Y-%m-%d)`,
-# so they process the right day but with truncated coverage.
+# Daily aggregators (log-export, daily-digest, log-analysis) fire at
+# `0/5/10 2 * * *` local = just after 00:00 UTC (CEST) or 01:00 UTC (CET).
+# Each aggregator computes `TODAY="${TARGET_DATE:-$(date -u -d 'yesterday' +%Y-%m-%d)}"`
+# so it processes the UTC day that just ended. Resolves #697.
 #
 # CRON_TZ=UTC
 SHELL=/bin/bash
@@ -63,9 +63,17 @@ MARVIN_DIR=/home/marvin/git
 # Generates daily blog post and status summary
 0 21 * * * root ${MARVIN_DIR}/agent/evening-report.sh >> /var/log/marvin-evening.log 2>&1
 
-# Log export — 23:00 UTC
-# Local git commit + generate exportable log bundles
-0 23 * * * root ${MARVIN_DIR}/agent/log-export.sh >> /var/log/marvin-export.log 2>&1
+# Log export — 02:00 local (just after 00:00 UTC, resolves #697)
+# Local git commit + generate exportable log bundles for the UTC day that just ended
+0 2 * * * root ${MARVIN_DIR}/agent/log-export.sh >> /var/log/marvin-export.log 2>&1
+
+# Daily digest — 02:05 local (resolves #697)
+# Aggregates the completed UTC day's metrics, events, and incidents
+5 2 * * * root ${MARVIN_DIR}/agent/daily-digest.sh >> /var/log/marvin-digest.log 2>&1
+
+# Log analysis pipeline — 02:10 local (resolves #697)
+# Pattern detection and error clustering for the completed UTC day
+10 2 * * * root ${MARVIN_DIR}/agent/log-analysis.sh >> /var/log/marvin-analysis.log 2>&1
 
 # Website regeneration — every 15 minutes
 # Rebuild status page with latest metrics
@@ -130,8 +138,10 @@ log "  0    6 * * *  Morning check"
 log "  0  10,15 * * 1-6  Self-enhancement (Mon-Sat, twice daily)"
 log "  0   10 * * 0    Weekly deep enhancement (Sunday)"
 log "  0   18 * * *  Network discovery"
-log "  0   22 * * *  Evening report"
-log "  0   23 * * *  Log export"
+log "  0   21 * * *  Evening report"
+log "  0    2 * * *  Log export (just after 00:00 UTC)"
+log "  5    2 * * *  Daily digest"
+log "  10   2 * * *  Log analysis pipeline"
 log "  */15 * * * *  Website update"
 log "  */30 * * * *  Log watcher (communication detection)"
 log "  15,45 * * * * Negotiate handler (protocol proposals)"
