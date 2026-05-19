@@ -15,6 +15,7 @@
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 source "$(dirname "$0")/lib/github.sh"
+trap marvin_error_trap ERR
 
 marvin_log "INFO" "=== GITHUB INTERACTION STARTING ==="
 

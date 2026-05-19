@@ -17,6 +17,7 @@
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 source "$(dirname "$0")/lib/github.sh"
+trap marvin_error_trap ERR
 
 LOCK_FILE="/tmp/marvin-fix-issues.lock"
 # Snapshot pre-existing untracked files BEFORE trap can fire (#285, #287)
