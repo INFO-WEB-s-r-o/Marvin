@@ -7,6 +7,7 @@
 
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+trap marvin_error_trap ERR
 
 OFFSETS_FILE="${COMMS_DIR}/log-offsets.json"
 SIGNALS_FILE="${COMMS_DIR}/incoming-signals.json"
