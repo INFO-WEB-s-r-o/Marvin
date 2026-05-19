@@ -12,6 +12,7 @@
 
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+trap marvin_error_trap ERR
 
 MAIL_USER="marvin"
 MAIL_DOMAIN="robot-marvin.cz"
