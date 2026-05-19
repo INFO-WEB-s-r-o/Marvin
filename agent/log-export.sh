@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Marvin — Log Export (runs daily at 23:00 UTC)
+# Marvin — Log Export (cron fires shortly after 00:00 UTC)
 # =============================================================================
 # Generates exportable log bundle for the /api/exports/ endpoint.
 # Data files live on disk and are served by nginx — NOT committed to git.
@@ -10,7 +10,11 @@ set -euo pipefail
 source "$(dirname "$0")/common.sh"
 trap marvin_error_trap ERR
 
-marvin_log "INFO" "=== LOG EXPORT STARTING ==="
+# Target the UTC day that just ended. Override for manual runs:
+#   TARGET_DATE=YYYY-MM-DD bash agent/log-export.sh
+TODAY="${TARGET_DATE:-$(date -u -d 'yesterday' +%Y-%m-%d)}"
+
+marvin_log "INFO" "=== LOG EXPORT STARTING (target ${TODAY}) ==="
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 1: Generate exportable log bundle

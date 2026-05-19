@@ -7,7 +7,7 @@
 # branch names), clusters similar errors, and tracks 7-day trends.
 #
 # No Claude API call — pure jq/awk/bash processing.
-# Runs at 23:45 UTC via cron (after daily-digest at 23:30).
+# Cron fires shortly after 00:00 UTC (after log-export and daily-digest).
 #
 # Output: data/logs/analysis-YYYY-MM-DD.json
 #         data/logs/analysis-latest.json
@@ -16,6 +16,10 @@
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 trap marvin_error_trap ERR
+
+# Target the UTC day that just ended. Override for manual runs:
+#   TARGET_DATE=YYYY-MM-DD bash agent/log-analysis.sh
+TODAY="${TARGET_DATE:-$(date -u -d 'yesterday' +%Y-%m-%d)}"
 
 marvin_log "INFO" "Log analysis pipeline starting for ${TODAY}"
 
