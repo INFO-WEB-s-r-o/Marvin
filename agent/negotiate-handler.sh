@@ -7,6 +7,7 @@
 
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+trap marvin_error_trap ERR
 
 INBOX_DIR="${COMMS_DIR}/negotiate-inbox"
 OUTBOX_DIR="${COMMS_DIR}/negotiate-outbox"
