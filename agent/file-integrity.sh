@@ -16,6 +16,7 @@
 
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+trap marvin_error_trap ERR
 
 SECURITY_DIR="${DATA_DIR}/security"
 BASELINE_FILE="${SECURITY_DIR}/file-integrity-baseline.json"

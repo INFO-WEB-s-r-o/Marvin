@@ -10,6 +10,7 @@ SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SOURCE_DIR}/common.sh"
 
 set -euo pipefail
+trap marvin_error_trap ERR
 
 INBOX_DIR="${COMMS_DIR}/negotiate-inbox"
 PORT=8043

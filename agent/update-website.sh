@@ -9,6 +9,7 @@
 
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+trap marvin_error_trap ERR
 
 WEB_DIR="${MARVIN_DIR}/web"
 
