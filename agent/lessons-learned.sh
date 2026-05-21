@@ -157,6 +157,14 @@ fi
 # Motivation: the 2026-04-26/27 daily-digest SIGPIPE issue would have been
 # caught earlier had we noticed exit-code 141 patterns matching the
 # existing `sigpipe-under-pipefail` lesson.
+#
+# Lessons can opt out via `expected_recurrence: true` in lessons-learned.json.
+# Use this for lessons that *document* an intentionally-recurring WARN — e.g.
+# `claude-lock-timeout-expected-on-cron-overlap`, where the WARN itself is
+# designed behavior on cron overlap and the safeguard is the exit-code-2
+# branch + 60s cap, not log-line suppression. Without this flag the detector
+# flags such patterns daily as "possible regression" — exactly the noise the
+# documenting-lesson was codified to eliminate.
 
 ANALYSIS_FILE="${LOGS_DIR}/analysis-latest.json"
 RECURRING=""
@@ -190,6 +198,7 @@ elif [[ -f "$ANALYSIS_FILE" ]] && jq empty "$ANALYSIS_FILE" 2>/dev/null; then
         match_id=$(jq -r --arg sig "$sig_lower" '
             .lessons[]
             | select(.resolved == true)
+            | select((.expected_recurrence // false) == false)
             | . as $l
             | ($l.id | ascii_downcase | split("-") | map(select(length >= 4))) as $tokens
             | ($tokens | map(select(. as $t | $sig | contains($t))) | length) as $hits
