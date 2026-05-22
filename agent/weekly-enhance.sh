@@ -32,10 +32,10 @@ TEST_FAIL=0
 for script in "${MARVIN_DIR}"/agent/*.sh; do
     if bash -n "$script" 2>/dev/null; then
         TEST_RESULTS+="✅ PASS: $(basename "$script") — valid syntax\n"
-        ((TEST_PASS++))
+        ((++TEST_PASS))
     else
         TEST_RESULTS+="❌ FAIL: $(basename "$script") — SYNTAX ERROR\n"
-        ((TEST_FAIL++))
+        ((++TEST_FAIL))
     fi
 done
 
@@ -43,30 +43,30 @@ done
 for dir in "$LOGS_DIR" "$METRICS_DIR" "$BLOG_DIR" "$COMMS_DIR" "$ENHANCE_DIR"; do
     if [[ -d "$dir" ]]; then
         TEST_RESULTS+="✅ PASS: Directory exists — $dir\n"
-        ((TEST_PASS++))
+        ((++TEST_PASS))
     else
         TEST_RESULTS+="❌ FAIL: Missing directory — $dir\n"
-        ((TEST_FAIL++))
+        ((++TEST_FAIL))
     fi
 done
 
 # Test 3: Claude CLI is available
 if command -v claude &> /dev/null; then
     TEST_RESULTS+="✅ PASS: Claude CLI available\n"
-    ((TEST_PASS++))
+    ((++TEST_PASS))
 else
     TEST_RESULTS+="❌ FAIL: Claude CLI not found\n"
-    ((TEST_FAIL++))
+    ((++TEST_FAIL))
 fi
 
 # Test 4: Critical services running
 for service in nginx fail2ban cron sshd; do
     if systemctl is-active "$service" &>/dev/null; then
         TEST_RESULTS+="✅ PASS: Service running — $service\n"
-        ((TEST_PASS++))
+        ((++TEST_PASS))
     else
         TEST_RESULTS+="⚠️ WARN: Service not running — $service\n"
-        ((TEST_FAIL++))
+        ((++TEST_FAIL))
     fi
 done
 
@@ -74,39 +74,39 @@ done
 "${MARVIN_DIR}/agent/health-monitor.sh" >/dev/null 2>&1 || true
 if [[ -f "${METRICS_DIR}/latest.json" ]] && jq empty "${METRICS_DIR}/latest.json" 2>/dev/null; then
     TEST_RESULTS+="✅ PASS: Health monitor produces valid JSON\n"
-    ((TEST_PASS++))
+    ((++TEST_PASS))
 else
     TEST_RESULTS+="❌ FAIL: Health monitor JSON invalid or missing\n"
-    ((TEST_FAIL++))
+    ((++TEST_FAIL))
 fi
 
 # Test 6: Disk usage check
 DISK_PERCENT=$(df / | awk 'NR==2{print $5}' | tr -d '%')
 if (( DISK_PERCENT < 80 )); then
     TEST_RESULTS+="✅ PASS: Disk usage ${DISK_PERCENT}% (< 80%)\n"
-    ((TEST_PASS++))
+    ((++TEST_PASS))
 else
     TEST_RESULTS+="⚠️ WARN: Disk usage ${DISK_PERCENT}% (≥ 80%)\n"
-    ((TEST_FAIL++))
+    ((++TEST_FAIL))
 fi
 
 # Test 7: Memory check
 MEM_AVAILABLE=$(free -m | awk 'NR==2{print $7}')
 if (( MEM_AVAILABLE > 200 )); then
     TEST_RESULTS+="✅ PASS: Available memory ${MEM_AVAILABLE}MB (> 200MB)\n"
-    ((TEST_PASS++))
+    ((++TEST_PASS))
 else
     TEST_RESULTS+="⚠️ WARN: Low memory — only ${MEM_AVAILABLE}MB available\n"
-    ((TEST_FAIL++))
+    ((++TEST_FAIL))
 fi
 
 # Test 8: Git repo is clean (no uncommitted changes that should have been synced)
 if cd "${MARVIN_DIR}" && git diff --quiet HEAD 2>/dev/null; then
     TEST_RESULTS+="✅ PASS: Git repo is clean\n"
-    ((TEST_PASS++))
+    ((++TEST_PASS))
 else
     TEST_RESULTS+="ℹ️ INFO: Git has uncommitted changes (normal between syncs)\n"
-    ((TEST_PASS++))
+    ((++TEST_PASS))
 fi
 
 # Test 9: Cron jobs are installed
@@ -117,22 +117,22 @@ if [[ -f /etc/cron.d/marvin ]]; then
     CRON_JOBS=$(grep -c "MARVIN" /etc/cron.d/marvin 2>/dev/null || true)
     CRON_JOBS="${CRON_JOBS:-0}"
     TEST_RESULTS+="✅ PASS: Cron file exists with ${CRON_JOBS} references\n"
-    ((TEST_PASS++))
+    ((++TEST_PASS))
 else
     TEST_RESULTS+="❌ FAIL: /etc/cron.d/marvin missing\n"
-    ((TEST_FAIL++))
+    ((++TEST_FAIL))
 fi
 
 # Test 10: Website files exist (Next.js dashboard)
 if [[ -f "${WEB_DIR}/package.json" ]]; then
     TEST_RESULTS+="✅ PASS: Next.js dashboard exists\n"
-    ((TEST_PASS++))
+    ((++TEST_PASS))
 elif [[ -f "${WEB_DIR}/index.html" ]]; then
     TEST_RESULTS+="✅ PASS: Static dashboard exists\n"
-    ((TEST_PASS++))
+    ((++TEST_PASS))
 else
     TEST_RESULTS+="❌ FAIL: Dashboard missing — no package.json or index.html\n"
-    ((TEST_FAIL++))
+    ((++TEST_FAIL))
 fi
 
 # Save test results
