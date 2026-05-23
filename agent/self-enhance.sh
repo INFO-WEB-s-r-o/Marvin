@@ -20,6 +20,25 @@ marvin_log "INFO" "=== SELF-ENHANCEMENT STARTING ==="
 
 check_claude || exit 1
 
+# ─── Pre-flight: detect divergence from origin/main since morning sync ───────
+# morning-check.sh pulled at 04:00 UTC. Self-enhance runs at 08:00 UTC. PRs that
+# merged on GitHub in between leave local main 1+ commits behind origin/main,
+# and Claude can propose duplicates of changes that just landed.
+# (Yesterday's session walked into this with PR #710 vs #709.)
+# We just fetch + capture the divergence; rebasing is morning-check's job.
+PREFLIGHT_DIVERGENCE=""
+if timeout 30 git -C "$MARVIN_DIR" fetch --quiet origin main 2>/dev/null; then
+    _ahead=$(git -C "$MARVIN_DIR" log --oneline main..origin/main 2>/dev/null || true)
+    if [[ -n "$_ahead" ]]; then
+        _count=$(printf '%s\n' "$_ahead" | wc -l | tr -d ' ')
+        marvin_log "WARN" "Pre-flight: origin/main is ${_count} commit(s) ahead of local main since morning-check pulled"
+        PREFLIGHT_DIVERGENCE="origin/main is ${_count} commit(s) ahead — these merged on GitHub since 04:00 UTC and are NOT yet reflected in the codebase below. Re-check whether your planned change duplicates any of them before writing code:
+${_ahead}"
+    fi
+else
+    marvin_log "WARN" "Pre-flight: git fetch origin main failed or timed out"
+fi
+
 # ─── Rollback mechanism ─────────────────────────────────────────────────────
 # Snapshot the codebase before Claude makes changes. If changes break scripts,
 # revert automatically. This prevents self-enhancement from bricking the agent.
@@ -155,7 +174,11 @@ if [[ -x "$(dirname "$0")/lessons-learned.sh" ]]; then
     fi
 fi
 
-SELF_CONTEXT="## Enhancement Roadmap (pick from here)
+SELF_CONTEXT="${PREFLIGHT_DIVERGENCE:+## Pre-flight Warning: origin/main has moved since morning sync
+
+${PREFLIGHT_DIVERGENCE}
+
+}## Enhancement Roadmap (pick from here)
 
 ${ENHANCEMENTS}
 
@@ -222,8 +245,16 @@ marvin_log "INFO" "Post-enhancement validation passed"
 # ─── Auto-rebuild web if source files changed ────────────────────────────────
 # Detects web/ source modifications and triggers a full Next.js rebuild+restart.
 # Without this, source edits produce stale builds → JS asset 404s for hours.
+#
+# grep-c-double-output lesson: `grep -cE ... || echo "0"` writes "0\n0" on zero
+# matches (grep prints its 0, then the fallback prints another 0). The captured
+# multi-line value then made `[[ -gt 0 ]]` log a "syntax error in expression"
+# to stderr and silently fall through to the else branch on every cron run
+# that changed only agent/ (which is most days). Capture-then-fallback keeps
+# grep's count and only swallows the exit code.
 _web_changed=$(git -C "$MARVIN_DIR" diff --name-only HEAD~1 HEAD 2>/dev/null \
-    | grep -cE '^web/.*\.(tsx?|jsx?|css|json)$' || echo "0")
+    | grep -cE '^web/.*\.(tsx?|jsx?|css|json)$' || true)
+_web_changed=${_web_changed:-0}
 if [[ "$_web_changed" -gt 0 ]]; then
     marvin_log "INFO" "Detected ${_web_changed} web source file(s) changed — triggering rebuild"
     if ! marvin_rebuild_web "self-enhance (${_web_changed} files changed)"; then
