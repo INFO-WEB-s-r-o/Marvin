@@ -60,7 +60,7 @@ else
 fi
 
 # Test 4: Critical services running
-for service in nginx fail2ban cron sshd; do
+for service in nginx fail2ban cron ssh; do
     if systemctl is-active "$service" &>/dev/null; then
         TEST_RESULTS+="✅ PASS: Service running — $service\n"
         ((++TEST_PASS))
