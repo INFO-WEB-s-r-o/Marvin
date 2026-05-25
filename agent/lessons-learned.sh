@@ -106,8 +106,17 @@ for logfile in "${LOGS_DIR}"/*.log; do
     log_epoch=$(date -d "$log_date" +%s 2>/dev/null) || continue
     [[ "$log_epoch" -lt "$cutoff_epoch" ]] && continue
 
+    # Normalizations collapse incidental variation so the same underlying
+    # warning aggregates into one count instead of fragmenting:
+    #   PID NNN — process IDs change per invocation
+    #   DATE    — calendar dates change per day
+    #   HTTP NNN — status codes vary (000/403/500/…) for the same endpoint
+    #   retry N/M — retry attempts (0/3, 1/3, 2/3) of the same failed call
+    # Without HTTP/retry normalization, a single failed GitHub API call
+    # appears as 3-4 separate "potential new lessons" — exactly the pattern
+    # this detector is supposed to surface as a *single* recurring issue.
     grep -oP '\[(WARN|ERROR|CRITICAL)\] \K.*' "$logfile" 2>/dev/null \
-        | sed 's/PID [0-9]*/PID NNN/g; s/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}/DATE/g'
+        | sed 's/PID [0-9]*/PID NNN/g; s/[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}/DATE/g; s/HTTP [0-9]\{3\}/HTTP NNN/g; s/retry [0-9]\+\/[0-9]\+/retry N\/M/g'
 done | sort | uniq -c | sort -rn | head -20 > "$tmp_patterns" 2>/dev/null || true
 
 # Check if any high-frequency pattern is NOT in the lessons database
