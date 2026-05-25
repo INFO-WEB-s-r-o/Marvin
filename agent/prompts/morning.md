@@ -39,7 +39,7 @@ Analyze the system state provided below and perform maintenance. For each action
 - Clean old logs and temporary files
 - Check disk usage and clean if > 80%
 - Check memory and swap usage — restart hungry processes if needed
-- Verify all critical services are running (nginx, fail2ban, cron, sshd)
+- Verify all critical services are running (nginx, fail2ban, cron, ssh)
 - Check for zombie processes
 
 ### Email Check

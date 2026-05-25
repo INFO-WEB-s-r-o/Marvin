@@ -305,7 +305,7 @@ EXTRA_CONTEXT=$(cat << 'CONTEXT'
 ```
 CONTEXT
 )
-EXTRA_CONTEXT+=$(journalctl -u sshd --since "yesterday" --no-pager 2>/dev/null | tail -50 || echo "no journal data")
+EXTRA_CONTEXT+=$(journalctl -u ssh --since "yesterday" --no-pager 2>/dev/null | tail -50 || echo "no journal data")
 EXTRA_CONTEXT+=$(cat << 'CONTEXT'
 ```
 
