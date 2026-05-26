@@ -32,8 +32,9 @@
 #                                   in person) before pinning it here.
 #
 # Configuration (defaults, override via env):
-#   BACKUP_OFFSITE_SSH_KEY        /home/marvin/.ssh/backup_sftp_ed25519
-#   BACKUP_OFFSITE_SSH_KNOWN      /home/marvin/.ssh/known_hosts
+#   BACKUP_OFFSITE_BACKUP_BASE    $(dirname ${MARVIN_DIR})/backups
+#   BACKUP_OFFSITE_SSH_KEY        $(dirname ${MARVIN_DIR})/.ssh/backup_sftp_ed25519
+#   BACKUP_OFFSITE_SSH_KNOWN      $(dirname ${MARVIN_DIR})/.ssh/known_hosts
 #   BACKUP_OFFSITE_HOST           dev.infowebsro.cz
 #   BACKUP_OFFSITE_PORT           22
 #   BACKUP_OFFSITE_USER           marvin-backup
@@ -55,11 +56,12 @@ set -euo pipefail
 source "$(dirname "$0")/common.sh"
 trap marvin_error_trap ERR
 
-BACKUP_BASE="/home/marvin/backups"
+MARVIN_HOME="$(dirname "${MARVIN_DIR}")"
+BACKUP_BASE="${BACKUP_OFFSITE_BACKUP_BASE:-${MARVIN_HOME}/backups}"
 RECIPIENT="${BACKUP_OFFSITE_GPG_RECIPIENT:-}"
 EXPECTED_FP="${BACKUP_OFFSITE_GPG_FINGERPRINT:-}"
-SSH_KEY="${BACKUP_OFFSITE_SSH_KEY:-/home/marvin/.ssh/backup_sftp_ed25519}"
-SSH_KNOWN="${BACKUP_OFFSITE_SSH_KNOWN:-/home/marvin/.ssh/known_hosts}"
+SSH_KEY="${BACKUP_OFFSITE_SSH_KEY:-${MARVIN_HOME}/.ssh/backup_sftp_ed25519}"
+SSH_KNOWN="${BACKUP_OFFSITE_SSH_KNOWN:-${MARVIN_HOME}/.ssh/known_hosts}"
 SFTP_HOST="${BACKUP_OFFSITE_HOST:-dev.infowebsro.cz}"
 SFTP_PORT="${BACKUP_OFFSITE_PORT:-22}"
 SFTP_USER="${BACKUP_OFFSITE_USER:-marvin-backup}"
@@ -168,15 +170,18 @@ fi
 # that pin in place this script refuses to run, so by the time we reach this
 # line the key identity is explicitly confirmed.
 marvin_log "INFO" "Encrypting to ${RECIPIENT} (fp ${expected_fp_clean:0:8}…${expected_fp_clean: -8})..."
+gpg_err=$(mktemp)
+trap 'rm -f "$gpg_err"; marvin_error_trap' ERR
 if ! gpg --batch --yes --trust-model always \
         --recipient "$RECIPIENT" \
         --output "$CIPHER_FILE" \
-        --encrypt "$SOURCE" 2>/tmp/gpg-err.$$; then
-    marvin_log "ERROR" "GPG encryption failed: $(cat /tmp/gpg-err.$$)"
-    rm -f "$CIPHER_FILE" /tmp/gpg-err.$$
+        --encrypt "$SOURCE" 2>"$gpg_err"; then
+    marvin_log "ERROR" "GPG encryption failed: $(cat "$gpg_err")"
+    rm -f "$CIPHER_FILE" "$gpg_err"
     exit 2
 fi
-rm -f /tmp/gpg-err.$$
+rm -f "$gpg_err"
+trap marvin_error_trap ERR
 chmod 600 "$CIPHER_FILE"
 
 cipher_size=$(stat -c %s "$CIPHER_FILE" 2>/dev/null || echo 0)
@@ -205,6 +210,9 @@ sftp_output=$(sftp -b "$sftp_batch" \
     "${SFTP_USER}@${SFTP_HOST}" 2>&1) && sftp_exit=0 || sftp_exit=$?
 
 rm -f "$sftp_batch"
+# Restore base trap so a stray error past this point cannot delete the
+# ciphertext we explicitly preserve for retry on upload failure (#719).
+trap marvin_error_trap ERR
 
 if [[ "$sftp_exit" -ne 0 ]]; then
     marvin_log "ERROR" "SFTP upload failed (exit ${sftp_exit}): ${sftp_output}"
