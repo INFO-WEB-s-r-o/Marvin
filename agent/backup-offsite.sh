@@ -178,7 +178,7 @@ marvin_log "INFO" "Encrypting to ${RECIPIENT} (fp ${expected_fp_clean:0:8}…${e
 gpg_err=$(mktemp)
 trap 'rm -f "$gpg_err"; marvin_error_trap' ERR
 if ! gpg --batch --yes --trust-model always \
-        --recipient "$RECIPIENT" \
+        --recipient "${expected_fp_clean}!" \
         --output "$CIPHER_FILE" \
         --encrypt "$SOURCE" 2>"$gpg_err"; then
     marvin_log "ERROR" "GPG encryption failed: $(cat "$gpg_err")"
