@@ -227,6 +227,9 @@ sftp_output=$(sftp -b "$sftp_batch" \
     -o "StrictHostKeyChecking=yes" \
     -o "IdentitiesOnly=yes" \
     -o "BatchMode=yes" \
+    -o "ConnectTimeout=30" \
+    -o "ServerAliveInterval=30" \
+    -o "ServerAliveCountMax=3" \
     "${SFTP_USER}@${SFTP_HOST}" 2>&1) && sftp_exit=0 || sftp_exit=$?
 
 rm -f "$sftp_batch"
