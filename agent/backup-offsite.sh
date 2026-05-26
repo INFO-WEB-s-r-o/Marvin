@@ -127,6 +127,11 @@ if [[ "$actual_fp" != "$expected_fp_clean" ]]; then
     exit 1
 fi
 
+if [[ ! "$SFTP_PORT" =~ ^[0-9]+$ ]] || (( SFTP_PORT < 1 || SFTP_PORT > 65535 )); then
+    marvin_log "ERROR" "BACKUP_OFFSITE_PORT must be a port number 1-65535 (got: '${SFTP_PORT}')"
+    exit 1
+fi
+
 if [[ ! -r "$SSH_KEY" ]]; then
     marvin_log "ERROR" "SSH key not readable: ${SSH_KEY}"
     exit 1
