@@ -191,6 +191,17 @@ marvin_log "INFO" "Ciphertext: $(basename "$CIPHER_FILE") (${cipher_mb}MB)"
 # ─── Upload ──────────────────────────────────────────────────────────────────
 marvin_log "INFO" "Uploading to sftp://${SFTP_USER}@${SFTP_HOST}:${SFTP_PORT}${REMOTE_DIR}/"
 
+# Reject control characters (esp. newlines) in any value interpolated into the
+# SFTP batch file — a newline would smuggle an extra SFTP command onto its own
+# line and the client would execute it. See #724.
+for _v in REMOTE_DIR CIPHER_FILE REMOTE_NAME; do
+    if [[ "${!_v}" == *[[:cntrl:]]* ]]; then
+        marvin_log "ERROR" "Control character detected in ${_v} — refusing to build SFTP batch"
+        exit 1
+    fi
+done
+unset _v
+
 sftp_batch=$(mktemp)
 trap 'rm -f "$sftp_batch" "$CIPHER_FILE"; marvin_error_trap' ERR
 cat > "$sftp_batch" <<EOF
