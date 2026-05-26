@@ -18,9 +18,18 @@
 #   own key.
 #
 # Configuration (required):
-#   BACKUP_OFFSITE_GPG_RECIPIENT  GPG key id or email to encrypt to.
-#                                  Must be importable into Marvin's keyring
-#                                  before running.
+#   BACKUP_OFFSITE_GPG_RECIPIENT   GPG key id or email to encrypt to.
+#                                   Must be importable into Marvin's keyring
+#                                   before running.
+#   BACKUP_OFFSITE_GPG_FINGERPRINT Full 40-char fingerprint of the above key
+#                                   (spaces tolerated). Verified against the
+#                                   keyring before every encrypt so a rogue key
+#                                   imported under the same email/id cannot
+#                                   silently divert backups. Obtain with:
+#                                     gpg --fingerprint "$RECIPIENT"
+#                                   ALWAYS verify the fingerprint with the key
+#                                   owner over a separate channel (signal,
+#                                   in person) before pinning it here.
 #
 # Configuration (defaults, override via env):
 #   BACKUP_OFFSITE_SSH_KEY        /home/marvin/.ssh/backup_sftp_ed25519
@@ -48,6 +57,7 @@ trap marvin_error_trap ERR
 
 BACKUP_BASE="/home/marvin/backups"
 RECIPIENT="${BACKUP_OFFSITE_GPG_RECIPIENT:-}"
+EXPECTED_FP="${BACKUP_OFFSITE_GPG_FINGERPRINT:-}"
 SSH_KEY="${BACKUP_OFFSITE_SSH_KEY:-/home/marvin/.ssh/backup_sftp_ed25519}"
 SSH_KNOWN="${BACKUP_OFFSITE_SSH_KNOWN:-/home/marvin/.ssh/known_hosts}"
 SFTP_HOST="${BACKUP_OFFSITE_HOST:-dev.infowebsro.cz}"
@@ -89,6 +99,32 @@ if ! gpg --batch --list-keys "$RECIPIENT" >/dev/null 2>&1; then
     exit 1
 fi
 
+if [[ -z "$EXPECTED_FP" ]]; then
+    marvin_log "ERROR" "BACKUP_OFFSITE_GPG_FINGERPRINT not set — refusing to encrypt to an un-pinned key"
+    echo "Set BACKUP_OFFSITE_GPG_FINGERPRINT to the recipient's full 40-char fingerprint." >&2
+    echo "  gpg --fingerprint '${RECIPIENT}'" >&2
+    echo "Verify it with the key owner on a separate channel before pinning." >&2
+    exit 1
+fi
+
+# Strip whitespace from operator-supplied fingerprint (gpg prints it space-separated).
+expected_fp_clean="${EXPECTED_FP//[[:space:]]/}"
+expected_fp_clean="${expected_fp_clean^^}"
+if [[ ! "$expected_fp_clean" =~ ^[0-9A-F]{40}$ ]]; then
+    marvin_log "ERROR" "BACKUP_OFFSITE_GPG_FINGERPRINT must be a 40-character hex fingerprint (got: ${EXPECTED_FP})"
+    exit 1
+fi
+
+actual_fp=$(gpg --batch --with-colons --fingerprint "$RECIPIENT" 2>/dev/null \
+    | awk -F: '/^fpr/{print $10; exit}')
+if [[ "$actual_fp" != "$expected_fp_clean" ]]; then
+    marvin_log "ERROR" "GPG fingerprint mismatch for '${RECIPIENT}' — refusing to encrypt"
+    echo "Expected: ${expected_fp_clean}" >&2
+    echo "Actual:   ${actual_fp:-<empty>}" >&2
+    echo "Either the wrong key was imported, or a rogue key was inserted into the keyring." >&2
+    exit 1
+fi
+
 if [[ ! -r "$SSH_KEY" ]]; then
     marvin_log "ERROR" "SSH key not readable: ${SSH_KEY}"
     exit 1
@@ -127,7 +163,11 @@ if marvin_is_dry_run; then
 fi
 
 # ─── Encrypt ─────────────────────────────────────────────────────────────────
-marvin_log "INFO" "Encrypting to ${RECIPIENT}..."
+# --trust-model always is safe here because the preflight already verified the
+# recipient's key fingerprint matches BACKUP_OFFSITE_GPG_FINGERPRINT. Without
+# that pin in place this script refuses to run, so by the time we reach this
+# line the key identity is explicitly confirmed.
+marvin_log "INFO" "Encrypting to ${RECIPIENT} (fp ${expected_fp_clean:0:8}…${expected_fp_clean: -8})..."
 if ! gpg --batch --yes --trust-model always \
         --recipient "$RECIPIENT" \
         --output "$CIPHER_FILE" \
