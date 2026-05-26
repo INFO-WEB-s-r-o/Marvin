@@ -132,7 +132,7 @@ if [[ ! -r "$SSH_KEY" ]]; then
     exit 1
 fi
 
-if [[ ! -r "$SSH_KNOWN" ]] || ! grep -q -- "$SFTP_HOST" "$SSH_KNOWN" 2>/dev/null; then
+if [[ ! -r "$SSH_KNOWN" ]] || ! grep -Fq -- "$SFTP_HOST" "$SSH_KNOWN" 2>/dev/null; then
     marvin_log "ERROR" "Host ${SFTP_HOST} not pinned in ${SSH_KNOWN} — refusing TOFU"
     echo "Pin the host key first:" >&2
     echo "  ssh-keyscan -t ed25519 -p ${SFTP_PORT} ${SFTP_HOST} >> ${SSH_KNOWN}" >&2
@@ -191,12 +191,13 @@ marvin_log "INFO" "Ciphertext: $(basename "$CIPHER_FILE") (${cipher_mb}MB)"
 # ─── Upload ──────────────────────────────────────────────────────────────────
 marvin_log "INFO" "Uploading to sftp://${SFTP_USER}@${SFTP_HOST}:${SFTP_PORT}${REMOTE_DIR}/"
 
-# Reject control characters (esp. newlines) in any value interpolated into the
-# SFTP batch file — a newline would smuggle an extra SFTP command onto its own
-# line and the client would execute it. See #724.
+# Reject control characters (esp. newlines) and quoting metacharacters in any
+# value interpolated into the SFTP batch file. Newlines smuggle an extra SFTP
+# command onto their own line (#724). Double quote / backslash would break out
+# of the path quoting added below for space-safety (#725).
 for _v in REMOTE_DIR CIPHER_FILE REMOTE_NAME; do
-    if [[ "${!_v}" == *[[:cntrl:]]* ]]; then
-        marvin_log "ERROR" "Control character detected in ${_v} — refusing to build SFTP batch"
+    if [[ "${!_v}" == *[[:cntrl:]]* || "${!_v}" == *[\"\\]* ]]; then
+        marvin_log "ERROR" "Disallowed character (control / quote / backslash) in ${_v} — refusing to build SFTP batch"
         exit 1
     fi
 done
@@ -204,10 +205,13 @@ unset _v
 
 sftp_batch=$(mktemp)
 trap 'rm -f "$sftp_batch" "$CIPHER_FILE"; marvin_error_trap' ERR
+# Paths are double-quoted so spaces in REMOTE_DIR/CIPHER_FILE/REMOTE_NAME are
+# parsed as a single SFTP argument. The rejection loop above ensures none of
+# the values can contain a `"` or `\` that would close the quoting. See #725.
 cat > "$sftp_batch" <<EOF
-cd ${REMOTE_DIR}
-put ${CIPHER_FILE} ${REMOTE_NAME}.part
-rename ${REMOTE_NAME}.part ${REMOTE_NAME}
+cd "${REMOTE_DIR}"
+put "${CIPHER_FILE}" "${REMOTE_NAME}.part"
+rename "${REMOTE_NAME}.part" "${REMOTE_NAME}"
 bye
 EOF
 
