@@ -141,8 +141,11 @@ port_count=0
 # 3001=Grafana(local), 4317=OTEL-gRPC(local), 4318=OTEL-HTTP(local),
 # 8889=OTEL-Prometheus-exporter(local), 9090=Prometheus(local)
 # 6379=Redis(local), 8043=alt-HTTPS, 11332-11334=Rspamd(local)
+# Marvin-Brain stack (deployed 2026-05-25, all docker-proxy bound to 127.0.0.1):
+#   3100=marvin-brain-mcp, 5432=marvin-brain-postgres(pgvector),
+#   8000=marvin-brain-lightrag, 8787=marvin-brain-api
 # Note: CUPS snap (port 631) disabled 2026-03-06 — not needed on a VPS
-EXPECTED_PORTS="22 25 53 80 443 465 587 993 3000 3001 4317 4318 6379 8043 8889 9090 11332 11333 11334"
+EXPECTED_PORTS="22 25 53 80 443 465 587 993 3000 3001 3100 4317 4318 5432 6379 8000 8043 8787 8889 9090 11332 11333 11334"
 
 # Extract unique port numbers from listening sockets
 active_ports=$(echo "$listening_ports" | awk '{print $4}' | grep -oP '\d+$' | sort -un)
@@ -154,7 +157,9 @@ unexpected_count=0
 unexpected_details_json="[]"
 
 # Ports expected only on localhost — alert if bound to 0.0.0.0 or [::]
-LOCALHOST_ONLY_PORTS="3001 4317 4318 6379 8889 9090 11332 11333 11334"
+# Marvin-Brain ports (3100, 5432, 8000, 8787) all run via docker-proxy bound
+# to 127.0.0.1; alert if anything escapes to a public interface.
+LOCALHOST_ONLY_PORTS="3001 3100 4317 4318 5432 6379 8000 8787 8889 9090 11332 11333 11334"
 
 for port in $active_ports; do
     if ! echo "$EXPECTED_PORTS" | grep -qw "$port"; then

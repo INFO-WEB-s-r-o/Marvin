@@ -284,11 +284,15 @@ while IFS= read -r line; do
     # comm field spoofing via prctl(PR_SET_NAME) (#38)
     proc_exe=$(readlink -f "/proc/${proc_pid}/exe" 2>/dev/null || echo "")
     case "$proc_name" in
-        claude|apt*|dpkg*|unattended-upgr*|ps|jq|fail2ban*|file|appstreamcli|shellcheck)
+        claude|apt*|dpkg*|unattended-upgr*|ps|jq|fail2ban*|file|appstreamcli|shellcheck|pg_isready)
             # High-frequency, low-risk short-lived children — silent skip when
             # exe is unreadable (they exit between ps and readlink constantly).
             # Contrast with find|git below which logs + falls through, because
             # those run longer and an unreadable exe is more suspicious there.
+            # pg_isready: Marvin-Brain postgres healthcheck runs every 5s inside
+            # the marvin-brain-postgres-1 container; readlink -f returns empty
+            # for container processes because /usr/lib/postgresql/17/bin/pg_isready
+            # is inside the container's mount namespace, not the host's.
             if [[ -z "$proc_exe" ]]; then
                 continue
             fi
