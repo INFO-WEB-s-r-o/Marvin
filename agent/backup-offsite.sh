@@ -202,7 +202,10 @@ if ! gpg --batch --yes --trust-model always \
     exit 2
 fi
 rm -f "$gpg_err"
-trap marvin_error_trap ERR
+# Keep CIPHER_FILE-cleanup in the ERR trap until upload completes. Anything
+# failing between here and the sftp_batch trap below — chmod, mktemp, stat —
+# would otherwise leave a stale ciphertext on disk that nothing reaps. See #732.
+trap 'rm -f "$CIPHER_FILE"; marvin_error_trap' ERR
 chmod 600 "$CIPHER_FILE"
 
 cipher_size=$(stat -c %s "$CIPHER_FILE" 2>/dev/null || echo 0)
@@ -219,6 +222,8 @@ marvin_log "INFO" "Uploading to sftp://${SFTP_USER}@${SFTP_HOST}:${SFTP_PORT}${R
 for _v in REMOTE_DIR CIPHER_FILE REMOTE_NAME; do
     if [[ "${!_v}" == *[[:cntrl:]]* || "${!_v}" == *[\"\\]* ]]; then
         marvin_log "ERROR" "Disallowed character (control / quote / backslash) in ${_v} — refusing to build SFTP batch"
+        # ERR trap doesn't fire on explicit exit; clean up CIPHER_FILE manually (#732).
+        rm -f "$CIPHER_FILE"
         exit 1
     fi
 done
