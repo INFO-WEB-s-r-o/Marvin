@@ -80,11 +80,19 @@ for arg in "$@"; do
         --file) NEXT_IS_FILE=true ;;
         --dry-run) ;;
         -h|--help)
-            sed -n '2,38p' "$0"
+            sed -n '2,53p' "$0"
             exit 0
             ;;
     esac
 done
+
+# --file requires a PATH argument; an empty SPECIFIC_FILE would otherwise fall
+# through to the "latest backup" picker below and silently upload the wrong
+# file. Fail loudly instead. See #731.
+if $NEXT_IS_FILE; then
+    marvin_log "ERROR" "--file requires a PATH argument"
+    exit 1
+fi
 
 # ─── Preflight ───────────────────────────────────────────────────────────────
 if [[ -z "$RECIPIENT" ]]; then
