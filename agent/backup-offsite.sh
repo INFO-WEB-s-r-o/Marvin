@@ -164,6 +164,14 @@ if [[ -z "$SOURCE" || ! -f "$SOURCE" ]]; then
     exit 1
 fi
 
+# Refuse already-encrypted input — double-encrypting a .gpg ciphertext wraps it
+# again and uploads .gpg.gpg, which would also defeat any restore tooling that
+# expects a single decrypt pass. See #733.
+if [[ "$SOURCE" == *.gpg ]]; then
+    marvin_log "ERROR" "Refusing to double-encrypt: ${SOURCE} is already a .gpg ciphertext"
+    exit 1
+fi
+
 source_size=$(stat -c %s "$SOURCE" 2>/dev/null || echo 0)
 source_mb=$(( source_size / 1048576 ))
 marvin_log "INFO" "Source backup: $(basename "$SOURCE") (${source_mb}MB)"
