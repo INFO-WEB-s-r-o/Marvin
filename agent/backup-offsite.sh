@@ -80,7 +80,10 @@ for arg in "$@"; do
         --file) NEXT_IS_FILE=true ;;
         --dry-run) ;;
         -h|--help)
-            sed -n '2,53p' "$0"
+            # Print the leading header comment block — skip the shebang, print
+            # every following `#` line, stop at the first non-comment line.
+            # Robust to insertions/removals anywhere in the header. See #734.
+            awk 'NR==1{next} /^#/{print; next} {exit}' "$0"
             exit 0
             ;;
     esac
