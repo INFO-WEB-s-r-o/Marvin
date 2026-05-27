@@ -380,7 +380,13 @@ pr_response=$(github_api POST "/repos/${GITHUB_REPO}/pulls" "$PR_PAYLOAD" 2>/dev
 pr_number=$(echo "$pr_response" | jq -r '.number // empty' 2>/dev/null || echo "")
 
 if [[ -z "$pr_number" ]]; then
-    marvin_log "WARN" "Failed to create PR — branch pushed but PR creation failed"
+    marvin_log "WARN" "Failed to create PR — cleaning up orphan remote branch ${BRANCH}"
+    # Delete the just-pushed branch on remote so failed PR-creation attempts don't
+    # accumulate as orphans. Local branch is left as-is (the EXIT trap returns to
+    # main and any stash recovery happens there). Use `:` (delete) syntax instead
+    # of --delete so an already-gone branch is a no-op, not an error.
+    git push origin ":${BRANCH}" 2>&1 | _sanitize_git_output >&2 || \
+        marvin_log "WARN" "Could not delete remote branch ${BRANCH} — may need manual cleanup"
     exit 1
 fi
 
