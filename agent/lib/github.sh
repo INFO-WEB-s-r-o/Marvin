@@ -110,6 +110,13 @@ github_api() {
         if [[ "$http_code" =~ ^4 ]]; then
             marvin_log "ERROR" "GitHub API ${method} ${endpoint}: HTTP ${http_code}" >&2
             marvin_log "ERROR" "Response: $(echo "$response_body" | jq -r '.message // .' 2>/dev/null | head -5)" >&2
+            # 422 Validation Failed only ever returns the generic "Validation Failed"
+            # in .message — the actual fault (e.g. "No commits between main and
+            # fix/issues-NNN") lives in .errors[]. Without surfacing this, every
+            # 422 is undiagnosable. (#717 ecosystem, 2026-05-27.)
+            local _err_detail
+            _err_detail=$(echo "$response_body" | jq -r '[.errors[]? | (.message // .field // .code // tostring)] | join(" | ")' 2>/dev/null || echo "")
+            [[ -n "$_err_detail" ]] && marvin_log "ERROR" "Errors: ${_err_detail}" >&2
             echo "$response_body"
             return 1
         fi
