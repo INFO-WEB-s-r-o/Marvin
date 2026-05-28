@@ -5,9 +5,16 @@
 *.env.local
 monitoring/.env
 
-# GPG private keys — NEVER commit these
+# GPG private keys — NEVER commit these. The narrower private-keys-v1.d/
+# and openpgp-revocs.d/ entries are kept as defense-in-depth so the rule
+# still holds if .gnupg/ is ever un-ignored.
+.gnupg/
 .gnupg/private-keys-v1.d/
 .gnupg/openpgp-revocs.d/
+
+# Externally-cloned sibling repo with its own .git tree and .env secrets
+# (see Marvin-Brain memory note). Never tracked in Marvin's main repo.
+Marvin-Brain/
 
 # OS files
 .DS_Store
