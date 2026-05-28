@@ -193,11 +193,19 @@ fi
 # recipient's key fingerprint matches BACKUP_OFFSITE_GPG_FINGERPRINT. Without
 # that pin in place this script refuses to run, so by the time we reach this
 # line the key identity is explicitly confirmed.
+#
+# Recipient is the verified *primary* fingerprint with NO trailing "!". A "!"
+# forces gpg to use that exact key for encryption — but a primary key is
+# typically [SC] (sign/certify) only, with encryption living in a separate [E]
+# subkey, so forcing the primary fails with "Unusable public key". The
+# bare fingerprint still resolves to exactly this key (rogue same-email keys
+# have a different primary fp and are rejected in preflight); gpg then auto-
+# selects that key's valid encryption subkey.
 marvin_log "INFO" "Encrypting to ${RECIPIENT} (fp ${expected_fp_clean:0:8}…${expected_fp_clean: -8})..."
 gpg_err=$(mktemp)
 trap 'rm -f "$gpg_err"; marvin_error_trap' ERR
 if ! gpg --batch --yes --trust-model always \
-        --recipient "${expected_fp_clean}!" \
+        --recipient "${expected_fp_clean}" \
         --output "$CIPHER_FILE" \
         --encrypt "$SOURCE" 2>"$gpg_err"; then
     marvin_log "ERROR" "GPG encryption failed: $(cat "$gpg_err")"
