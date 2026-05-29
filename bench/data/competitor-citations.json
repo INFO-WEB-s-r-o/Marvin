@@ -1,0 +1,28 @@
+{
+  "_schema_version": 1,
+  "_note": "Phase-1 placeholder. Every score is null. Citation sweep happens in later phases (one per benchmark). See bench/PLAN.md.",
+  "mem0": {
+    "longmemeval": {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
+    "locomo":      {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
+    "convomem":    {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
+    "memscore":    {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null}
+  },
+  "supermemory": {
+    "longmemeval": {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
+    "locomo":      {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
+    "convomem":    {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
+    "memscore":    {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null}
+  },
+  "hypabase": {
+    "longmemeval": {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
+    "locomo":      {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
+    "convomem":    {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
+    "memscore":    {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null}
+  },
+  "mastra_observational": {
+    "longmemeval": {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": "observational memory; recall-style benchmarks may be N/A — confirm at citation time"},
+    "locomo":      {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": "observational memory; recall-style benchmarks may be N/A — confirm at citation time"},
+    "convomem":    {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": "observational memory; recall-style benchmarks may be N/A — confirm at citation time"},
+    "memscore":    {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": "observational memory; recall-style benchmarks may be N/A — confirm at citation time"}
+  }
+}
