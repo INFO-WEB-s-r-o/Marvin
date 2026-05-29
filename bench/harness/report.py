@@ -9,6 +9,7 @@ the point. It proves the build path before any real numbers exist.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,11 @@ def _load_brain_score(benchmark: str) -> float | None:
     path = RESULTS_DIR / f"{benchmark}.json"
     if not path.exists():
         return None
-    data = json.loads(path.read_text())
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        print(f"warning: {path} is malformed — skipping ({exc})", file=sys.stderr)
+        return None
     score = data.get("aggregate_score")
     return float(score) if isinstance(score, (int, float)) else None
 
@@ -32,7 +37,11 @@ def _load_brain_score(benchmark: str) -> float | None:
 def _load_citations() -> dict[str, Any]:
     if not CITATIONS_PATH.exists():
         return {}
-    return json.loads(CITATIONS_PATH.read_text())
+    try:
+        return json.loads(CITATIONS_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        print(f"warning: {CITATIONS_PATH} is malformed — returning empty citations ({exc})", file=sys.stderr)
+        return {}
 
 
 def build_summary() -> dict[str, Any]:
