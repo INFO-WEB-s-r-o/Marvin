@@ -204,8 +204,21 @@ if [[ "$daily_ok" == "true" ]] && jq empty "${DAILY_FILE}.tmp" 2>/dev/null; then
         for _metric in rx_mb tx_mb; do
             _today_val=$(jq -r ".summary.network.${_metric} // empty" "$DAILY_FILE" 2>/dev/null)
             [[ -z "$_today_val" || "$_today_val" == "null" ]] && continue
+            # Skip baseline days where the cumulative byte counter wrapped/reset
+            # (rx_bytes_last < rx_bytes_first). Those days emit rx_mb=0/tx_mb=0
+            # (correct schema clamp) but the zeros pollute the rolling mean and
+            # can push the next normal day past the 2σ threshold.
+            # Either direction wrapping excludes the whole day — if the interface
+            # bounced, both directions are unreliable.
+            # See lesson `baseline-pollution-from-sentinel-zero`.
             _baseline_vals=$(for _f in "${_net_baseline_files[@]}"; do
-                jq -r ".summary.network.${_metric} // empty" "$_f" 2>/dev/null
+                jq -r --arg m "$_metric" '
+                    if (.summary.network.rx_bytes_last // 0) < (.summary.network.rx_bytes_first // 0)
+                       or (.summary.network.tx_bytes_last // 0) < (.summary.network.tx_bytes_first // 0)
+                    then empty
+                    else .summary.network[$m] // empty
+                    end
+                ' "$_f" 2>/dev/null
             done)
             # Guard sqrt() against negative variance from floating-point
             # cancellation when baseline values are nearly identical —
