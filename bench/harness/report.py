@@ -96,8 +96,8 @@ def _fmt(value: float | None) -> str:
 def main() -> int:
     summary = build_summary()
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    (RESULTS_DIR / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
-    (RESULTS_DIR / "summary.md").write_text(render_markdown(summary))
+    (RESULTS_DIR / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (RESULTS_DIR / "summary.md").write_text(render_markdown(summary), encoding="utf-8")
     print(f"wrote {RESULTS_DIR / 'summary.json'}")
     print(f"wrote {RESULTS_DIR / 'summary.md'}")
     return 0

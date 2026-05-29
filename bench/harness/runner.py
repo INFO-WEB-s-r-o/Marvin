@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
 
     out = args.output or RESULTS_DIR / f"{args.benchmark}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"wrote {out}")
     return 0
 
