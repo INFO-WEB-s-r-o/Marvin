@@ -367,6 +367,17 @@ for _entry in "${_runtime_json_targets[@]}"; do
     test_pass "runtime json: ${_label} valid (${_rel})"
 done
 
+# ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
+# Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
+# artefact with byte-identical duplicates of the active /home/marvin/.gnupg/
+# key material; removal requires human review (one-way destructive). After
+# removal this tripwire also catches any future re-creation by a misconfigured
+# cron invocation that drops GNUPGHOME and lands on cwd-relative ~/.gnupg.
+
+if [[ -d "${MARVIN_DIR}/.gnupg" ]]; then
+    test_warn "stale GPG home present at ${MARVIN_DIR}/.gnupg — see issue #737"
+fi
+
 # ─── 10. Security scoring system ──────────────────────────────────────────────
 # Grades the server A-F across multiple security dimensions
 
