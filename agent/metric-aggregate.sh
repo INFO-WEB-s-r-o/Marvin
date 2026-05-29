@@ -205,13 +205,12 @@ if [[ "$daily_ok" == "true" ]] && jq empty "${DAILY_FILE}.tmp" 2>/dev/null; then
             _today_val=$(jq -r ".summary.network.${_metric} // empty" "$DAILY_FILE" 2>/dev/null)
             [[ -z "$_today_val" || "$_today_val" == "null" ]] && continue
             # Skip baseline days where the cumulative byte counter wrapped/reset
-            # (rx_bytes_last < rx_bytes_first). Those days correctly show
-            # rx_mb=0/tx_mb=0 in the schema, but the zeros are unreliable and
-            # pollute the rolling mean — a single wrap day pulls the average
-            # down enough to make the next normal day trip the 2σ check.
-            # 2026-05-29 incident: 2026-05-27 wrapped (rx 10.1 GB → 57 MB),
-            # producing avg=83.67 MB and a 2.2σ false alarm on 2026-05-28's
-            # legitimate 175 MB TX. See lesson `baseline-pollution-from-sentinel-zero`.
+            # (rx_bytes_last < rx_bytes_first). Those days emit rx_mb=0/tx_mb=0
+            # (correct schema clamp) but the zeros pollute the rolling mean and
+            # can push the next normal day past the 2σ threshold.
+            # Either direction wrapping excludes the whole day — if the interface
+            # bounced, both directions are unreliable.
+            # See lesson `baseline-pollution-from-sentinel-zero`.
             _baseline_vals=$(for _f in "${_net_baseline_files[@]}"; do
                 jq -r --arg m "$_metric" '
                     if (.summary.network.rx_bytes_last // 0) < (.summary.network.rx_bytes_first // 0)
