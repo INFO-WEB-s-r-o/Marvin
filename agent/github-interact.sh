@@ -199,7 +199,21 @@ FULL_PROMPT="${GITHUB_PROMPT}
 
 ${CONTEXT}"
 
-RESPONSE=$(run_claude "github-interact" "$FULL_PROMPT")
+# Lock-acquisition timeout: github-interact runs hourly, so a missed cycle is
+# cheap — the next run will pick up the same work. Waiting the default 5
+# minutes for the lock burns CPU when self-enhance (08:00 UTC) holds it past
+# our 08:05 UTC slot — observed 10/15 days from 2026-05-15 onwards. Cap at
+# 60s and treat exit 2 (lock timeout) as a clean skip. Same shape as
+# log-watcher.sh:323 (PR #700) and codified lesson
+# claude-lock-timeout-expected-on-cron-overlap.
+export CLAUDE_LOCK_TIMEOUT=60
+RESPONSE=$(run_claude "github-interact" "$FULL_PROMPT") && CLAUDE_RC=0 || CLAUDE_RC=$?
+
+if [[ "$CLAUDE_RC" -eq 2 ]]; then
+    marvin_log "INFO" "github-interact skipped — Claude lock held by another task; next hourly run will catch up"
+    exit 0
+fi
+
 if [[ -z "$RESPONSE" ]]; then
     marvin_log "ERROR" "No response from Claude for GitHub decisions"
     exit 1
