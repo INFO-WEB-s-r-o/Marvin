@@ -199,12 +199,10 @@ FULL_PROMPT="${GITHUB_PROMPT}
 
 ${CONTEXT}"
 
-# Lock-acquisition timeout: github-interact runs hourly, so a missed cycle is
-# cheap — the next run will pick up the same work. Waiting the default 5
-# minutes for the lock burns CPU when self-enhance (08:00 UTC) holds it past
-# our 08:05 UTC slot — observed 10/15 days from 2026-05-15 onwards. Cap at
-# 60s and treat exit 2 (lock timeout) as a clean skip. Same shape as
-# log-watcher.sh:323 (PR #700) and codified lesson
+# github-interact runs hourly — a missed cycle is cheap, the next run picks
+# up the same work. Cap lock-wait at 60s so an overlapping self-enhance
+# (08:00 UTC) doesn't burn 5 min before logging a spurious ERROR.
+# exit 2 = lock timeout (designed behavior); see lesson
 # claude-lock-timeout-expected-on-cron-overlap.
 export CLAUDE_LOCK_TIMEOUT=60
 RESPONSE=$(run_claude "github-interact" "$FULL_PROMPT") && CLAUDE_RC=0 || CLAUDE_RC=$?
