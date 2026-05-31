@@ -19,13 +19,14 @@ from __future__ import annotations
 
 import sys
 import time
+from typing import NoReturn
 
 from .brain_client import BrainClient, BrainConfigError
 
 CONTAINER = "bench-smoke"
 
 
-def _fail(msg: str) -> "NoReturn":  # type: ignore[name-defined]
+def _fail(msg: str) -> NoReturn:
     print(f"FAIL: {msg}", file=sys.stderr)
     raise SystemExit(1)
 
