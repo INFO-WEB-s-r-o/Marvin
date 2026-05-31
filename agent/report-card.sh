@@ -121,6 +121,13 @@ else
     DISK_STR="+${disk_delta} MB"
 fi
 
+# Validate period_end looks like a date before using it in a path (#752).
+# Guards against path traversal if the source JSON ever carried a crafted value.
+if [[ ! "${R[period_end]}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    marvin_log "ERROR" "Unexpected period_end value in JSON: ${R[period_end]}"
+    exit 1
+fi
+
 OUT_DATED="${REPORTS_DIR}/weekly-card-${R[period_end]}.svg"
 OUT_LATEST="${REPORTS_DIR}/weekly-card-latest.svg"
 
