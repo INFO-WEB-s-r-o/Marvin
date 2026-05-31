@@ -68,15 +68,35 @@ class BrainClient:
     def _url(self, path: str) -> str:
         return f"{self._config.endpoint.rstrip('/')}{path}"
 
+    @staticmethod
+    def _decode(resp: requests.Response, path: str) -> Any:
+        """Raise with context on HTTP errors and non-JSON bodies.
+
+        A bare ``raise_for_status()`` + ``resp.json()`` loses the response body
+        on 4xx/5xx (where the error message usually lives) and gives a contextless
+        ``JSONDecodeError`` when the body is non-JSON (nginx 502, plain-text crash,
+        truncated response). Both are painful to diagnose mid-benchmark, so we
+        attach the path, status, and a body snippet. See issue #750.
+        """
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as exc:
+            raise requests.HTTPError(f"{exc} — body: {resp.text[:300]}", response=resp) from exc
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise ValueError(
+                f"Brain API returned non-JSON from {path} "
+                f"(status {resp.status_code}): {resp.text[:300]}"
+            ) from exc
+
     def _post(self, path: str, payload: dict[str, Any]) -> Any:
         resp = self._session.post(self._url(path), json=payload, timeout=self._config.timeout_seconds)
-        resp.raise_for_status()
-        return resp.json()
+        return self._decode(resp, path)
 
     def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         resp = self._session.get(self._url(path), params=params, timeout=self._config.timeout_seconds)
-        resp.raise_for_status()
-        return resp.json()
+        return self._decode(resp, path)
 
     # -- surface -----------------------------------------------------------
 
