@@ -1,26 +1,29 @@
 {
   "_schema_version": 1,
-  "_note": "Phase-1 placeholder. Every score is null. Citation sweep happens in later phases (one per benchmark). See bench/PLAN.md.",
+  "_note": "Phase 2a: LongMemEval competitor row filled from cited marketing/published material (per Pavel #739 2026-05-28: 'for competitors, do not run them, just use marketing materials with scoring values'). Scores are fractions in [0,1]; source values are quoted in each note. Other benchmarks remain null until their phase. See bench/PLAN.md.",
+  "_sources": {
+    "gamgee": "https://gamgee.ai/vs/mem0-vs-supermemory/ (retrieved 2026-05-31) — a vendor comparison page; treat competitor cells lifted from it as marketing, not neutral evaluation."
+  },
   "mem0": {
-    "longmemeval": {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
-    "locomo":      {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
+    "longmemeval": {"score": 0.49, "source_url": "https://gamgee.ai/vs/mem0-vs-supermemory/", "retrieved_at": "2026-05-31", "model": null, "dataset_version": null, "notes": "Source states 49%, attributed on the gamgee.ai page to a third-party 'Vectorize independent evaluation'. Split/model not disclosed. APPLES-TO-BRICKS: Mem0's own primary paper (arXiv:2504.19413) benchmarks on LOCOMO, not LongMemEval, so this 49% is NOT a Mem0-published LongMemEval number and likely reflects a different harness/split. Corroboration against a Mem0 primary LongMemEval source is a Phase-2b follow-up."},
+    "locomo":      {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": "Mem0 publishes LOCOMO numbers in arXiv:2504.19413 (LLM-as-judge, ~26% relative improvement over OpenAI baseline); exact figure to be cited in the LOCOMO phase."},
     "convomem":    {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
     "memscore":    {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null}
   },
   "supermemory": {
-    "longmemeval": {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
+    "longmemeval": {"score": 0.852, "source_url": "https://gamgee.ai/vs/mem0-vs-supermemory/", "retrieved_at": "2026-05-31", "model": null, "dataset_version": null, "notes": "Source states 85.2% ('from published benchmarks' per gamgee.ai). Model/split/dataset version not disclosed on the page; not yet corroborated against a Supermemory primary source. APPLES-TO-BRICKS: harness and split unknown."},
     "locomo":      {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
     "convomem":    {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
     "memscore":    {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null}
   },
   "hypabase": {
-    "longmemeval": {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
+    "longmemeval": {"score": 0.874, "source_url": "https://gamgee.ai/vs/mem0-vs-supermemory/", "retrieved_at": "2026-05-31", "model": null, "dataset_version": null, "notes": "Source states 87.4% ('from published benchmark harness'). The publishing page (gamgee.ai) appears to be the vendor's own comparison, so this highest-of-the-three number should be read as a likely VENDOR SELF-REPORT. Model/split not disclosed. APPLES-TO-BRICKS plus self-report bias."},
     "locomo":      {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
     "convomem":    {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null},
     "memscore":    {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": null}
   },
   "mastra_observational": {
-    "longmemeval": {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": "observational memory; recall-style benchmarks may be N/A — confirm at citation time"},
+    "longmemeval": {"score": null, "source_url": null, "retrieved_at": "2026-05-31", "model": null, "dataset_version": null, "notes": "N/A: mastra is observational memory (it watches and summarizes), a different paradigm from recall-style LongMemEval. No comparable LongMemEval score located; left empty per the no-fabricated-numbers rule rather than forced into the table."},
     "locomo":      {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": "observational memory; recall-style benchmarks may be N/A — confirm at citation time"},
     "convomem":    {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": "observational memory; recall-style benchmarks may be N/A — confirm at citation time"},
     "memscore":    {"score": null, "source_url": null, "retrieved_at": null, "model": null, "dataset_version": null, "notes": "observational memory; recall-style benchmarks may be N/A — confirm at citation time"}

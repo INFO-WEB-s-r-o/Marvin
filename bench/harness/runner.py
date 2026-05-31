@@ -1,8 +1,10 @@
 """Single entry point for running one benchmark against the Brain.
 
-Phase-1 scaffold: dispatch table and CLI exist; the per-benchmark
-runners are stubs that raise NotImplementedError. They get bodies in
-phases 2-5 (one phase per benchmark, see bench/PLAN.md).
+The dispatch table and CLI route to one runner per benchmark. The Brain
+transport (`brain_client.BrainClient`) is wired against the live REST API as
+of Phase 2a. The scored runners themselves land one phase at a time
+(see bench/PLAN.md); each currently-unimplemented runner raises
+NotImplementedError with the phase that will fill it.
 """
 
 from __future__ import annotations
@@ -20,7 +22,17 @@ RESULTS_DIR = Path(__file__).resolve().parent.parent / "results"
 
 
 def _run_longmemeval(client: BrainClient) -> dict:
-    raise NotImplementedError("phase 2: LongMemEval Brain runner")
+    # Phase 2a wired the real BrainClient (REST) and the LongMemEval competitor
+    # citations. Phase 2b is the scored Brain run itself, which is GATED: it
+    # ingests the LongMemEval haystack and judges recalled evidence, incurring
+    # OpenAI embedding spend (ingestion) + judge-model spend (scoring). Per the
+    # honesty floor in PLAN.md ("nothing that needs a credit card without
+    # explicit go-ahead"), this stays unimplemented until Pavel green-lights the
+    # spend on #739 and the dataset is pinned.
+    raise NotImplementedError(
+        "phase 2b (gated): LongMemEval scored Brain run needs a pinned dataset "
+        "and explicit go-ahead on embedding+judge API spend — see #739"
+    )
 
 
 def _run_locomo(client: BrainClient) -> dict:
