@@ -51,6 +51,12 @@ for arg in "$@"; do
 done
 
 if [[ -n "$REPORT_END" ]]; then
+    # Validate the CLI argument before it becomes a path component (#753).
+    # Mirrors the period_end guard below; blocks path traversal via e.g. ../../etc/shadow.
+    if [[ ! "$REPORT_END" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+        marvin_log "ERROR" "Invalid REPORT_END argument (expected YYYY-MM-DD): ${REPORT_END}"
+        exit 1
+    fi
     SRC_JSON="${REPORTS_DIR}/weekly-${REPORT_END}.json"
 else
     SRC_JSON="$(ls -1t "${REPORTS_DIR}"/weekly-*.json 2>/dev/null | head -1 || true)"
@@ -128,6 +134,15 @@ if [[ ! "${R[period_end]}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
     exit 1
 fi
 
+# XML-escape string fields before they are interpolated into SVG <text> (#754).
+# Numeric fields are jq-coerced via tostring and need no escaping; these four
+# originate as free-form JSON strings.
+xml_escape() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'; }
+period_start_esc="$(xml_escape "${R[period_start]}")"
+period_end_esc="$(xml_escape "${R[period_end]}")"
+generated_at_esc="$(xml_escape "${R[generated_at]}")"
+sec_grade_esc="$(xml_escape "${R[sec_grade]}")"
+
 OUT_DATED="${REPORTS_DIR}/weekly-card-${R[period_end]}.svg"
 OUT_LATEST="${REPORTS_DIR}/weekly-card-latest.svg"
 
@@ -161,7 +176,7 @@ cat > "$OUT_DATED" << SVG
   <circle cx="782" cy="35" r="6" fill="${ACCENT}"/>
   <text x="798" y="40" fill="${ACCENT}" font-size="15" font-weight="bold">${STATUS_TEXT}</text>
 
-  <text x="100" y="64" fill="#565f89" font-size="13">Period ${R[period_start]} → ${R[period_end]}  ·  generated ${R[generated_at]}</text>
+  <text x="100" y="64" fill="#565f89" font-size="13">Period ${period_start_esc} → ${period_end_esc}  ·  generated ${generated_at_esc}</text>
   <line x1="24" y1="80" x2="936" y2="80" stroke="#2a2c3d" stroke-width="1"/>
 
   <!-- KPI tiles -->
@@ -176,7 +191,7 @@ cat > "$OUT_DATED" << SVG
     <text x="134" y="204" fill="#565f89" font-size="12" text-anchor="middle">${R[days_100]}/${R[days_tracked]} days at 100%</text>
 
     <text x="378" y="128" fill="#565f89" font-size="13" text-anchor="middle">SECURITY GRADE</text>
-    <text x="378" y="178" fill="#7aa2f7" font-size="42" font-weight="bold" text-anchor="middle">${R[sec_grade]}</text>
+    <text x="378" y="178" fill="#7aa2f7" font-size="42" font-weight="bold" text-anchor="middle">${sec_grade_esc}</text>
     <text x="378" y="204" fill="#565f89" font-size="12" text-anchor="middle">score ${R[sec_score]}/100 · ${R[cves]} CVEs</text>
 
     <text x="622" y="128" fill="#565f89" font-size="13" text-anchor="middle">CLAUDE ERROR RATE</text>
@@ -228,15 +243,17 @@ cat > "$OUT_DATED" << SVG
 </svg>
 SVG
 
-cp "$OUT_DATED" "$OUT_LATEST"
-chmod 644 "$OUT_DATED" "$OUT_LATEST"
-
-# Validate it is well-formed XML if a parser is available (non-fatal).
+# Validate well-formedness BEFORE propagating to `latest` (#754).
+# A malformed dated card must not silently overwrite a good latest card.
 if command -v xmllint >/dev/null 2>&1; then
     if ! xmllint --noout "$OUT_DATED" 2>/dev/null; then
-        marvin_log "WARN" "Generated SVG failed xmllint well-formedness check: ${OUT_DATED}"
+        marvin_log "ERROR" "Generated SVG failed xmllint well-formedness check; not updating latest: ${OUT_DATED}"
+        exit 1
     fi
 fi
+
+cp "$OUT_DATED" "$OUT_LATEST"
+chmod 644 "$OUT_DATED" "$OUT_LATEST"
 
 # ─── Retention: keep the most recent 8 dated cards ────────────────────────────
 mapfile -t _old_cards < <(ls -1t "${REPORTS_DIR}"/weekly-card-2*.svg 2>/dev/null | tail -n +9)
