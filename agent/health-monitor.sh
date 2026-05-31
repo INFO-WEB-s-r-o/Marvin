@@ -284,7 +284,7 @@ while IFS= read -r line; do
     # comm field spoofing via prctl(PR_SET_NAME) (#38)
     proc_exe=$(readlink -f "/proc/${proc_pid}/exe" 2>/dev/null || echo "")
     case "$proc_name" in
-        claude|apt*|dpkg*|unattended-upgr*|ps|jq|fail2ban*|file|appstreamcli|shellcheck|pg_isready)
+        claude|apt*|dpkg*|unattended-upgr*|ps|jq|fail2ban*|file|appstreamcli|shellcheck|pg_isready|gzip)
             # High-frequency, low-risk short-lived children — silent skip when
             # exe is unreadable (they exit between ps and readlink constantly).
             # Contrast with find|git below which logs + falls through, because
@@ -293,6 +293,10 @@ while IFS= read -r line; do
             # the marvin-brain-postgres-1 container; readlink -f returns empty
             # for container processes because /usr/lib/postgresql/17/bin/pg_isready
             # is inside the container's mount namespace, not the host's.
+            # gzip: disk-cleanup.sh (01:00 UTC) and logrotate compress
+            # multi-MB JSONL/log files; a single core hitting 100% for one
+            # 5-min sample window is the normal shape of compression work.
+            # Trusted exe path (/usr/bin/gzip) still required by the check below.
             if [[ -z "$proc_exe" ]]; then
                 continue
             fi

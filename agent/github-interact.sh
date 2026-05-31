@@ -199,7 +199,19 @@ FULL_PROMPT="${GITHUB_PROMPT}
 
 ${CONTEXT}"
 
-RESPONSE=$(run_claude "github-interact" "$FULL_PROMPT")
+# github-interact runs hourly — a missed cycle is cheap, the next run picks
+# up the same work. Cap lock-wait at 60s so an overlapping self-enhance
+# (08:00 UTC) doesn't burn 5 min before logging a spurious ERROR.
+# exit 2 = lock timeout (designed behavior); see lesson
+# claude-lock-timeout-expected-on-cron-overlap.
+export CLAUDE_LOCK_TIMEOUT=60
+RESPONSE=$(run_claude "github-interact" "$FULL_PROMPT") && CLAUDE_RC=0 || CLAUDE_RC=$?
+
+if [[ "$CLAUDE_RC" -eq 2 ]]; then
+    marvin_log "INFO" "github-interact skipped — Claude lock held by another task; next hourly run will catch up"
+    exit 0
+fi
+
 if [[ -z "$RESPONSE" ]]; then
     marvin_log "ERROR" "No response from Claude for GitHub decisions"
     exit 1
