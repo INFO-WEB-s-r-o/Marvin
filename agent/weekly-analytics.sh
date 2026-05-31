@@ -424,3 +424,14 @@ EOF
 
 marvin_log "INFO" "Weekly analytics report: ${REPORT_JSON}"
 marvin_log "INFO" "Weekly analytics digest: ${REPORT_MD}"
+
+# ─── Render the visual report card (best-effort) ──────────────────────────────
+# Generates data/reports/weekly-card-${REPORT_END}.svg from the JSON above.
+# Failure-isolated: a rendering problem must never fail the analytics run.
+if [[ -x "$(dirname "$0")/report-card.sh" ]]; then
+    if "$(dirname "$0")/report-card.sh" "$REPORT_END"; then
+        marvin_log "INFO" "Weekly report card: ${REPORTS_DIR}/weekly-card-${REPORT_END}.svg"
+    else
+        marvin_log "WARN" "Report card generation failed (non-fatal) — analytics JSON/MD are intact"
+    fi
+fi
