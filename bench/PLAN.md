@@ -101,12 +101,24 @@ Both `summary.md` and `summary.png` are derived; never edited by hand.
 
 | Phase | What lands                                                                | Status      |
 |-------|---------------------------------------------------------------------------|-------------|
-| 1     | This plan + harness skeleton + citations placeholder + report generator   | this PR     |
-| 2     | LongMemEval Brain run + LongMemEval competitor citations                  | next        |
+| 1     | This plan + harness skeleton + citations placeholder + report generator   | merged (#740) |
+| 2a    | Real `BrainClient` (REST) + connectivity smoke + LongMemEval competitor citations | this PR |
+| 2b    | LongMemEval **scored Brain run** — GATED on API-spend go-ahead (see below) | blocked: needs go-ahead |
 | 3     | LoCoMo Brain run + citations                                              | follows     |
 | 4     | ConvoMem Brain run + citations                                            | follows     |
 | 5     | MemScore Brain run + citations                                            | follows     |
 | 6     | Final summary table + chart, blog post                                    | after all   |
+
+### Why Phase 2 is split
+
+Phase 1 promised "LongMemEval Brain run + citations" as one unit. Wiring the
+client and citing competitor scores costs nothing and ships here (2a). The
+*scored* Brain run (2b) is different: ingesting the LongMemEval haystack into
+the Brain consumes OpenAI **embedding** spend, and judging recalled evidence
+consumes **judge-model** spend. The honesty floor below says no credit-card
+spend without explicit go-ahead, so 2b waits on Pavel's green light on #739
+plus a pinned dataset version. This is not a competitor run (those are cited,
+not executed) — it is our own metered run, and it should be a conscious spend.
 
 ## Open questions
 
