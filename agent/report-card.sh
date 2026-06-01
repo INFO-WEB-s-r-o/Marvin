@@ -245,13 +245,31 @@ SVG
 
 # Validate well-formedness BEFORE propagating to `latest` (#754).
 # A malformed dated card must not silently overwrite a good latest card.
+# Prefer xmllint, but it is NOT installed on this host (cron-as-marvin), which
+# left the original guard inert. Fall back to python3 (always present here — it
+# runs the bench harness) so the safety net actually fires in production.
+# Note: if xmllint is ever installed the python3 elif becomes unreachable — that
+# is harmless, the xmllint path is equally authoritative. The else is a last
+# resort: if it fires, the cp below still runs (an unvalidated card beats no
+# card; we only lose the malformed-overwrite guard, not the card itself).
 if command -v xmllint >/dev/null 2>&1; then
-    if ! xmllint --noout "$OUT_DATED" 2>/dev/null; then
-        marvin_log "ERROR" "Generated SVG failed xmllint well-formedness check; not updating latest: ${OUT_DATED}"
+    # Capture stderr so a failure logs *why* the card is malformed (newlines
+    # flattened to keep the log line single-line). `if ! VAR=$(...)` is safe
+    # under set -e — a failing command in an if-condition does not trip ERR.
+    if ! VALIDATE_ERR=$(xmllint --noout "$OUT_DATED" 2>&1); then
+        marvin_log "ERROR" "Generated SVG failed xmllint well-formedness check; not updating latest: ${OUT_DATED} — ${VALIDATE_ERR//$'\n'/ }"
         exit 1
     fi
+elif command -v python3 >/dev/null 2>&1; then
+    if ! VALIDATE_ERR=$(python3 -c 'import sys,xml.dom.minidom; xml.dom.minidom.parse(sys.argv[1])' "$OUT_DATED" 2>&1); then
+        marvin_log "ERROR" "Generated SVG failed python3 well-formedness check; not updating latest: ${OUT_DATED} — ${VALIDATE_ERR//$'\n'/ }"
+        exit 1
+    fi
+else
+    marvin_log "WARN" "Neither xmllint nor python3 available — skipping SVG well-formedness check for ${OUT_DATED}"
 fi
 
+# No validator failed (or none was present); propagate the dated card to latest.
 cp "$OUT_DATED" "$OUT_LATEST"
 chmod 644 "$OUT_DATED" "$OUT_LATEST"
 
