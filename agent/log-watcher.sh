@@ -346,12 +346,28 @@ if [[ -z "$analysis_json" ]]; then
     exit 0
 fi
 
+# Validate the extracted text is actually a JSON array before anything tries to
+# merge or query it. The sed extraction above only guarantees non-emptiness, not
+# validity — truncated output (head -500 cutting mid-array) or prose-wrapped
+# output yields text that crashes the `jq -s 'add'` merge below under
+# `set -euo pipefail` + the ERR trap, killing the script before the graceful
+# fallback can run and silently dropping that cycle's signal update.
+# Mirror the "could not parse" handling: save raw for forensics, skip cleanly.
+if ! echo "$analysis_json" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    marvin_log "WARN" "Claude output is not a valid JSON array, saving raw"
+    echo "$raw_output" > "${COMMS_DIR}/log-analysis-raw-${TIMESTAMP}.txt"
+    exit 0
+fi
+
 # Save full analysis
 if [[ -f "$ANALYSIS_FILE" ]]; then
     # Verify existing file is valid JSON before merging
     if jq empty "$ANALYSIS_FILE" 2>/dev/null; then
         existing=$(cat "$ANALYSIS_FILE")
-        merged=$(echo "$existing" "$analysis_json" | jq -s 'add' 2>/dev/null)
+        # `|| true`: a failed merge (incompatible JSON shapes, e.g. array vs
+        # object) must fall through to the graceful handler below, not trip
+        # set -e / the ERR trap and kill the script (exit-code-masking lesson).
+        merged=$(echo "$existing" "$analysis_json" | jq -s 'add' 2>/dev/null) || true
         if [[ -n "$merged" ]] && echo "$merged" | jq empty 2>/dev/null; then
             echo "$merged" | jq '.' > "$ANALYSIS_FILE"
         else
