@@ -352,7 +352,6 @@ fi
 # output yields text that crashes the `jq -s 'add'` merge below under
 # `set -euo pipefail` + the ERR trap, killing the script before the graceful
 # fallback can run and silently dropping that cycle's signal update.
-# Recurring failure: log-watcher.sh:354 exit 5 on 2026-05-27 and 2026-06-01.
 # Mirror the "could not parse" handling: save raw for forensics, skip cleanly.
 if ! echo "$analysis_json" | jq -e 'type == "array"' >/dev/null 2>&1; then
     marvin_log "WARN" "Claude output is not a valid JSON array, saving raw"
