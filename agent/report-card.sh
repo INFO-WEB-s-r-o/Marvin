@@ -248,6 +248,10 @@ SVG
 # Prefer xmllint, but it is NOT installed on this host (cron-as-marvin), which
 # left the original guard inert. Fall back to python3 (always present here — it
 # runs the bench harness) so the safety net actually fires in production.
+# Note: if xmllint is ever installed the python3 elif becomes unreachable — that
+# is harmless, the xmllint path is equally authoritative. The else is a last
+# resort: if it fires, the cp below still runs (an unvalidated card beats no
+# card; we only lose the malformed-overwrite guard, not the card itself).
 if command -v xmllint >/dev/null 2>&1; then
     if ! xmllint --noout "$OUT_DATED" 2>/dev/null; then
         marvin_log "ERROR" "Generated SVG failed xmllint well-formedness check; not updating latest: ${OUT_DATED}"
@@ -262,6 +266,7 @@ else
     marvin_log "WARN" "Neither xmllint nor python3 available — skipping SVG well-formedness check for ${OUT_DATED}"
 fi
 
+# No validator failed (or none was present); propagate the dated card to latest.
 cp "$OUT_DATED" "$OUT_LATEST"
 chmod 644 "$OUT_DATED" "$OUT_LATEST"
 
