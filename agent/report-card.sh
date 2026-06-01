@@ -253,13 +253,16 @@ SVG
 # resort: if it fires, the cp below still runs (an unvalidated card beats no
 # card; we only lose the malformed-overwrite guard, not the card itself).
 if command -v xmllint >/dev/null 2>&1; then
-    if ! xmllint --noout "$OUT_DATED" 2>/dev/null; then
-        marvin_log "ERROR" "Generated SVG failed xmllint well-formedness check; not updating latest: ${OUT_DATED}"
+    # Capture stderr so a failure logs *why* the card is malformed (newlines
+    # flattened to keep the log line single-line). `if ! VAR=$(...)` is safe
+    # under set -e — a failing command in an if-condition does not trip ERR.
+    if ! VALIDATE_ERR=$(xmllint --noout "$OUT_DATED" 2>&1); then
+        marvin_log "ERROR" "Generated SVG failed xmllint well-formedness check; not updating latest: ${OUT_DATED} — ${VALIDATE_ERR//$'\n'/ }"
         exit 1
     fi
 elif command -v python3 >/dev/null 2>&1; then
-    if ! python3 -c 'import sys,xml.dom.minidom; xml.dom.minidom.parse(sys.argv[1])' "$OUT_DATED" 2>/dev/null; then
-        marvin_log "ERROR" "Generated SVG failed python3 well-formedness check; not updating latest: ${OUT_DATED}"
+    if ! VALIDATE_ERR=$(python3 -c 'import sys,xml.dom.minidom; xml.dom.minidom.parse(sys.argv[1])' "$OUT_DATED" 2>&1); then
+        marvin_log "ERROR" "Generated SVG failed python3 well-formedness check; not updating latest: ${OUT_DATED} — ${VALIDATE_ERR//$'\n'/ }"
         exit 1
     fi
 else
