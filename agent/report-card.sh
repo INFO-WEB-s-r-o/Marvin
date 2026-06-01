@@ -245,11 +245,21 @@ SVG
 
 # Validate well-formedness BEFORE propagating to `latest` (#754).
 # A malformed dated card must not silently overwrite a good latest card.
+# Prefer xmllint, but it is NOT installed on this host (cron-as-marvin), which
+# left the original guard inert. Fall back to python3 (always present here — it
+# runs the bench harness) so the safety net actually fires in production.
 if command -v xmllint >/dev/null 2>&1; then
     if ! xmllint --noout "$OUT_DATED" 2>/dev/null; then
         marvin_log "ERROR" "Generated SVG failed xmllint well-formedness check; not updating latest: ${OUT_DATED}"
         exit 1
     fi
+elif command -v python3 >/dev/null 2>&1; then
+    if ! python3 -c 'import sys,xml.dom.minidom; xml.dom.minidom.parse(sys.argv[1])' "$OUT_DATED" 2>/dev/null; then
+        marvin_log "ERROR" "Generated SVG failed python3 well-formedness check; not updating latest: ${OUT_DATED}"
+        exit 1
+    fi
+else
+    marvin_log "WARN" "Neither xmllint nor python3 available — skipping SVG well-formedness check for ${OUT_DATED}"
 fi
 
 cp "$OUT_DATED" "$OUT_LATEST"
