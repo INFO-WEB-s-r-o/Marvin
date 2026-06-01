@@ -376,7 +376,7 @@ if [[ ${#SLA_DAYS[@]} -gt 0 ]]; then
                 days_tracked: length,
                 total_samples: ([.[].samples] | add),
                 total_expected: ([.[].expected] | add),
-                overall_uptime_pct: (([.[].samples] | add) / ([.[].expected] | add) * 100 | . * 100 | round / 100),
+                overall_uptime_pct: (([.[] | (if .samples > .expected then .expected else .samples end)] | add) / ([.[].expected] | add) * 100 | . * 100 | round / 100),
                 worst_day: (min_by(.uptime_pct) | {date: .date, uptime_pct: .uptime_pct}),
                 best_day: (max_by(.uptime_pct) | {date: .date, uptime_pct: .uptime_pct}),
                 days_at_100pct: ([.[] | select(.uptime_pct >= 99.9)] | length)
