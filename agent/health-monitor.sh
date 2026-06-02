@@ -106,7 +106,16 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
     # 6-8σ false positives daily. Comparing against daily peak history eliminates this.
     _mem_maxes=$(for f in "${_daily_files[@]}"; do jq -r '.summary.memory_used_mb.max // empty' "$f" 2>/dev/null; done)
     _load_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.load_1m.avg // empty' "$f" 2>/dev/null; done)
-    _proc_avgs=$(for f in "${_daily_files[@]}"; do jq -r '.summary.process_count.avg // empty' "$f" 2>/dev/null; done)
+    # Process count uses daily MAX instead of avg — same reasoning as Memory MB
+    # above. The instantaneous 5-min reading naturally rises toward the daily
+    # peak during cron runs and (since the 2026-05-25 Marvin-Brain Docker stack)
+    # container churn, while the daily *average* baseline sits ~15 below it.
+    # Comparing an instantaneous near-peak reading against the avg baseline with
+    # a tight stddev produced recurring false positives (2026-05-25/29, 2026-06-02:
+    # "Processes = 200, avg=182, 4.9σ"). Comparing today's reading against the
+    # rolling daily-peak history eliminates this while still catching a genuine
+    # process explosion that exceeds the historical peak band.
+    _proc_maxes=$(for f in "${_daily_files[@]}"; do jq -r '.summary.process_count.max // empty' "$f" 2>/dev/null; done)
     # Net RX/TX anomaly detection moved to metric-aggregate.sh (runs once daily
     # at 23:00 UTC). Comparing today's running cumulative MB against full-day
     # historical totals produced escalating false-positives all day on any
@@ -124,7 +133,7 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
         "CPU%|${_cpu_avgs}|$(echo "$metrics" | jq -r '.cpu_percent' 2>/dev/null)|high|80" \
         "Memory MB|${_mem_maxes}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)|high|0" \
         "Load 1m|${_load_avgs}|$(echo "$metrics" | jq -r '.load_average["1min"]' 2>/dev/null)|high|${_load_min_threshold}" \
-        "Processes|${_proc_avgs}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)|high|200"; do
+        "Processes|${_proc_maxes}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)|high|200"; do
         _label="${pair%%|*}"
         _rest="${pair#*|}"
         _vals="${_rest%%|*}"
@@ -284,7 +293,7 @@ while IFS= read -r line; do
     # comm field spoofing via prctl(PR_SET_NAME) (#38)
     proc_exe=$(readlink -f "/proc/${proc_pid}/exe" 2>/dev/null || echo "")
     case "$proc_name" in
-        claude|apt*|dpkg*|unattended-upgr*|ps|jq|fail2ban*|file|appstreamcli|shellcheck|pg_isready|gzip)
+        claude|apt*|dpkg*|unattended-upgr*|ps|jq|fail2ban*|file|appstreamcli|shellcheck|pg_isready|gzip|runc*)
             # High-frequency, low-risk short-lived children — silent skip when
             # exe is unreadable (they exit between ps and readlink constantly).
             # Contrast with find|git below which logs + falls through, because
@@ -297,6 +306,11 @@ while IFS= read -r line; do
             # multi-MB JSONL/log files; a single core hitting 100% for one
             # 5-min sample window is the normal shape of compression work.
             # Trusted exe path (/usr/bin/gzip) still required by the check below.
+            # runc*: the OCI container runtime (/usr/bin/runc) launched by
+            # containerd for the Marvin-Brain Docker stack. Both the plain
+            # `runc` exec and the `runc:[2:INIT]` container-init child briefly
+            # peg one core to 100% during container (re)starts and healthcheck
+            # cycles — caught by `runc*` glob. Trusted exe path still enforced.
             if [[ -z "$proc_exe" ]]; then
                 continue
             fi
