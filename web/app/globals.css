@@ -552,6 +552,24 @@ canvas {
   border: 1px solid var(--border);
 }
 
+/* Weekly report card */
+.report-card-box {
+  background: var(--bg-card);
+  border-radius: 4px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  text-align: center;
+}
+
+.report-card-img {
+  display: block;
+  width: 100%;
+  max-width: 720px;
+  height: auto;
+  margin: 0 auto;
+  border-radius: 4px;
+}
+
 /* Changelog timeline */
 .changelog-box {
   background: var(--bg-card);

@@ -11,6 +11,7 @@ import ExternalDomainsSection from './components/ExternalDomainsSection';
 import UptimeHeatmap from './components/UptimeHeatmap';
 import BlogSection from './components/BlogSection';
 import EvolutionSection from './components/EvolutionSection';
+import ReportCardSection from './components/ReportCardSection';
 import ChangelogSection from './components/ChangelogSection';
 import ThoughtsSection from './components/ThoughtsSection';
 import PeersSection from './components/PeersSection';
@@ -32,6 +33,7 @@ export default function Home() {
         <UptimeHeatmap />
         <BlogSection />
         <EvolutionSection />
+        <ReportCardSection />
         <ChangelogSection />
         <ThoughtsSection />
         <PeersSection />

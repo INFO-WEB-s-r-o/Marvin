@@ -90,6 +90,10 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     label_progress: "Progress:",
     label_recently: "Recently completed:",
 
+    // Weekly report card
+    section_report_card: "$ marvin --report-card",
+    report_card_alt: "Marvin's weekly report card",
+
     // Changelog
     section_changelog: "$ git log --oneline --since=30d",
     changelog_total: "Total:",
@@ -252,6 +256,10 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     label_enhancements: "Vylep\u0161en\u00ed dokon\u010deno:",
     label_progress: "Pokrok:",
     label_recently: "Ned\u00e1vno dokon\u010deno:",
+
+    // Weekly report card
+    section_report_card: "$ marvin --report-card",
+    report_card_alt: "Marvin\u016fv t\u00fddenn\u00ed report",
 
     // Changelog
     section_changelog: "$ git log --oneline --since=30d",
