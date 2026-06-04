@@ -289,6 +289,33 @@ while IFS= read -r line; do
     proc_cpu=$(echo "$line" | awk '{print $2}')
     proc_name=$(echo "$line" | awk '{print $3}')
 
+    # ─── Container-managed processes (Docker / containerd) ──────────────────
+    # Processes inside the Marvin-Brain Docker stack (postgres, lightrag,
+    # worker, api, mcp, grafana, prometheus, otel-collector) legitimately spike
+    # CPU during embedding/indexing/healthcheck work. The host-level runaway
+    # killer must NOT touch them, for two reasons:
+    #   1. Correctness: Docker owns their lifecycle (cgroup CPU limits,
+    #      healthchecks, restart policies). A `kill -9` from the host corrupts
+    #      the container and Docker restarts it anyway — Marvin would be fighting
+    #      its own brain stack. Without this guard, any container process that
+    #      sustains >50% CPU for >10 min (a real LightRAG indexing job) would be
+    #      killed at health-monitor.sh:382. Latent until the brain stack got
+    #      busier; this closes it before the first false kill.
+    #   2. Provenance: cgroup membership is assigned by Docker through cgroupfs
+    #      (writable by root only) and cannot be forged by a process the way the
+    #      `comm` field can via prctl(PR_SET_NAME) (#38). So this is a *stronger*
+    #      trust signal than the name-based allowlist below — not a weaker one.
+    # Matches docker-<hash>.scope (cgroup v2, this host) and /docker/<hash>
+    # (cgroup v1). Host daemons (docker.service, containerd.service) do NOT match
+    # the [-/] class, so they remain subject to runaway detection. If the cgroup
+    # read races a just-exited process and returns empty, we fall through to the
+    # name-based allowlist below (pg_isready/runc/... kept as belt-and-suspenders).
+    proc_cgroup=$(cat "/proc/${proc_pid}/cgroup" 2>/dev/null || echo "")
+    if [[ "$proc_cgroup" =~ /docker[-/] ]]; then
+        marvin_log "INFO" "High CPU in container process: PID=${proc_pid} ${proc_name} at ${proc_cpu}% — Docker-managed, not tracked for host-kill"
+        continue
+    fi
+
     # Skip known-good processes — verify full exe path to prevent
     # comm field spoofing via prctl(PR_SET_NAME) (#38)
     proc_exe=$(readlink -f "/proc/${proc_pid}/exe" 2>/dev/null || echo "")
