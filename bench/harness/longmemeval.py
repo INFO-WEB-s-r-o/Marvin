@@ -28,6 +28,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -224,6 +225,7 @@ def run(client: BrainClient | None, cfg: RunConfig) -> dict[str, Any]:
     llm = _anthropic_client()
     per_question: list[dict[str, Any]] = []
     correct = 0
+    cleanup_failures: list[str] = []
 
     for q in questions:
         qid = q["question_id"]
@@ -231,46 +233,65 @@ def run(client: BrainClient | None, cfg: RunConfig) -> dict[str, Any]:
         abstain = _is_abstention(q)
         ingested_ids: list[str] = []
 
-        # 1. ingest this question's haystack into an isolated, purgeable container
-        for text in _turn_texts(q):
-            res = client.record_thought(text, container_tag=tag)
-            tid = res.get("id") or res.get("thought", {}).get("id")
-            if tid:
-                ingested_ids.append(tid)
+        try:
+            # 1. ingest this question's haystack into an isolated, purgeable container
+            for text in _turn_texts(q):
+                res = client.record_thought(text, container_tag=tag)
+                tid = res.get("id") or res.get("thought", {}).get("id")
+                if tid:
+                    ingested_ids.append(tid)
 
-        # 2. recall, 3. read, 4. judge
-        recalled = client.recall(q["question"], top_k=cfg.top_k, container_tag=tag)
-        evidence = [t.get("content", "") for t in recalled.get("thoughts", [])]
-        answer = _read_answer(llm, cfg.reader_model, q["question"], evidence)
+            # 2. recall, 3. read, 4. judge
+            recalled = client.recall(q["question"], top_k=cfg.top_k, container_tag=tag)
+            evidence = [t.get("content", "") for t in recalled.get("thoughts", [])]
+            answer = _read_answer(llm, cfg.reader_model, q["question"], evidence)
 
-        if abstain:
-            is_correct = _ABSTAIN_MARKER in answer.lower()
-        else:
-            is_correct = _judge_correct(llm, cfg.judge_model, q["question"], q["answer"], answer)
-        correct += int(is_correct)
+            if abstain:
+                is_correct = _ABSTAIN_MARKER in answer.lower()
+            else:
+                is_correct = _judge_correct(llm, cfg.judge_model, q["question"], q["answer"], answer)
+            correct += int(is_correct)
 
-        per_question.append({
-            "question_id": qid,
-            "question_type": q.get("question_type"),
-            "abstention": abstain,
-            "answer": answer,
-            "gold": q["answer"],
-            "correct": is_correct,
-            "n_evidence": len(evidence),
-        })
+            per_question.append({
+                "question_id": qid,
+                "question_type": q.get("question_type"),
+                "abstention": abstain,
+                "answer": answer,
+                "gold": q["answer"],
+                "correct": is_correct,
+                "n_evidence": len(evidence),
+            })
+        finally:
+            # 5. cleanup so the benchmark never pollutes Marvin's real memory.
+            # In a `finally` so the purge still runs if recall/read/judge raises
+            # mid-question (network error, rate limit, SDK exception) — otherwise
+            # the ingested haystack stays in the Brain, the exact contamination
+            # the per-question isolation exists to prevent. (#766)
+            if cfg.cleanup:
+                for tid in ingested_ids:
+                    try:
+                        client.forget_thought(tid, reason="longmemeval cleanup")
+                    except Exception as exc:  # noqa: best-effort purge; never fail the run on cleanup
+                        # ...but never silently: a swallowed forget means haystack
+                        # data is accumulating in the Brain unseen, with no signal
+                        # to trigger a follow-up purge. Surface it and record the
+                        # id so the operator can reconcile. (#767)
+                        cleanup_failures.append(tid)
+                        print(
+                            f"[warn] longmemeval cleanup: forget_thought({tid}) "
+                            f"in {tag} failed: {exc}",
+                            file=sys.stderr,
+                        )
 
-        # 5. cleanup so the benchmark never pollutes Marvin's real memory
-        if cfg.cleanup:
-            for tid in ingested_ids:
-                try:
-                    client.forget_thought(tid, reason="longmemeval cleanup")
-                except Exception:  # noqa: best-effort purge; never fail the run on cleanup
-                    pass
-
-    return {
+    result = {
         **meta,
         "dry_run": False,
         "aggregate_score": correct / len(questions) if questions else None,
         "n_correct": correct,
         "per_question": per_question,
     }
+    if cleanup_failures:
+        # Surfaced in the result JSON too, so a partially-failed purge is
+        # auditable after the fact and the operator can re-forget these ids. (#767)
+        result["cleanup_failures"] = cleanup_failures
+    return result
