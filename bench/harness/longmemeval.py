@@ -27,6 +27,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,13 @@ DEFAULT_JUDGE_MODEL = "claude-haiku-4-5-20251001"
 
 _ABSTAIN_MARKER = "i don't know"
 _REQUIRED_FIELDS = ("question_id", "question", "answer", "haystack_sessions")
+# question_id is interpolated into a Brain container tag (lme_s/<qid>), so it is
+# a path-shaped value crossing a trust boundary. A crafted id like
+# "../../marvin/production" would otherwise let a malicious/corrupt dataset
+# target real Brain containers during ingest/recall/cleanup. Validate at load
+# time and fail loud — never silently rewrite ids, or two distinct ids could
+# collapse into the same container. (#765)
+_SAFE_QID = re.compile(r"[A-Za-z0-9_\-]+")
 
 
 class DatasetError(RuntimeError):
@@ -86,6 +94,12 @@ def load_dataset(path: Path) -> tuple[list[dict[str, Any]], str]:
         missing = [f for f in _REQUIRED_FIELDS if f not in q]
         if missing:
             raise DatasetError(f"{path}: question {i} missing fields {missing}")
+        qid = str(q["question_id"])
+        if not _SAFE_QID.fullmatch(qid):
+            raise DatasetError(
+                f"{path}: question {i} has unsafe question_id {qid!r}; "
+                "expected only [A-Za-z0-9_-] (it becomes a Brain container tag)"
+            )
     return data, sha256
 
 
@@ -181,7 +195,7 @@ def _judge_correct(client, model: str, question: str, gold: str, answer: str) ->
 
 # --- main run ------------------------------------------------------------
 
-def run(client: BrainClient, cfg: RunConfig) -> dict[str, Any]:
+def run(client: BrainClient | None, cfg: RunConfig) -> dict[str, Any]:
     questions, sha256 = load_dataset(cfg.dataset)
     if cfg.limit:
         questions = questions[: cfg.limit]
@@ -201,6 +215,11 @@ def run(client: BrainClient, cfg: RunConfig) -> dict[str, Any]:
     if cfg.dry_run:
         return {**meta, "dry_run": True, "estimate": estimate_cost(questions, cfg),
                 "aggregate_score": None, "per_question": []}
+
+    # A dry run returns above without a client; a scored run requires one. Fail
+    # loud here rather than as an opaque AttributeError mid-ingest. (#764)
+    if client is None:
+        raise ValueError("a scored (non-dry-run) longmemeval run requires a BrainClient")
 
     llm = _anthropic_client()
     per_question: list[dict[str, Any]] = []

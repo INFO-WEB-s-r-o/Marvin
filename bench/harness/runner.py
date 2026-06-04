@@ -22,7 +22,7 @@ from .brain_client import BrainClient
 RESULTS_DIR = Path(__file__).resolve().parent.parent / "results"
 
 
-def _run_longmemeval(client: BrainClient, cfg: longmemeval.RunConfig | None = None) -> dict:
+def _run_longmemeval(client: BrainClient | None, cfg: longmemeval.RunConfig | None = None) -> dict:
     # Phase 2b: scored LongMemEval-S Brain run (go-ahead granted on #739,
     # 2026-06-04, split S). A real run SPENDS MONEY — embedding spend on haystack
     # ingestion + reader/judge-model spend on scoring — so the *default* is a
