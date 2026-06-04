@@ -289,6 +289,25 @@ while IFS= read -r line; do
     proc_cpu=$(echo "$line" | awk '{print $2}')
     proc_name=$(echo "$line" | awk '{print $3}')
 
+    # ─── Container-managed processes (Docker / containerd) ──────────────────
+    # Never host-kill a containerized process: Docker owns its lifecycle (cgroup
+    # limits, healthchecks, restart policy), so a host kill -9 just corrupts state
+    # Docker rebuilds anyway. cgroup membership is root-only (cgroupfs) and
+    # unforgeable, unlike the `comm` field (prctl PR_SET_NAME, #38) — a stronger
+    # trust signal than the name allowlist below. Matches docker-<hash>.scope
+    # (cgroup v2) and /docker/<hash> (v1); host daemons (docker.service,
+    # containerd.service) lack the [-/] and stay subject to detection. An empty
+    # read (process raced to exit) falls through to the name allowlist. Full
+    # rationale + threat model: PR #761. Read the whole file (procfs, zero I/O
+    # cost): cgroup v1/hybrid hosts emit one line per controller, so the /docker
+    # lines can sit past a fixed byte cap and a truncated read would silently
+    # miss them (#762).
+    proc_cgroup=$(cat "/proc/${proc_pid}/cgroup" 2>/dev/null || echo "")
+    if [[ "$proc_cgroup" =~ /docker[-/] ]]; then
+        marvin_log "INFO" "High CPU in container process: PID=${proc_pid} ${proc_name} at ${proc_cpu}% — Docker-managed, not tracked for host-kill"
+        continue
+    fi
+
     # Skip known-good processes — verify full exe path to prevent
     # comm field spoofing via prctl(PR_SET_NAME) (#38)
     proc_exe=$(readlink -f "/proc/${proc_pid}/exe" 2>/dev/null || echo "")
