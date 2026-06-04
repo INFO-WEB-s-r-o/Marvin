@@ -15,24 +15,20 @@ import sys
 from pathlib import Path
 from typing import Callable
 
+from . import longmemeval
 from .brain_client import BrainClient
 
 
 RESULTS_DIR = Path(__file__).resolve().parent.parent / "results"
 
 
-def _run_longmemeval(client: BrainClient) -> dict:
-    # Phase 2a wired the real BrainClient (REST) and the LongMemEval competitor
-    # citations. Phase 2b is the scored Brain run itself, which is GATED: it
-    # ingests the LongMemEval haystack and judges recalled evidence, incurring
-    # OpenAI embedding spend (ingestion) + judge-model spend (scoring). Per the
-    # honesty floor in PLAN.md ("nothing that needs a credit card without
-    # explicit go-ahead"), this stays unimplemented until Pavel green-lights the
-    # spend on #739 and the dataset is pinned.
-    raise NotImplementedError(
-        "phase 2b (gated): LongMemEval scored Brain run needs a pinned dataset "
-        "and explicit go-ahead on embedding+judge API spend — see #739"
-    )
+def _run_longmemeval(client: BrainClient, cfg: longmemeval.RunConfig | None = None) -> dict:
+    # Phase 2b: scored LongMemEval-S Brain run (go-ahead granted on #739,
+    # 2026-06-04, split S). A real run SPENDS MONEY — embedding spend on haystack
+    # ingestion + reader/judge-model spend on scoring — so the *default* is a
+    # no-cost dry-run estimate; pass --execute to actually spend. See
+    # bench/harness/longmemeval.py for the pipeline and the honesty floor.
+    return longmemeval.run(client, cfg or longmemeval.RunConfig(dry_run=True))
 
 
 def _run_locomo(client: BrainClient) -> dict:
@@ -64,15 +60,37 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Where to write the result JSON. Defaults to bench/results/<benchmark>.json.",
     )
+    # LongMemEval-specific knobs. --execute is the explicit spend switch: without
+    # it the run is a no-cost dry estimate, so cron/CI never spends by accident.
+    parser.add_argument("--execute", action="store_true",
+                        help="longmemeval: run the SCORED (paid) pipeline; default is a dry estimate")
+    parser.add_argument("--dataset", type=Path, default=longmemeval.DEFAULT_DATASET,
+                        help="longmemeval: path to longmemeval_s.json")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="longmemeval: cap number of questions (smoke / cost control)")
+    parser.add_argument("--top-k", type=int, default=10,
+                        help="longmemeval: recalled items fed to the reader")
     args = parser.parse_args(argv)
 
-    client = BrainClient()
     runner = BENCHMARKS[args.benchmark]
     try:
-        result = runner(client)
+        if args.benchmark == "longmemeval":
+            cfg = longmemeval.RunConfig(
+                dataset=args.dataset, limit=args.limit, top_k=args.top_k,
+                dry_run=not args.execute,
+            )
+            # A dry estimate touches no Brain endpoint, so it needs no API key —
+            # don't force one just to size the work.
+            client = None if cfg.dry_run else BrainClient()
+            result = _run_longmemeval(client, cfg)
+        else:
+            result = runner(BrainClient())
     except NotImplementedError as exc:
         print(f"benchmark not yet implemented: {exc}", file=sys.stderr)
         return 2
+    except longmemeval.DatasetError as exc:
+        print(f"dataset error: {exc}", file=sys.stderr)
+        return 3
 
     out = args.output or RESULTS_DIR / f"{args.benchmark}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
