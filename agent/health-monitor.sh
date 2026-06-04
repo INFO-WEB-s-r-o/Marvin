@@ -290,27 +290,16 @@ while IFS= read -r line; do
     proc_name=$(echo "$line" | awk '{print $3}')
 
     # ─── Container-managed processes (Docker / containerd) ──────────────────
-    # Processes inside the Marvin-Brain Docker stack (postgres, lightrag,
-    # worker, api, mcp, grafana, prometheus, otel-collector) legitimately spike
-    # CPU during embedding/indexing/healthcheck work. The host-level runaway
-    # killer must NOT touch them, for two reasons:
-    #   1. Correctness: Docker owns their lifecycle (cgroup CPU limits,
-    #      healthchecks, restart policies). A `kill -9` from the host corrupts
-    #      the container and Docker restarts it anyway — Marvin would be fighting
-    #      its own brain stack. Without this guard, any container process that
-    #      sustains >50% CPU for >10 min (a real LightRAG indexing job) would be
-    #      killed at health-monitor.sh:382. Latent until the brain stack got
-    #      busier; this closes it before the first false kill.
-    #   2. Provenance: cgroup membership is assigned by Docker through cgroupfs
-    #      (writable by root only) and cannot be forged by a process the way the
-    #      `comm` field can via prctl(PR_SET_NAME) (#38). So this is a *stronger*
-    #      trust signal than the name-based allowlist below — not a weaker one.
-    # Matches docker-<hash>.scope (cgroup v2, this host) and /docker/<hash>
-    # (cgroup v1). Host daemons (docker.service, containerd.service) do NOT match
-    # the [-/] class, so they remain subject to runaway detection. If the cgroup
-    # read races a just-exited process and returns empty, we fall through to the
-    # name-based allowlist below (pg_isready/runc/... kept as belt-and-suspenders).
-    proc_cgroup=$(cat "/proc/${proc_pid}/cgroup" 2>/dev/null || echo "")
+    # Never host-kill a containerized process: Docker owns its lifecycle (cgroup
+    # limits, healthchecks, restart policy), so a host kill -9 just corrupts state
+    # Docker rebuilds anyway. cgroup membership is root-only (cgroupfs) and
+    # unforgeable, unlike the `comm` field (prctl PR_SET_NAME, #38) — a stronger
+    # trust signal than the name allowlist below. Matches docker-<hash>.scope
+    # (cgroup v2) and /docker/<hash> (v1); host daemons (docker.service,
+    # containerd.service) lack the [-/] and stay subject to detection. An empty
+    # read (process raced to exit) falls through to the name allowlist. Full
+    # rationale + threat model: PR #761. (head -c 512: cgroup files are tiny.)
+    proc_cgroup=$(head -c 512 "/proc/${proc_pid}/cgroup" 2>/dev/null || echo "")
     if [[ "$proc_cgroup" =~ /docker[-/] ]]; then
         marvin_log "INFO" "High CPU in container process: PID=${proc_pid} ${proc_name} at ${proc_cpu}% — Docker-managed, not tracked for host-kill"
         continue
