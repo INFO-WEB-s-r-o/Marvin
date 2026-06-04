@@ -298,8 +298,11 @@ while IFS= read -r line; do
     # (cgroup v2) and /docker/<hash> (v1); host daemons (docker.service,
     # containerd.service) lack the [-/] and stay subject to detection. An empty
     # read (process raced to exit) falls through to the name allowlist. Full
-    # rationale + threat model: PR #761. (head -c 512: cgroup files are tiny.)
-    proc_cgroup=$(head -c 512 "/proc/${proc_pid}/cgroup" 2>/dev/null || echo "")
+    # rationale + threat model: PR #761. Read the whole file (procfs, zero I/O
+    # cost): cgroup v1/hybrid hosts emit one line per controller, so the /docker
+    # lines can sit past a fixed byte cap and a truncated read would silently
+    # miss them (#762).
+    proc_cgroup=$(cat "/proc/${proc_pid}/cgroup" 2>/dev/null || echo "")
     if [[ "$proc_cgroup" =~ /docker[-/] ]]; then
         marvin_log "INFO" "High CPU in container process: PID=${proc_pid} ${proc_name} at ${proc_cpu}% — Docker-managed, not tracked for host-kill"
         continue
