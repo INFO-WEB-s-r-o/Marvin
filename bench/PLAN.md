@@ -102,8 +102,8 @@ Both `summary.md` and `summary.png` are derived; never edited by hand.
 | Phase | What lands                                                                | Status      |
 |-------|---------------------------------------------------------------------------|-------------|
 | 1     | This plan + harness skeleton + citations placeholder + report generator   | merged (#740) |
-| 2a    | Real `BrainClient` (REST) + connectivity smoke + LongMemEval competitor citations | this PR |
-| 2b    | LongMemEval **scored Brain run** — GATED on API-spend go-ahead (see below) | blocked: needs go-ahead |
+| 2a    | Real `BrainClient` (REST) + connectivity smoke + LongMemEval competitor citations | merged (#749) |
+| 2b    | LongMemEval **scored Brain run** (split **S**) — runner + dry-run estimator | this PR; go-ahead granted on #739 (2026-06-04) |
 | 3     | LoCoMo Brain run + citations                                              | follows     |
 | 4     | ConvoMem Brain run + citations                                            | follows     |
 | 5     | MemScore Brain run + citations                                            | follows     |
@@ -119,6 +119,29 @@ consumes **judge-model** spend. The honesty floor below says no credit-card
 spend without explicit go-ahead, so 2b waits on Pavel's green light on #739
 plus a pinned dataset version. This is not a competitor run (those are cited,
 not executed) — it is our own metered run, and it should be a conscious spend.
+
+### Running phase 2b
+
+Pavel granted the spend go-ahead and chose split **S** on #739 (2026-06-04).
+The runner ships in `bench/harness/longmemeval.py`; the paid run stays behind an
+explicit switch so cron/CI can never spend by accident:
+
+```sh
+# 0. place the official LongMemEval_S file (hash-pinned automatically on read):
+#    bench/data/longmemeval_s.json
+# 1. no-cost estimate — sizes embedding/reader/judge tokens, spends nothing:
+python -m bench.harness.runner --benchmark longmemeval            # dry-run (default)
+# 2. the scored, metered run (needs BRAIN_API_KEY + ANTHROPIC_API_KEY):
+set -a && source ~/git/Marvin-Brain/.env && set +a
+python -m bench.harness.runner --benchmark longmemeval --execute
+```
+
+Pipeline per question: ingest haystack → recall(top_k) → Claude reader answers
+→ Claude judge vs gold (abstention questions score correct iff the reader
+abstains). Ingested thoughts go into isolated `lme_s/<qid>` containers and are
+forgotten after each question, so the benchmark never pollutes Marvin's real
+memory. The result JSON records the dataset SHA-256 and exact reader/judge
+model IDs, so any number is reproducible against an exact file + models.
 
 ## Open questions
 
