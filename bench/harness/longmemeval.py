@@ -165,7 +165,7 @@ def _approx_tokens(text: str) -> int:
 
 def estimate_cost(questions: list[dict[str, Any]], cfg: RunConfig) -> dict[str, Any]:
     """Order-of-magnitude spend estimate. Touches no API."""
-    qs = questions[: cfg.limit] if cfg.limit else questions
+    qs = questions[: cfg.limit] if cfg.limit is not None else questions
     ingest_tokens = sum(_approx_tokens(t) for q in qs for t in _turn_texts(q))
     # Reader sees recalled context (bounded by top_k); judge sees a short rubric.
     reader_in = sum(
@@ -238,7 +238,7 @@ def _judge_correct(client, model: str, question: str, gold: str, answer: str) ->
 
 def run(client: BrainClient | None, cfg: RunConfig) -> dict[str, Any]:
     questions, sha256 = load_dataset(cfg.dataset)
-    if cfg.limit:
+    if cfg.limit is not None:
         questions = questions[: cfg.limit]
 
     meta = {
