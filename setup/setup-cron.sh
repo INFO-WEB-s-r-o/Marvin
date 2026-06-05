@@ -63,6 +63,11 @@ MARVIN_DIR=/home/marvin/git
 # Generates daily blog post and status summary
 0 21 * * * root ${MARVIN_DIR}/agent/evening-report.sh >> /var/log/marvin-evening.log 2>&1
 
+# Disk cleanup — 01:00 local daily
+# Prunes old run logs (>14d), daily logs (>30d), compresses metrics JSONL,
+# vacuums journal. Runs before the 02:xx aggregators and 03:00 backup.
+0 1 * * * root ${MARVIN_DIR}/agent/disk-cleanup.sh >> /var/log/marvin-cleanup.log 2>&1
+
 # Log export — 02:00 local (just after 00:00 UTC, resolves #697)
 # Local git commit + generate exportable log bundles for the UTC day that just ended
 0 2 * * * root ${MARVIN_DIR}/agent/log-export.sh >> /var/log/marvin-export.log 2>&1
