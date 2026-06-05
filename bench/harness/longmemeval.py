@@ -70,6 +70,16 @@ class DatasetError(RuntimeError):
     """The LongMemEval dataset is missing or malformed."""
 
 
+class BrainResponseError(RuntimeError):
+    """The Brain API returned a shape the harness can't safely act on.
+
+    Raised when ``record_thought`` yields no parseable thought id. Because the
+    Brain exposes only per-id forget (no container-level purge), an untrackable
+    thought is an *unpurgeable* one — so we abort loudly rather than silently
+    leave benchmark haystack data accumulating in the Brain. (#768)
+    """
+
+
 @dataclass(frozen=True)
 class RunConfig:
     dataset: Path = DEFAULT_DATASET
@@ -126,6 +136,23 @@ def _turn_texts(question: dict[str, Any]) -> list[str]:
             role = turn.get("role", "user")
             texts.append(f"{role}: {content}")
     return texts
+
+
+def _thought_id(res: Any) -> str | None:
+    """Extract the thought id from a record_thought response, or None.
+
+    The Brain's POST /v1/thoughts returns a top-level ``id`` for every kind
+    (``new``, ``merged_exact``, ``merged_similar``). We also accept a nested
+    ``thought.id`` defensively. Returning None (rather than guessing) lets the
+    caller fail loud, since an id we can't read is a thought we can't purge. (#768)
+    """
+    if not isinstance(res, dict):
+        return None
+    tid = res.get("id")
+    if not tid:
+        nested = res.get("thought")
+        tid = nested.get("id") if isinstance(nested, dict) else None
+    return tid if isinstance(tid, str) and tid else None
 
 
 # --- cost estimation (no paid calls) -------------------------------------
@@ -250,9 +277,21 @@ def run(client: BrainClient | None, cfg: RunConfig) -> dict[str, Any]:
             # 1. ingest this question's haystack into an isolated, purgeable container
             for text in _turn_texts(q):
                 res = client.record_thought(text, container_tag=tag)
-                tid = res.get("id") or res.get("thought", {}).get("id")
-                if tid:
-                    ingested_ids.append(tid)
+                tid = _thought_id(res)
+                if not tid:
+                    # No id means cleanup can never reach this thought: the Brain
+                    # offers only per-id forget, no container-level purge, so an
+                    # untrackable thought is an unpurgeable one. Fail loud *now*
+                    # rather than let a whole run silently accrete orphaned
+                    # haystack data with an empty cleanup_failures (a false
+                    # "clean" signal). The finally below still purges every id
+                    # tracked for this question so far. (#768)
+                    raise BrainResponseError(
+                        f"record_thought returned no parseable thought id for "
+                        f"container {tag!r} (got keys {sorted(res) if isinstance(res, dict) else type(res).__name__}). "
+                        f"Aborting before unpurgeable benchmark data accumulates in the Brain."
+                    )
+                ingested_ids.append(tid)
 
             # 2. recall, 3. read, 4. judge
             recalled = client.recall(q["question"], top_k=cfg.top_k, container_tag=tag)

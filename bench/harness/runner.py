@@ -91,6 +91,11 @@ def main(argv: list[str] | None = None) -> int:
     except longmemeval.DatasetError as exc:
         print(f"dataset error: {exc}", file=sys.stderr)
         return 3
+    except longmemeval.BrainResponseError as exc:
+        # Unexpected Brain API shape mid-run: aborted loudly so untrackable,
+        # unpurgeable benchmark data can't silently accumulate. (#768)
+        print(f"brain response error: {exc}", file=sys.stderr)
+        return 4
 
     out = args.output or RESULTS_DIR / f"{args.benchmark}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
