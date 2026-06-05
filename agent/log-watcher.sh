@@ -88,6 +88,18 @@ WEB_NOISE_PATTERNS=(
     'GET /api/comms-summary\.json'
     'GET /api/comms/peers\.json'
     'GET /api/about\.json'
+    # Generic dashboard data feeds: the frontend polls many /api/*.json
+    # endpoints continuously, and ALL of them carry the referer
+    # "https://robot-marvin.cz/", which matches the `marvin\.cz` INTEREST
+    # pattern. Without these, normal browser polling (metrics/recent.json,
+    # incidents/summary.json, alerts, peers-public, thoughts, changelog, …)
+    # floods the "interesting" feed — 13k+ matching lines in access.log on a
+    # busy day, producing 700KB+ prompts (2026-06-05). A GET to a public JSON
+    # or SVG feed is never an AI communication attempt; real signals are POSTs
+    # to /.well-known/ai-negotiate (not under /api/, still matched by interest).
+    'GET /api/[^ ]*\.json'
+    'GET /api/[^ ]*\.svg'
+    'GET /api/blog'
     'GET /blog/.*\.md'
     'GET /style\.css'
     'GET /app\.js'
@@ -248,6 +260,24 @@ scan_logs() {
         fi
 
         if [[ -n "$interesting" ]]; then
+            # Enforce MAX_FEED_SIZE as a HARD ceiling on the per-file block.
+            # Previously the cap was only checked *after* appending a whole
+            # file's interesting block, so a single high-volume file (e.g.
+            # nginx access.log on a busy dashboard day) could overshoot the
+            # 50KB budget by 10x+ — 703KB on 2026-06-05 — and force
+            # run_claude's crude 400KB hard-truncation (~177K tokens), an
+            # expensive call that silently drops the tail at an arbitrary
+            # byte boundary. Bounding the block here keeps the feed within the
+            # documented contract.
+            local remaining=$((MAX_FEED_SIZE - collected_size))
+            if [[ "$remaining" -le 0 ]]; then
+                marvin_log "INFO" "Log collection truncated at ${MAX_FEED_SIZE} bytes (expected safety limit)"
+                break
+            fi
+            if [[ ${#interesting} -gt "$remaining" ]]; then
+                interesting="${interesting:0:$remaining}"
+            fi
+
             local count
             count=$(echo "$interesting" | wc -l)
             lines_interesting=$((lines_interesting + count))
@@ -262,8 +292,8 @@ ${interesting}
         # Update offset
         offsets=$(echo "$offsets" | jq --arg f "$logfile" --argjson s "$filesize" '.[$f] = $s')
 
-        # Stop if we've collected enough
-        if [[ "$collected_size" -gt "$MAX_FEED_SIZE" ]]; then
+        # Stop if we've reached the budget
+        if [[ "$collected_size" -ge "$MAX_FEED_SIZE" ]]; then
             marvin_log "INFO" "Log collection truncated at ${MAX_FEED_SIZE} bytes (expected safety limit)"
             break
         fi
