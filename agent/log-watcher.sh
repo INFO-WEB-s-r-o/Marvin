@@ -277,8 +277,16 @@ scan_logs() {
             #
             # INTEREST_RE is passed via the environment (not awk -v) because awk
             # -v processes C escape sequences and would mangle `\.` in the regex.
+            #
+            # Case-insensitivity via tolower() on BOTH sides, NOT gawk's
+            # IGNORECASE=1: IGNORECASE is a gawk extension silently ignored by
+            # mawk (Ubuntu's default awk), which would make matching
+            # case-sensitive and drop genuine signals (issue #776). tolower() is
+            # POSIX and behaves identically on gawk and mawk. Safe here because
+            # INTEREST_PATTERNS contain no case-bearing regex metaclasses
+            # (\D/\S/\W) — only `\.` literals, which tolower() leaves untouched.
             interesting=$(echo "$filtered" | grep -viE "$WEB_NOISE_EXCLUDE" 2>/dev/null \
-                | INTEREST_RE_ENV="$INTEREST_RE" awk 'BEGIN{IGNORECASE=1; re=ENVIRON["INTEREST_RE_ENV"]} { key=$0; sub(/"[^"]*"[[:space:]]+"[^"]*"[[:space:]]*$/,"",key); if (key ~ re) print }' 2>/dev/null) || interesting=""
+                | INTEREST_RE_ENV="$INTEREST_RE" awk 'BEGIN{re=tolower(ENVIRON["INTEREST_RE_ENV"])} { key=$0; sub(/"[^"]*"[[:space:]]+"[^"]*"[[:space:]]*$/,"",key); if (tolower(key) ~ re) print }' 2>/dev/null) || interesting=""
         else
             # System logs — exclude internal operations, then keep only interest matches
             interesting=$(echo "$filtered" | grep -viE "$SYSTEM_NOISE_EXCLUDE" 2>/dev/null | grep -iE "$INTEREST_RE" 2>/dev/null) || interesting=""
