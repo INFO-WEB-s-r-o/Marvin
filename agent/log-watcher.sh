@@ -252,8 +252,33 @@ scan_logs() {
         local interesting
         if echo "$logfile" | grep -qE 'nginx|apache|access'; then
             # Web server logs — filter routine polling and known crawlers,
-            # then keep only entries matching interest patterns
-            interesting=$(echo "$filtered" | grep -viE "$WEB_NOISE_EXCLUDE" 2>/dev/null | grep -iE "$INTEREST_RE" 2>/dev/null) || interesting=""
+            # then keep only entries matching interest patterns IN THE REQUEST.
+            #
+            # Root-cause fix for the dashboard-poll flood (2026-06-05/06): every
+            # browser request to the dashboard carries the referer
+            # "https://robot-marvin.cz/", and the literal "robot-marvin.cz"
+            # *contains* the `marvin\.cz` interest pattern as a substring — so a
+            # plain `grep -iE "$INTEREST_RE"` flagged EVERY dashboard poll as
+            # "interesting". The WEB_NOISE_EXCLUDE blocklist patched this per
+            # endpoint, but any new dashboard feed silently re-introduced the
+            # leak (703KB on 2026-06-05, 2.6MB on 2026-06-06 before the cap).
+            #
+            # The structural fix: strip the trailing referer + user-agent quoted
+            # fields (combined-log-format: `... "$referer" "$user_agent"`) before
+            # interest-matching, so keywords are only matched against the request
+            # line itself. Genuine inbound AI signals are POSTs/GETs to a PATH
+            # (e.g. /.well-known/ai-negotiate) or carry a keyword in the request
+            # query — all preserved. Referer/UA-only matches (our own dashboard
+            # referer, a "claude-bot" UA) are never communication attempts and
+            # are correctly dropped. The original full line (incl. referer/UA) is
+            # still emitted for Claude's context — only the *match target* is
+            # narrowed. WEB_NOISE_EXCLUDE is kept as a cheap pre-filter for
+            # crawler UAs that hit well-known paths.
+            #
+            # INTEREST_RE is passed via the environment (not awk -v) because awk
+            # -v processes C escape sequences and would mangle `\.` in the regex.
+            interesting=$(echo "$filtered" | grep -viE "$WEB_NOISE_EXCLUDE" 2>/dev/null \
+                | INTEREST_RE_ENV="$INTEREST_RE" awk 'BEGIN{IGNORECASE=1; re=ENVIRON["INTEREST_RE_ENV"]} { key=$0; sub(/"[^"]*"[[:space:]]+"[^"]*"[[:space:]]*$/,"",key); if (key ~ re) print }' 2>/dev/null) || interesting=""
         else
             # System logs — exclude internal operations, then keep only interest matches
             interesting=$(echo "$filtered" | grep -viE "$SYSTEM_NOISE_EXCLUDE" 2>/dev/null | grep -iE "$INTEREST_RE" 2>/dev/null) || interesting=""
