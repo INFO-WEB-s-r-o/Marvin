@@ -378,6 +378,65 @@ if [[ -d "${MARVIN_DIR}/.gnupg" ]]; then
     test_warn "stale GPG home present at ${MARVIN_DIR}/.gnupg — see issue #737"
 fi
 
+# ─── 9d. Source ⇆ live config drift detection ─────────────────────────────────
+# Catches the recurring "the source-controlled config and the running config
+# have silently diverged" class. It bit us twice: the nginx /llms.txt route
+# (#777 — live had the fix, source did not, so a redeploy from source would
+# have regressed it) and the cron schedule (setup/setup-cron.sh had gone stale
+# vs the live /etc/cron.d/marvin — a bootstrap re-run would have dropped active
+# jobs like backup/security-scan/fix-issues/incident-report and lost the
+# /root/.local/bin PATH entry the claude CLI lives on).
+#
+# WARN-only: drift is an operator-reconcile signal, not a hard failure. The
+# checks are read-only diffs of repo files against their installed counterparts.
+
+marvin_log "INFO" "Self-test: checking source ⇆ live config drift"
+
+# nginx: (repo-source live-installed label) — only flagged when both exist.
+_nginx_drift_pairs=(
+    "${MARVIN_DIR}/setup/nginx-site.conf /etc/nginx/sites-available/marvin nginx-site"
+    "${MARVIN_DIR}/setup/nginx-monitoring.conf /etc/nginx/sites-available/monitoring nginx-monitoring"
+    "${MARVIN_DIR}/setup/nginx-rate-limits.conf /etc/nginx/conf.d/marvin-rate-limits.conf nginx-rate-limits"
+)
+for _pair in "${_nginx_drift_pairs[@]}"; do
+    read -r _src _live _label <<< "$_pair"
+    if [[ ! -f "$_src" ]]; then
+        test_warn "config drift: ${_label} source missing (${_src})"
+    elif [[ ! -f "$_live" ]]; then
+        # Live file absent (e.g. config not installed on this host) — informational only.
+        test_warn "config drift: ${_label} live config not present (${_live})"
+    elif diff -q "$_src" "$_live" >/dev/null 2>&1; then
+        test_pass "config in sync: ${_label}"
+    else
+        test_warn "config drift: ${_label} — ${_src} differs from live ${_live} (reconcile before next deploy/bootstrap)"
+    fi
+done
+
+# cron: extract the /etc/cron.d/marvin heredoc that setup-cron.sh would write
+# and diff it against the live file. The heredoc delimiter is single-quoted
+# ('EOF'), so ${MARVIN_DIR} stays literal in both — a byte-for-byte comparison
+# is valid. Stop at the FIRST standalone EOF (the cron heredoc closes before
+# the later logrotate heredoc).
+_cron_setup_src="${MARVIN_DIR}/setup/setup-cron.sh"
+_cron_live="/etc/cron.d/marvin"
+if [[ ! -f "$_cron_setup_src" ]]; then
+    test_warn "config drift: setup-cron.sh source missing (${_cron_setup_src})"
+elif [[ ! -f "$_cron_live" ]]; then
+    test_warn "config drift: live cron not present (${_cron_live})"
+else
+    # \047 is a literal apostrophe — matches the single-quoted 'EOF' opener
+    # exactly (vs. the wildcard `.EOF.`) while keeping the awk program in shell
+    # single-quotes, so `\$CRON_FILE` survives unescaped.
+    _cron_generated=$(awk '/cat > "\$CRON_FILE" << \047EOF\047/{f=1;next} f&&/^EOF$/{exit} f' "$_cron_setup_src" 2>/dev/null)
+    if [[ -z "$_cron_generated" ]]; then
+        test_warn "config drift: could not extract cron heredoc from setup-cron.sh"
+    elif diff -q <(printf '%s\n' "$_cron_generated") "$_cron_live" >/dev/null 2>&1; then
+        test_pass "config in sync: cron (setup-cron.sh ⇆ /etc/cron.d/marvin)"
+    else
+        test_warn "config drift: cron — setup-cron.sh would not reproduce live /etc/cron.d/marvin (a bootstrap re-run could drop or revert active jobs)"
+    fi
+fi
+
 # ─── 10. Security scoring system ──────────────────────────────────────────────
 # Grades the server A-F across multiple security dimensions
 
