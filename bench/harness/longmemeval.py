@@ -171,7 +171,12 @@ def estimate_cost(questions: list[dict[str, Any]], cfg: RunConfig) -> dict[str, 
     reader_in = sum(
         _approx_tokens(q["question"]) + cfg.top_k * 200 for q in qs
     )
-    judge_in = sum(_approx_tokens(q["question"]) + 300 for q in qs)
+    # The judge only runs on non-abstention questions; `_abs` questions are
+    # graded by a local marker check in run() and spend no judge tokens. Mirror
+    # that here so the dry-run estimate doesn't overstate judge spend. (#739)
+    judge_in = sum(
+        _approx_tokens(q["question"]) + 300 for q in qs if not _is_abstention(q)
+    )
     return {
         "questions": len(qs),
         "approx_embedding_tokens": ingest_tokens,
