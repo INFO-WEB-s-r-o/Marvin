@@ -424,7 +424,10 @@ if [[ ! -f "$_cron_setup_src" ]]; then
 elif [[ ! -f "$_cron_live" ]]; then
     test_warn "config drift: live cron not present (${_cron_live})"
 else
-    _cron_generated=$(awk '/cat > "\$CRON_FILE" << .EOF./{f=1;next} f&&/^EOF$/{exit} f' "$_cron_setup_src" 2>/dev/null)
+    # \047 is a literal apostrophe — matches the single-quoted 'EOF' opener
+    # exactly (vs. the wildcard `.EOF.`) while keeping the awk program in shell
+    # single-quotes, so `\$CRON_FILE` survives unescaped.
+    _cron_generated=$(awk '/cat > "\$CRON_FILE" << \047EOF\047/{f=1;next} f&&/^EOF$/{exit} f' "$_cron_setup_src" 2>/dev/null)
     if [[ -z "$_cron_generated" ]]; then
         test_warn "config drift: could not extract cron heredoc from setup-cron.sh"
     elif diff -q <(printf '%s\n' "$_cron_generated") "$_cron_live" >/dev/null 2>&1; then
