@@ -183,8 +183,33 @@ _matches_git_head() {
     [[ -n "$git_sha" && "$git_sha" == "$disk_sha" ]]
 }
 
+# Helper: returns 0 if a live /etc config file's current content byte-matches
+# its version-controlled source under setup/. This is the config-file analogue
+# of _matches_git_head, and uses the same trust model: the live configs are
+# deployed from the repo's setup/ sources, so a live file that is byte-identical
+# to its committed source is a legitimate, auditable deploy — not tampering. An
+# attacker editing nginx to add a rogue location/proxy would not reproduce the
+# committed source, so a match is a strong "legitimate" signal (the same
+# assumption _matches_git_head already makes for agent scripts). The mapping
+# mirrors the source⇆live drift tripwire in self-test.sh section 9d. Paths with
+# no committed counterpart (e.g. /etc/nginx/nginx.conf, which has no setup/
+# source) return 1 and still alert if changed.
+_matches_repo_source() {
+    local filepath="$1"
+    local src=""
+    case "$filepath" in
+        /etc/nginx/sites-enabled/marvin)     src="${MARVIN_DIR}/setup/nginx-site.conf" ;;
+        /etc/nginx/sites-enabled/monitoring) src="${MARVIN_DIR}/setup/nginx-monitoring.conf" ;;
+        *) return 1 ;;
+    esac
+    [[ -f "$src" ]] || return 1
+    # diff transparently follows the sites-enabled → sites-available symlink.
+    diff -q "$src" "$filepath" >/dev/null 2>&1
+}
+
 CHANGED=()
 GIT_SYNCED=()
+CONFIG_SYNCED=()
 NEW_FILES=()
 MISSING=()
 
@@ -207,6 +232,12 @@ while IFS= read -r filepath; do
             # Keeps the file out of the alert path and lets us auto-refresh.
             GIT_SYNCED+=("$filepath")
             marvin_log "INFO" "File integrity: git-synced — ${filepath} (matches HEAD)"
+        elif _matches_repo_source "$filepath"; then
+            # Live config byte-matches its committed setup/ source — a
+            # legitimate deploy, not tampering. Same trust handling as
+            # git-synced: kept out of the alert path, eligible for auto-refresh.
+            CONFIG_SYNCED+=("$filepath")
+            marvin_log "INFO" "File integrity: config-synced — ${filepath} (matches setup/ source)"
         else
             CHANGED+=("$filepath")
             marvin_log "WARN" "File integrity: CHANGED — ${filepath}"
@@ -224,16 +255,17 @@ while IFS= read -r filepath; do
     fi
 done < <(echo "$current" | jq -r 'keys[]')
 
-# Auto-refresh baseline when ALL changes are git-synced (provably from
-# legitimate upstream commits). If even one tampered (CHANGED), missing,
-# or NEW file exists, leave the baseline alone — we want those situations
-# investigated rather than silently baked into the baseline. New files in
-# dynamically-monitored paths (/etc/nginx/sites-enabled/*,
-# /etc/fail2ban/jail.d/*) are outside MARVIN_DIR and can never be
-# git-tracked; auto-trusting them would let a rogue config slip in
-# whenever a legitimate agent-script pull happened in the same window
+# Auto-refresh baseline when ALL changes are provably legitimate — either
+# git-synced (content matches the committed HEAD blob) or config-synced (a
+# live /etc config that byte-matches its committed setup/ source). If even
+# one tampered (CHANGED), missing, or NEW file exists, leave the baseline
+# alone — we want those situations investigated rather than silently baked
+# into the baseline. New files in dynamically-monitored paths
+# (/etc/nginx/sites-enabled/*, /etc/fail2ban/jail.d/*) are outside MARVIN_DIR
+# and can never be git-tracked; auto-trusting them would let a rogue config
+# slip in whenever a legitimate agent-script pull happened in the same window
 # (issue #633). New files still require an explicit --update call.
-if [[ ${#GIT_SYNCED[@]} -gt 0 && ${#CHANGED[@]} -eq 0 && ${#MISSING[@]} -eq 0 && ${#NEW_FILES[@]} -eq 0 ]]; then
+if [[ $(( ${#GIT_SYNCED[@]} + ${#CONFIG_SYNCED[@]} )) -gt 0 && ${#CHANGED[@]} -eq 0 && ${#MISSING[@]} -eq 0 && ${#NEW_FILES[@]} -eq 0 ]]; then
     prev_ts=$(jq -r '.created // "unknown"' "$BASELINE_FILE" 2>/dev/null || echo "unknown")
     prev_count=$(jq '(.files // {}) | keys | length' "$BASELINE_FILE" 2>/dev/null || echo 0)
     prev_hash=$(sha256sum "$BASELINE_FILE" 2>/dev/null | awk '{print $1}' || echo "unknown")
@@ -243,7 +275,7 @@ if [[ ${#GIT_SYNCED[@]} -gt 0 && ${#CHANGED[@]} -eq 0 && ${#MISSING[@]} -eq 0 &&
     # integrity monitoring is silently down. mv on the same filesystem is
     # atomic, so a crash between jq and mv leaves the old baseline intact.
     tmp_baseline=$(mktemp "${BASELINE_FILE}.XXXXXX")
-    if ! jq -n --argjson files "$current" --arg ts "$NOW" --arg caller "auto-git-sync" \
+    if ! jq -n --argjson files "$current" --arg ts "$NOW" --arg caller "auto-sync" \
             --arg prev_ts "$prev_ts" --arg prev_hash "$prev_hash" --argjson prev_count "$prev_count" \
             '{created: $ts, updated_by: $caller, previous_baseline: {timestamp: $prev_ts, sha256: $prev_hash, file_count: $prev_count}, files: $files}' > "$tmp_baseline"; then
         rm -f "$tmp_baseline"
@@ -256,7 +288,7 @@ if [[ ${#GIT_SYNCED[@]} -gt 0 && ${#CHANGED[@]} -eq 0 && ${#MISSING[@]} -eq 0 &&
     # rename second — matches the pattern used in PR #635 for --update path.
     chmod 600 "$tmp_baseline"
     mv -f "$tmp_baseline" "$BASELINE_FILE"
-    marvin_log "INFO" "File integrity: baseline auto-refreshed (${#GIT_SYNCED[@]} git-synced change(s), prev baseline ${prev_ts})"
+    marvin_log "INFO" "File integrity: baseline auto-refreshed (${#GIT_SYNCED[@]} git-synced, ${#CONFIG_SYNCED[@]} config-synced change(s), prev baseline ${prev_ts})"
 fi
 
 # Determine status
@@ -286,6 +318,11 @@ if [[ ${#GIT_SYNCED[@]} -gt 0 ]]; then
     git_synced_json=$(printf '%s\n' "${GIT_SYNCED[@]}" | jq -R . | jq -s .)
 fi
 
+config_synced_json="[]"
+if [[ ${#CONFIG_SYNCED[@]} -gt 0 ]]; then
+    config_synced_json=$(printf '%s\n' "${CONFIG_SYNCED[@]}" | jq -R . | jq -s .)
+fi
+
 # Write report
 cat > "$REPORT_FILE" << EOF
 {
@@ -295,6 +332,7 @@ cat > "$REPORT_FILE" << EOF
   "files_monitored": $(echo "$current" | jq 'keys | length'),
   "changes": ${changed_json},
   "git_synced": ${git_synced_json},
+  "config_synced": ${config_synced_json},
   "new_files": ${new_json},
   "missing_files": ${missing_json}
 }
