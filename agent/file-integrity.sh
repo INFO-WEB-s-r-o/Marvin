@@ -184,30 +184,32 @@ _matches_git_head() {
 }
 
 # Helper: returns 0 if a live /etc config file's current content byte-matches
-# its version-controlled source under setup/. This is the config-file analogue
-# of _matches_git_head, and uses the same trust model: the live configs are
-# deployed from the repo's setup/ sources, so a live file that is byte-identical
-# to its committed source is a legitimate, auditable deploy — not tampering. An
-# attacker editing nginx to add a rogue location/proxy would not reproduce the
-# committed source, so a match is a strong "legitimate" signal (the same
-# assumption _matches_git_head already makes for agent scripts). The mapping
-# mirrors the source⇆live drift tripwire in self-test.sh section 9d. Paths with
-# no committed counterpart (e.g. /etc/nginx/nginx.conf, which has no setup/
-# source) return 1 and still alert if changed.
+# its version-controlled source under setup/ — compared against the committed
+# git blob, not the disk working-tree copy. This is the config-file analogue of
+# _matches_git_head and shares its exact trust model: the comparison is rooted
+# in the immutable git object store (HEAD:setup/...), so an attacker cannot make
+# a tampered live config "match" by also editing the on-disk setup/ source — that
+# edit is invisible until committed. The live configs are deployed from the
+# repo's setup/ sources, so a live file byte-identical to its committed source is
+# a legitimate, auditable deploy — not tampering. The mapping mirrors the
+# source⇆live drift tripwire in self-test.sh section 9d. Paths with no committed
+# counterpart (e.g. /etc/nginx/nginx.conf) return 1 and still alert if changed.
 _matches_repo_source() {
     local filepath="$1"
-    local src=""
+    local git_path=""
     # Keep this mapping in sync with MONITORED_PATHS above: any new sites-enabled/*
     # config that has a committed setup/ counterpart needs a parallel case entry,
     # else it will alert as CHANGED forever after a legitimate deploy.
     case "$filepath" in
-        /etc/nginx/sites-enabled/marvin)     src="${MARVIN_DIR}/setup/nginx-site.conf" ;;
-        /etc/nginx/sites-enabled/monitoring) src="${MARVIN_DIR}/setup/nginx-monitoring.conf" ;;
+        /etc/nginx/sites-enabled/marvin)     git_path="setup/nginx-site.conf" ;;
+        /etc/nginx/sites-enabled/monitoring) git_path="setup/nginx-monitoring.conf" ;;
         *) return 1 ;;
     esac
-    [[ -f "$src" ]] || return 1
-    # diff transparently follows the sites-enabled → sites-available symlink.
-    diff -q "$src" "$filepath" >/dev/null 2>&1
+    command -v git >/dev/null 2>&1 || return 1
+    # Compare the live file against the committed blob, not the disk working-tree
+    # copy, so the trust chain is anchored in the git object store. diff
+    # transparently follows the sites-enabled → sites-available symlink.
+    git -C "$MARVIN_DIR" show "HEAD:${git_path}" 2>/dev/null | diff -q - "$filepath" >/dev/null 2>&1
 }
 
 CHANGED=()
