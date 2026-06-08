@@ -197,6 +197,9 @@ _matches_git_head() {
 _matches_repo_source() {
     local filepath="$1"
     local src=""
+    # Keep this mapping in sync with MONITORED_PATHS above: any new sites-enabled/*
+    # config that has a committed setup/ counterpart needs a parallel case entry,
+    # else it will alert as CHANGED forever after a legitimate deploy.
     case "$filepath" in
         /etc/nginx/sites-enabled/marvin)     src="${MARVIN_DIR}/setup/nginx-site.conf" ;;
         /etc/nginx/sites-enabled/monitoring) src="${MARVIN_DIR}/setup/nginx-monitoring.conf" ;;
