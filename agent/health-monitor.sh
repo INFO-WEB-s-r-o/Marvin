@@ -308,6 +308,33 @@ while IFS= read -r line; do
         continue
     fi
 
+    # ─── Liveness guard: skip processes that already exited ─────────────────
+    # ps sampled this PID a moment ago, but very short-lived processes often
+    # exit before the loop reaches this point. The Marvin-Brain Docker
+    # healthchecks are the dominant source: docker-compose uses CMD-SHELL, so
+    # each healthcheck runs as `sh -c "wget …"` / `sh -c "pg_isready …"` /
+    # `sh -c "python -c …"` — a sub-second `sh` (and the `python`/`runc` execs
+    # it spawns). They burst one core to 60-100% for that instant, get sampled
+    # by ps, then vanish. By the time we read their cgroup above it returns
+    # empty (the container guard can't classify a dead PID), so they fall
+    # through and get logged as "High CPU process detected" and recorded in
+    # runaway-procs.json — a kill that can never land, since the stale-PID
+    # cleanup at the end of this loop just deletes the entry next run. Across
+    # the last week every flagged `sh`/`python`/`runc` PID was single-sighting
+    # and never escalated to a kill (runaway-procs.json stays `{}`), confirming
+    # they were all already gone.
+    #
+    # A process that has already exited cannot be a >10-min sustained runaway
+    # and there is nothing to kill, so skip it silently. This does NOT weaken
+    # the runaway killer or the exe-spoof checks below: a genuine runaway — or a
+    # live attacker spoofing an allowlisted comm via prctl(PR_SET_NAME) — is
+    # alive across samples, so this guard always passes for it. Skipping only
+    # dead PIDs can never reduce protection. Mirrors the liveness check already
+    # used in the find|git branch (#547) and the stale-entry cleanup below.
+    if [[ ! -d "/proc/${proc_pid}" ]]; then
+        continue
+    fi
+
     # Skip known-good processes — verify full exe path to prevent
     # comm field spoofing via prctl(PR_SET_NAME) (#38)
     proc_exe=$(readlink -f "/proc/${proc_pid}/exe" 2>/dev/null || echo "")
