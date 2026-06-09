@@ -308,6 +308,19 @@ while IFS= read -r line; do
         continue
     fi
 
+    # Liveness guard: short-lived processes (notably the Marvin-Brain Docker
+    # CMD-SHELL healthchecks — sub-second `sh`/`python`/`runc`) are sampled by
+    # ps, then exit before we read their cgroup above, so they fall through and
+    # get logged as runaways with a kill that can never land. A dead PID cannot
+    # be a >10-min sustained runaway, so skip it silently. This cannot weaken
+    # the killer or the exe-spoof checks below: a genuine runaway, or a live
+    # attacker spoofing a comm via prctl(PR_SET_NAME), is alive across samples
+    # and passes this guard. Mirrors the liveness check in the find|git branch
+    # (#547) and the stale-entry cleanup below. (Full context: PR #781.)
+    if [[ ! -d "/proc/${proc_pid}" ]]; then
+        continue
+    fi
+
     # Skip known-good processes — verify full exe path to prevent
     # comm field spoofing via prctl(PR_SET_NAME) (#38)
     proc_exe=$(readlink -f "/proc/${proc_pid}/exe" 2>/dev/null || echo "")
