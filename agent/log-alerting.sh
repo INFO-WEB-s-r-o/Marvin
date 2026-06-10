@@ -77,11 +77,30 @@ if [[ -n "$_error_lines" ]]; then
     done < <(echo "$_error_lines" | sed 's/^\[[^]]*\] //' | sort | uniq -c | sort -rn | head -10)
 fi
 
-# ─── 2. Detect CRITICAL events (any CRITICAL is an alert) ───────────────────
+# ─── 2. Detect CRITICAL events (any RECENT critical is an alert) ────────────
+# Only consider CRITICAL events from the last 2 hours, not the whole day.
+# A single transient critical that has already self-healed (e.g. nginx briefly
+# restarted by unattended-upgrades during a package upgrade, recovered within a
+# second) otherwise lingers as an "active" alert for the rest of the UTC day:
+# the [CRITICAL] line stays in today's log file and every hourly run re-detects
+# it, so it never auto-resolves until the day rolls over (2026-06-10 incident).
+# Windowing lets a recovered transient auto-resolve in ~2-3h via the merge logic
+# below, while an ongoing/recurring critical condition keeps producing fresh log
+# lines and stays active. The 2h window is deliberately wider than the 1h cron
+# gap so no transient critical is ever missed between hourly runs. Sections 3
+# (error-rate spike) and 6 (Claude failures) already window by recency.
 
 # Same recursive-alert filter as section 1 (see comment above)
 critical_lines=$(grep '\[CRITICAL\]' "$LOG_FILE" 2>/dev/null \
     | grep -v 'New alert:' | grep -v 'Alert auto-resolved:' || true)
+# Window to recent events only. ISO-8601 timestamps sort lexicographically, so a
+# string '>=' on the bracketed timestamp field is a valid time comparison (same
+# technique as section 3). Fail-open: if `date` can't produce a cutoff, keep all
+# lines rather than risk dropping a genuine critical alert.
+_critical_cutoff=$(date -u -d "2 hours ago" +%Y-%m-%dT%H:%M 2>/dev/null || echo "")
+if [[ -n "$_critical_cutoff" && -n "$critical_lines" ]]; then
+    critical_lines=$(echo "$critical_lines" | awk -v cutoff="[$_critical_cutoff" '$1 >= cutoff' || true)
+fi
 critical_count=0
 if [[ -n "$critical_lines" ]]; then
     critical_count=$(echo "$critical_lines" | wc -l | tr -d ' ')
