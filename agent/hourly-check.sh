@@ -146,7 +146,34 @@ FULL_PROMPT="${HOURLY_PROMPT}
 
 ${CONTEXT}"
 
-OUTPUT=$(run_claude "hourly-check" "$FULL_PROMPT")
+# hourly-check runs hourly (cron :35) — a missed cycle is cheap, the next run
+# picks up the same work. Cap lock-wait at 60s so an overlapping Claude task
+# (e.g. log-watcher at :30) doesn't burn 5 min before skipping.
+#
+# Capture the exit code instead of a bare `OUTPUT=$(run_claude ...)`: under
+# `set -euo pipefail` + the ERR trap, a transient Claude failure (exit 1) or a
+# lock timeout (exit 2) would otherwise fire the trap, log a spurious
+# `hourly-check.sh — command failed (exit 1)` ERROR, and kill the script before
+# the report is ever saved. Both are expected, non-critical conditions for a
+# high-frequency task — the next hourly run is a cheap retry. See lessons
+# claude-exit-code-1-transient and claude-lock-timeout-expected-on-cron-overlap.
+export CLAUDE_LOCK_TIMEOUT=60
+OUTPUT=$(run_claude "hourly-check" "$FULL_PROMPT") && CLAUDE_RC=0 || CLAUDE_RC=$?
+
+if [[ "$CLAUDE_RC" -eq 2 ]]; then
+    marvin_log "INFO" "Hourly check skipped — Claude lock held by another task; next hourly run will catch up"
+    exit 0
+fi
+
+if [[ "$CLAUDE_RC" -ne 0 ]]; then
+    marvin_log "WARN" "hourly-check Claude exit ${CLAUDE_RC} — skipping this cycle (next hourly run is a cheap retry)"
+    exit 0
+fi
+
+if [[ -z "$OUTPUT" ]]; then
+    marvin_log "WARN" "hourly-check produced empty output — skipping report this cycle"
+    exit 0
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Save the report
