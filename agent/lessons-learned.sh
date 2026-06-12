@@ -233,12 +233,13 @@ elif [[ -f "$ANALYSIS_FILE" ]] && jq empty "$ANALYSIS_FILE" 2>/dev/null; then
         # known noise, not a regression. Skip the cluster.
         [[ "$match_expected" == "true" ]] && continue
 
-        if [[ -n "$match_id" ]]; then
-            sig_safe="${signature:0:140}"
-            sig_safe=$(printf '%s' "$sig_safe" | tr -cd 'a-zA-Z0-9 /:_.,-')
-            RECURRING="${RECURRING}  - (${count}x) **${match_id}** — ${sig_safe}"$'\n'
-            recurring_count=$((recurring_count + 1))
-        fi
+        # match_id is guaranteed non-empty here: we already `continue`d on an
+        # empty match_line, and a token-matched lesson always has a non-empty id
+        # (the tokens are derived from it). So no `[[ -n "$match_id" ]]` guard.
+        sig_safe="${signature:0:140}"
+        sig_safe=$(printf '%s' "$sig_safe" | tr -cd 'a-zA-Z0-9 /:_.,-')
+        RECURRING="${RECURRING}  - (${count}x) **${match_id}** — ${sig_safe}"$'\n'
+        recurring_count=$((recurring_count + 1))
     done < <(jq -r '
         ((.error_clusters // []) + (.warning_clusters // []))
         | map(select(.count >= 3))
