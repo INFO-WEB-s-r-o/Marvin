@@ -204,16 +204,34 @@ elif [[ -f "$ANALYSIS_FILE" ]] && jq empty "$ANALYSIS_FILE" 2>/dev/null; then
         # `|| true` keeps a transient jq failure (mid-run file corruption,
         # OOM, etc.) from aborting the whole script under `set -euo pipefail`
         # and leaving the daily summary half-written. Empty match_id is fine.
-        match_id=$(jq -r --arg sig "$sig_lower" '
+        # Rank ALL resolved lessons (including expected_recurrence ones) by token
+        # hits and take the single best match. We must NOT pre-filter
+        # expected_recurrence here: if the best explanation for a cluster is an
+        # expected-to-recur lesson, the cluster is designed noise and should be
+        # skipped entirely — not relabeled with a weaker, coincidental token
+        # match against an unrelated lesson. (e.g. "Claude exited with code 1"
+        # best-matches claude-exit-code-1-transient (expected), but also overlaps
+        # exit-code-masking on the shared "exit"/"code" tokens; flagging the
+        # latter is a false positive.) Emit hits, id, and the expected flag.
+        match_line=$(jq -r --arg sig "$sig_lower" '
             .lessons[]
             | select(.resolved == true)
-            | select((.expected_recurrence // false) == false)
             | . as $l
             | ($l.id | ascii_downcase | split("-") | map(select(length >= 4))) as $tokens
             | ($tokens | map(select(. as $t | $sig | contains($t))) | length) as $hits
             | select($hits >= 2 and ($tokens | length) >= 2)
-            | "\($hits)\t\($l.id)"
-        ' "$LESSONS_FILE" 2>/dev/null | sort -rn | head -1 | cut -f2) || true
+            | "\($hits)\t\($l.id)\t\($l.expected_recurrence // false)"
+        ' "$LESSONS_FILE" 2>/dev/null | sort -rn | head -1) || true
+
+        # No resolved lesson matched this cluster
+        [[ -z "$match_line" ]] && continue
+
+        match_id=$(printf '%s' "$match_line" | cut -f2)
+        match_expected=$(printf '%s' "$match_line" | cut -f3)
+
+        # Best explanation is an intentionally-recurring (documented) pattern —
+        # known noise, not a regression. Skip the cluster.
+        [[ "$match_expected" == "true" ]] && continue
 
         if [[ -n "$match_id" ]]; then
             sig_safe="${signature:0:140}"
