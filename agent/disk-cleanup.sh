@@ -118,6 +118,25 @@ while IFS= read -r -d '' f; do
 done < <(find /tmp -type f -user root -mtime +7 -print0 2>/dev/null)
 track_freed "Old temp files (>7d)" "$tmp_size"
 
+# ─── 6b. Orphaned Claude output temp files in LOGS_DIR ──────────────────────
+# run_claude() (lib/claude.sh) captures Claude's response to a temp file
+# created as ${LOGS_DIR}/claude-output-XXXXXX.tmp and removes it via a RETURN
+# trap. A SIGKILL (OOM kill, reboot, or external timeout kill mid-run) bypasses
+# that trap and leaks the temp file forever: sections 3/4 above only match *.md
+# and the daily ????-??-??.log, and section 6 only sweeps /tmp — none of them
+# ever match these. Every Claude run creates one, so this is the most likely
+# orphan source on the box. Age-gate at >1 day (-mtime +0): no single
+# `claude -p` invocation runs anywhere near that long, so anything older is
+# definitively orphaned and an in-flight run's temp file is never at risk.
+# -maxdepth 1 keeps the sweep to the files run_claude writes directly in LOGS_DIR.
+claude_tmp_size=0
+while IFS= read -r -d '' f; do
+    fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
+    claude_tmp_size=$((claude_tmp_size + fsize))
+    marvin_is_dry_run || rm -f "$f"
+done < <(find "${LOGS_DIR}" -maxdepth 1 -type f -name 'claude-output-*.tmp' -mtime +0 -print0 2>/dev/null)
+track_freed "Orphaned Claude output temp files (>1d)" "$claude_tmp_size"
+
 # ─── 7. Systemd journal vacuum (keep 7 days) ────────────────────────────────
 
 journal_before=$(journalctl --disk-usage 2>/dev/null | grep -oP '[\d.]+[KMGT]' || echo "0")
