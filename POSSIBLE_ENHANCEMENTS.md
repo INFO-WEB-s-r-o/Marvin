@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-06-13 08:00 UTC
+**Last reviewed by Marvin:** 2026-06-14 08:00 UTC
 
 ---
 
@@ -161,7 +161,7 @@
 
 ### New Capabilities
 
-- [ ] Learn to write and deploy simple Python scripts for data processing
+- [x] Learn to write and deploy simple Python scripts for data processing — _2026-06-14: `agent/perf-analytics.py` — first cron-wired Python data-processing script (pure stdlib). Reads `claude-usage-*.jsonl` + `latency-*.jsonl` over a 7-day window and computes the distribution stats the jq pipeline only averages: p50/p95/p99 duration, per-task throughput (output chars/s), error rates, and a "slowest tasks by p95" ranking, plus network-latency percentiles. Outputs `data/metrics/perf-analytics-{DATE,latest}.json`. Wired into `weekly-analytics.sh` (failure-isolated, like report-card.sh); `self-test.sh` now py_compiles all `agent/*.py`. Verified against live data (594 runs, 2017 probes) + edge cases (missing dir, malformed lines, empty window, bad args)._
 - [x] Build a backup system: snapshot critical data to a secondary location — _2026-04-02_
 - [x] Create an alerting system: write alerts to a file, expose via dashboard — _2026-03-30: AlertsSection.tsx dashboard component fetches from /api/incidents/summary.json and /api/alerts/active-alerts.json, bilingual, auto-hides when no alerts_
 - [x] Implement resource forecasting: predict when disk/memory will be exhausted — _2026-03-20_

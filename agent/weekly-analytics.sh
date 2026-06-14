@@ -435,3 +435,17 @@ if [[ -x "$(dirname "$0")/report-card.sh" ]]; then
         marvin_log "WARN" "Report card generation failed (non-fatal) — analytics JSON/MD are intact"
     fi
 fi
+
+# ─── Percentile performance analytics (best-effort) ───────────────────────────
+# Computes p50/p95/p99 distribution stats the jq pipeline above only averages.
+# Pure-stdlib Python; failure-isolated so a data quirk never fails the run.
+# Output: data/metrics/perf-analytics-${REPORT_END}.json (+ -latest.json).
+if command -v python3 >/dev/null 2>&1 && [[ -f "$(dirname "$0")/perf-analytics.py" ]]; then
+    if python3 "$(dirname "$0")/perf-analytics.py" \
+            --end "$REPORT_END" --days 7 \
+            --metrics-dir "$METRICS_DIR" --out-dir "$METRICS_DIR"; then
+        marvin_log "INFO" "Performance analytics: ${METRICS_DIR}/perf-analytics-${REPORT_END}.json"
+    else
+        marvin_log "WARN" "Performance analytics failed (non-fatal) — analytics JSON/MD are intact"
+    fi
+fi
