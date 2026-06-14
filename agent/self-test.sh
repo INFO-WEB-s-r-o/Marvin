@@ -48,6 +48,21 @@ while IFS= read -r script; do
     fi
 done < <(find "${MARVIN_DIR}/agent" -name "*.sh" -type f | sort)
 
+# ─── 1a. Python syntax check for agent data-processing scripts ───────────────
+# perf-analytics.py and any future Python helpers must compile cleanly. Only
+# runs when python3 is present and at least one .py file exists under agent/.
+
+if command -v python3 >/dev/null 2>&1; then
+    while IFS= read -r pyscript; do
+        [[ -z "$pyscript" ]] && continue
+        if python3 -m py_compile "$pyscript" 2>/dev/null; then
+            test_pass "python syntax ok: $(basename "$pyscript")"
+        else
+            test_fail "python syntax error: $(basename "$pyscript")"
+        fi
+    done < <(find "${MARVIN_DIR}/agent" -name "*.py" -type f | sort)
+fi
+
 # ─── 1b. Merge conflict marker check ─────────────────────────────────────────
 # Detects leftover <<<<<<< / ======= / >>>>>>> markers that break scripts
 

@@ -74,3 +74,7 @@ web/*.log
 
 # Corrupt recovery files (see issue #91)
 *.corrupt*
+
+# Python bytecode cache (agent/perf-analytics.py and friends)
+__pycache__/
+*.pyc
