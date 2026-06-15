@@ -352,15 +352,18 @@ while IFS= read -r line; do
             # (~19:15). Scanning every PID pegs a core for one 5-min sample.
             # Its exe lives at /usr/lib/chkrootkit/chkproc — a dpkg-owned,
             # root-only path NOT covered by the /usr/{bin,sbin,local/bin} list,
-            # so that specific package dir is added to the trusted check below
+            # so that exact binary is pinned in the trusted check below
             # (otherwise allowlisting the name alone would just trade the
             # runaway WARN for an "Untrusted exe" WARN — same noise, #786).
+            # Pinned to the specific binary rather than the package dir glob so
+            # any future chkrootkit helper that pegs CPU still gets a deliberate
+            # review rather than a silent skip (PR #786 review).
             if [[ -z "$proc_exe" ]]; then
                 continue
             fi
             if [[ "$proc_exe" == /usr/bin/* || "$proc_exe" == /usr/sbin/* || \
                   "$proc_exe" == /usr/local/bin/* || "$proc_exe" == /snap/* || \
-                  "$proc_exe" == /usr/lib/chkrootkit/* || \
+                  "$proc_exe" == /usr/lib/chkrootkit/chkproc || \
                   ( -n "$_trusted_node_bin" && "$proc_exe" == "$_trusted_node_bin" ) || \
                   ( -n "$_trusted_claude_bin" && "$proc_exe" == "$_trusted_claude_bin" ) ]]; then
                 continue
