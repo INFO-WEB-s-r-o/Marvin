@@ -325,7 +325,7 @@ while IFS= read -r line; do
     # comm field spoofing via prctl(PR_SET_NAME) (#38)
     proc_exe=$(readlink -f "/proc/${proc_pid}/exe" 2>/dev/null || echo "")
     case "$proc_name" in
-        claude|apt*|dpkg*|unattended-upgr*|ps|jq|fail2ban*|file|appstreamcli|shellcheck|pg_isready|gzip|runc*)
+        claude|apt*|dpkg*|unattended-upgr*|ps|jq|fail2ban*|file|appstreamcli|shellcheck|pg_isready|gzip|runc*|chkproc|certbot)
             # High-frequency, low-risk short-lived children — silent skip when
             # exe is unreadable (they exit between ps and readlink constantly).
             # Contrast with find|git below which logs + falls through, because
@@ -343,11 +343,27 @@ while IFS= read -r line; do
             # `runc` exec and the `runc:[2:INIT]` container-init child briefly
             # peg one core to 100% during container (re)starts and healthcheck
             # cycles — caught by `runc*` glob. Trusted exe path still enforced.
+            # certbot: the Let's Encrypt client (/usr/bin/certbot) runs from
+            # certbot.timer (twice daily) and during renewal spikes one core to
+            # ~88-100% while building/verifying the ACME challenge. Trusted exe
+            # path (/usr/bin/certbot) enforced below like every other entry.
+            # chkproc: the chkrootkit /proc-scanner helper, run daily by both
+            # security-scan.sh (04:00 UTC) and /etc/cron.daily/chkrootkit
+            # (~19:15). Scanning every PID pegs a core for one 5-min sample.
+            # Its exe lives at /usr/lib/chkrootkit/chkproc — a dpkg-owned,
+            # root-only path NOT covered by the /usr/{bin,sbin,local/bin} list,
+            # so that exact binary is pinned in the trusted check below
+            # (otherwise allowlisting the name alone would just trade the
+            # runaway WARN for an "Untrusted exe" WARN — same noise, #786).
+            # Pinned to the specific binary rather than the package dir glob so
+            # any future chkrootkit helper that pegs CPU still gets a deliberate
+            # review rather than a silent skip (PR #786 review).
             if [[ -z "$proc_exe" ]]; then
                 continue
             fi
             if [[ "$proc_exe" == /usr/bin/* || "$proc_exe" == /usr/sbin/* || \
                   "$proc_exe" == /usr/local/bin/* || "$proc_exe" == /snap/* || \
+                  "$proc_exe" == /usr/lib/chkrootkit/chkproc || \
                   ( -n "$_trusted_node_bin" && "$proc_exe" == "$_trusted_node_bin" ) || \
                   ( -n "$_trusted_claude_bin" && "$proc_exe" == "$_trusted_claude_bin" ) ]]; then
                 continue
