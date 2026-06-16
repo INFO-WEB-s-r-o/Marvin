@@ -93,14 +93,18 @@ _TS_JSONL_NAMES=(
     -o -name "latency-????-??-??.jsonl"
     -o -name "????-??-??-structured.jsonl"
 )
-# Same families, compressed. Kept in lockstep with _TS_JSONL_NAMES so adding a
-# fifth family only touches one place per stage (5a vs 5b).
-_TS_JSONL_GZ_NAMES=(
-    -name "????-??-??.jsonl.gz"
-    -o -name "claude-usage-????-??-??.jsonl.gz"
-    -o -name "latency-????-??-??.jsonl.gz"
-    -o -name "????-??-??-structured.jsonl.gz"
-)
+# Same families, compressed — derived from _TS_JSONL_NAMES so the two can never
+# drift: a fifth family is added in exactly one place (above) and its .gz variant
+# follows automatically. Each "*.jsonl" pattern gains a ".gz" suffix; the -name/-o
+# find operators pass through unchanged.
+_TS_JSONL_GZ_NAMES=()
+for _el in "${_TS_JSONL_NAMES[@]}"; do
+    if [[ "${_el}" == *.jsonl ]]; then
+        _TS_JSONL_GZ_NAMES+=("${_el}.gz")
+    else
+        _TS_JSONL_GZ_NAMES+=("${_el}")
+    fi
+done
 
 # 5a. Compress uncompressed JSONL files older than 30 days
 compressed_count=0
