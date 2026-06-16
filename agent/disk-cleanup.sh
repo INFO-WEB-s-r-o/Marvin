@@ -93,6 +93,14 @@ _TS_JSONL_NAMES=(
     -o -name "latency-????-??-??.jsonl"
     -o -name "????-??-??-structured.jsonl"
 )
+# Same families, compressed. Kept in lockstep with _TS_JSONL_NAMES so adding a
+# fifth family only touches one place per stage (5a vs 5b).
+_TS_JSONL_GZ_NAMES=(
+    -name "????-??-??.jsonl.gz"
+    -o -name "claude-usage-????-??-??.jsonl.gz"
+    -o -name "latency-????-??-??.jsonl.gz"
+    -o -name "????-??-??-structured.jsonl.gz"
+)
 
 # 5a. Compress uncompressed JSONL files older than 30 days
 compressed_count=0
@@ -122,12 +130,7 @@ while IFS= read -r -d '' f; do
     fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
     metrics_size=$((metrics_size + fsize))
     marvin_is_dry_run || rm -f "$f"
-done < <(find "${METRICS_DIR}" "${LOGS_DIR}" -maxdepth 1 -type f \( \
-    -name "????-??-??.jsonl.gz" \
-    -o -name "claude-usage-????-??-??.jsonl.gz" \
-    -o -name "latency-????-??-??.jsonl.gz" \
-    -o -name "????-??-??-structured.jsonl.gz" \
-    \) -mtime +180 -print0 2>/dev/null)
+done < <(find "${METRICS_DIR}" "${LOGS_DIR}" -maxdepth 1 -type f \( "${_TS_JSONL_GZ_NAMES[@]}" \) -mtime +180 -print0 2>/dev/null)
 track_freed "Old time-series JSONL.gz (>180d)" "$metrics_size"
 
 # ─── 6. Temp files ──────────────────────────────────────────────────────────
