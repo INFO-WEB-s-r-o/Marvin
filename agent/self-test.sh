@@ -531,7 +531,13 @@ fi
 # "no data" branch instead, so self-test still produces a report.
 LATEST_SCAN="${DATA_DIR}/security/latest-scan.json"
 if [[ -f "$LATEST_SCAN" ]] && jq empty "$LATEST_SCAN" 2>/dev/null; then
-    scan_status=$(jq -r '.overall_status // "unknown"' "$LATEST_SCAN" 2>/dev/null)
+    # Read the ACTUAL rootkit-scanner verdicts, not overall_status. overall_status
+    # flips to "warnings" for reasons unrelated to rootkits — pending apt security
+    # updates, unexpected listening ports, world-writable files (issue: it was
+    # mis-attributing all of those to "rootkit_scan", and even double-counting
+    # world-writable files, which are scored separately below).
+    rk_status=$(jq -r '.rkhunter.status // "unknown"' "$LATEST_SCAN" 2>/dev/null)
+    ck_status=$(jq -r '.chkrootkit.status // "unknown"' "$LATEST_SCAN" 2>/dev/null)
     rk_infected=$(jq -r '.rkhunter.infected // 0' "$LATEST_SCAN" 2>/dev/null)
     ck_infected=$(jq -r '.chkrootkit.infected // 0' "$LATEST_SCAN" 2>/dev/null)
     [[ "$rk_infected" =~ ^[0-9]+$ ]] || rk_infected=0
@@ -539,15 +545,28 @@ if [[ -f "$LATEST_SCAN" ]] && jq empty "$LATEST_SCAN" 2>/dev/null; then
     scan_infected=$((rk_infected + ck_infected))
     world_writable=$(jq -r '.file_integrity.world_writable_count // 0' "$LATEST_SCAN" 2>/dev/null)
     [[ "$world_writable" =~ ^[0-9]+$ ]] || world_writable=0
+    sec_updates=$(jq -r '.cve_monitoring.upgradable_security // 0' "$LATEST_SCAN" 2>/dev/null)
+    [[ "$sec_updates" =~ ^[0-9]+$ ]] || sec_updates=0
 
     if [[ "$scan_infected" -gt 0 ]]; then
         SEC_DETAILS+=("rootkit_scan: INFECTED (-40)")
         SEC_SCORE=$((SEC_SCORE - 40))
-    elif [[ "$scan_status" == "warnings" ]]; then
+    elif [[ "$rk_status" == "warnings" || "$ck_status" == "warnings" ]]; then
         SEC_DETAILS+=("rootkit_scan: warnings (-5)")
         SEC_SCORE=$((SEC_SCORE - 5))
     else
         SEC_DETAILS+=("rootkit_scan: clean (+0)")
+    fi
+
+    # Pending security updates — a distinct posture concern that was previously
+    # invisible (folded into the mislabeled rootkit_scan line via overall_status).
+    # Now scored on its own so the penalty is correctly attributed and a
+    # genuinely clean rootkit scan no longer hides outstanding patches.
+    if [[ "$sec_updates" -gt 0 ]]; then
+        SEC_DETAILS+=("pending_security_updates: ${sec_updates} (-5)")
+        SEC_SCORE=$((SEC_SCORE - 5))
+    else
+        SEC_DETAILS+=("pending_security_updates: none (+0)")
     fi
 
     if [[ "$world_writable" -gt 0 ]]; then
