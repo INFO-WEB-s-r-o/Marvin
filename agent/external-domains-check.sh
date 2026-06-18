@@ -100,6 +100,9 @@ for i in $(seq 0 $((domain_count - 1))); do
         # elapsed we skip the live probe and carry forward the previous result
         # from OUT_FILE so the dashboard shows last-known status, not a gap.
         interval_min=$(jq -r ".domains[$i].http_interval_minutes // 0" "$CONFIG_FILE")
+        # Coerce any non-integer (float, string, negative) to 0 so the arithmetic
+        # comparison below cannot throw and abort the loop under set -euo pipefail.
+        [[ "$interval_min" =~ ^[0-9]+$ ]] || interval_min=0
         stamp_file="${STATE_DIR}/http-${id}.stamp"
         now_epoch=$(date +%s)
         last_epoch=0
