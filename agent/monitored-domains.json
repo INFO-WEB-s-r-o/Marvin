@@ -14,7 +14,8 @@
       "name": "AI4Shops",
       "host": "ai4shops.com",
       "url": "https://ai4shops.com/",
-      "checks": ["http", "ssl", "dns"]
+      "checks": ["http", "ssl", "dns"],
+      "http_interval_minutes": 60
     }
   ]
 }
