@@ -108,19 +108,19 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
                 chmod +x "${MARVIN_DIR}/agent/"*.sh 2>/dev/null || true
                 chmod +x "${MARVIN_DIR}/setup/"*.sh 2>/dev/null || true
 
-                # Reset file integrity baseline if monitored scripts changed.
-                # Without this, every PR merge triggers false positive alerts
-                # that persist until the next security-scan at 02:00 UTC.
-                # INCOMING_DIFF is `git diff --stat` output (e.g.
-                # " agent/foo.sh | 10 ++++++----"), not full-diff format —
-                # the old pattern ^(diff --git|---|\+\+\+) never matched.
-                if echo "$INCOMING_DIFF" | grep -q ' agent/'; then
+                # Run check mode (not --update): only auto-refreshes files that
+                # match git HEAD. A tamper between the 02:00 security-scan and this
+                # 04:00 pull surfaces as a CHANGED alert instead of being silently
+                # baked into the baseline by a blind reset. INCOMING_DIFF is
+                # `git diff --stat` output; the bash glob avoids the
+                # SIGPIPE-under-pipefail trap from echo|grep -q (lesson 2026-05-02).
+                if [[ "$INCOMING_DIFF" == *" agent/"* ]]; then
                     integrity_script="${MARVIN_DIR}/agent/file-integrity.sh"
                     if [[ -x "$integrity_script" ]]; then
-                        if "$integrity_script" --update 2>&1; then
-                            marvin_log "INFO" "File integrity baseline reset after pulling agent script changes"
+                        if "$integrity_script" 2>&1; then
+                            marvin_log "INFO" "File integrity checked after pulling agent script changes (baseline auto-refreshes for git-synced files)"
                         else
-                            marvin_log "WARN" "File integrity baseline update failed (non-fatal)"
+                            marvin_log "WARN" "File integrity check failed after pull (non-fatal)"
                         fi
                     fi
                 fi
@@ -128,7 +128,9 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
                 # Auto-deploy web dashboard if web/ source files changed
                 # Without this, new builds have different chunk hashes but the
                 # running server still serves old HTML — causing JS 404 loops.
-                if echo "$INCOMING_DIFF" | grep -q ' web/'; then
+                # Bash glob, not echo|grep -q: same SIGPIPE-under-pipefail trap
+                # as the agent/ trigger above (lesson 2026-05-02).
+                if [[ "$INCOMING_DIFF" == *" web/"* ]]; then
                     marvin_log "INFO" "Web source files changed — triggering deploy-web.sh"
                     deploy_script="${MARVIN_DIR}/agent/deploy-web.sh"
                     if [[ -x "$deploy_script" ]]; then
