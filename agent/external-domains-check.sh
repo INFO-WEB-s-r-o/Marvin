@@ -103,7 +103,11 @@ for i in $(seq 0 $((domain_count - 1))); do
         # Coerce any non-integer (float, string, negative) to 0 so the arithmetic
         # comparison below cannot throw and abort the loop under set -euo pipefail.
         [[ "$interval_min" =~ ^[0-9]+$ ]] || interval_min=0
-        stamp_file="${STATE_DIR}/http-${id}.stamp"
+        # Strip anything non-slug-safe from the id before using it as a filename
+        # component, so a future config id containing '/' or '..' can't redirect
+        # this root-owned write outside STATE_DIR (path-traversal hardening).
+        id_safe="${id//[^a-zA-Z0-9_-]/}"
+        stamp_file="${STATE_DIR}/http-${id_safe}.stamp"
         now_epoch=$(date +%s)
         last_epoch=0
         [[ -f "$stamp_file" ]] && last_epoch=$(cat "$stamp_file" 2>/dev/null || echo 0)
