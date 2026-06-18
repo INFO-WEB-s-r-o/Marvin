@@ -128,7 +128,9 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
                 # Auto-deploy web dashboard if web/ source files changed
                 # Without this, new builds have different chunk hashes but the
                 # running server still serves old HTML — causing JS 404 loops.
-                if echo "$INCOMING_DIFF" | grep -q ' web/'; then
+                # Bash glob, not echo|grep -q: same SIGPIPE-under-pipefail trap
+                # as the agent/ trigger above (lesson 2026-05-02).
+                if [[ "$INCOMING_DIFF" == *" web/"* ]]; then
                     marvin_log "INFO" "Web source files changed — triggering deploy-web.sh"
                     deploy_script="${MARVIN_DIR}/agent/deploy-web.sh"
                     if [[ -x "$deploy_script" ]]; then
