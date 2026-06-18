@@ -108,32 +108,12 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
                 chmod +x "${MARVIN_DIR}/agent/"*.sh 2>/dev/null || true
                 chmod +x "${MARVIN_DIR}/setup/"*.sh 2>/dev/null || true
 
-                # Re-run the file integrity CHECK after pulling agent changes.
-                # This previously called `--update` — a BLIND baseline reset that
-                # trusted whatever was on disk and logged two WARN lines on every
-                # day a PR merged (most days). Since the git-verified auto-refresh
-                # landed (2026-04-25), the check path is strictly better here: it
-                # compares each changed monitored file against its git HEAD blob
-                # (_matches_git_head) and refreshes the baseline ONLY for
-                # provably-legitimate git-synced changes, at INFO severity. Wins:
-                #   1. Security: a tamper landing between the 02:00 security-scan
-                #      and this 04:00 UTC pull can no longer be silently baked into
-                #      the baseline by a blind reset — a change that does NOT match
-                #      HEAD now surfaces as a CHANGED alert instead of being trusted.
-                #   2. Signal: a genuine, unexpected `--update` WARN is no longer
-                #      buried under daily benign baseline-reset noise (alarm fatigue).
-                #   3. Coverage: runs a real integrity scan right after pulling new
-                #      code — more monitoring, not less. `--update` stays available
-                #      for deliberate manual resets.
-                # No false-alert window is opened: the only other integrity check
-                # runs at 02:00 UTC (security-scan), and nothing runs between this
-                # pull and that next scan, which auto-refreshes git-synced changes.
-                # INCOMING_DIFF is `git diff --stat` output (e.g.
-                # " agent/foo.sh | 10 ++++++----"). Bash glob match (not
-                # `echo | grep -q`) avoids the SIGPIPE-under-pipefail trap
-                # (lesson 2026-05-02): grep -q closes the pipe on first match, echo
-                # takes SIGPIPE→141, and under pipefail the `if` could mis-read a
-                # real ' agent/' change as absent.
+                # Run check mode (not --update): only auto-refreshes files that
+                # match git HEAD. A tamper between the 02:00 security-scan and this
+                # 04:00 pull surfaces as a CHANGED alert instead of being silently
+                # baked into the baseline by a blind reset. INCOMING_DIFF is
+                # `git diff --stat` output; the bash glob avoids the
+                # SIGPIPE-under-pipefail trap from echo|grep -q (lesson 2026-05-02).
                 if [[ "$INCOMING_DIFF" == *" agent/"* ]]; then
                     integrity_script="${MARVIN_DIR}/agent/file-integrity.sh"
                     if [[ -x "$integrity_script" ]]; then
