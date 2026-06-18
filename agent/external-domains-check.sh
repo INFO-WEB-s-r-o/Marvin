@@ -17,6 +17,12 @@ trap marvin_error_trap ERR
 
 CONFIG_FILE="${MARVIN_DIR}/agent/monitored-domains.json"
 OUT_FILE="${DATA_DIR}/external-domains.json"
+# Per-domain HTTP throttle state (one stamp file per domain id). The HTTP probe
+# is the only check that actually wakes a remote origin/database; a domain may
+# set "http_interval_minutes" to cap how often we hit it (e.g. ai4shops, whose
+# serverless DB stays billed-awake if pinged every 5 min — see Pavel's request).
+STATE_DIR="${DATA_DIR}/state/external-domains"
+mkdir -p "$STATE_DIR"
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
     marvin_log "WARN" "external-domains-check: config not found at ${CONFIG_FILE}"
@@ -90,9 +96,41 @@ for i in $(seq 0 $((domain_count - 1))); do
     http_code="null"; http_ms="null"; ssl_days="null"; dns_status="skipped"
 
     if jq -e --arg c http 'index($c)' <<<"$checks" >/dev/null; then
-        http_pair=$(_http_check "$url")
-        http_code="${http_pair%% *}"
-        http_ms="${http_pair##* }"
+        # Honour an optional per-domain throttle. When the interval has not yet
+        # elapsed we skip the live probe and carry forward the previous result
+        # from OUT_FILE so the dashboard shows last-known status, not a gap.
+        interval_min=$(jq -r ".domains[$i].http_interval_minutes // 0" "$CONFIG_FILE")
+        # Coerce any non-integer (float, string, negative) to 0 so the arithmetic
+        # comparison below cannot throw and abort the loop under set -euo pipefail.
+        [[ "$interval_min" =~ ^[0-9]+$ ]] || interval_min=0
+        # Strip anything non-slug-safe from the id before using it as a filename
+        # component, so a future config id containing '/' or '..' can't redirect
+        # this root-owned write outside STATE_DIR (path-traversal hardening).
+        id_safe="${id//[^a-zA-Z0-9_-]/}"
+        # An id of only non-slug chars collapses id_safe to "", so every such
+        # domain would share one "http-.stamp" and throttle each other. Fall back
+        # to the loop index so each domain keeps a distinct stamp file.
+        [[ -z "$id_safe" ]] && id_safe="domain_${i}"
+        stamp_file="${STATE_DIR}/http-${id_safe}.stamp"
+        now_epoch=$(date +%s)
+        last_epoch=0
+        [[ -f "$stamp_file" ]] && last_epoch=$(cat "$stamp_file" 2>/dev/null || echo 0)
+        [[ "$last_epoch" =~ ^[0-9]+$ ]] || last_epoch=0
+
+        if [[ "$interval_min" -gt 0 ]] && (( now_epoch - last_epoch < interval_min * 60 )); then
+            if [[ -f "$OUT_FILE" ]]; then
+                prev=$(jq -c --arg id "$id" '.domains[]? | select(.id == $id)' "$OUT_FILE" 2>/dev/null | head -1) || true
+                if [[ -n "$prev" ]]; then
+                    http_code=$(jq -r '.http_code // "null"' <<<"$prev")
+                    http_ms=$(jq -r '.response_ms // "null"' <<<"$prev")
+                fi
+            fi
+        else
+            http_pair=$(_http_check "$url")
+            http_code="${http_pair%% *}"
+            http_ms="${http_pair##* }"
+            echo "$now_epoch" > "$stamp_file"
+        fi
     fi
     if jq -e --arg c ssl 'index($c)' <<<"$checks" >/dev/null; then
         ssl_days=$(_ssl_days "$host")
