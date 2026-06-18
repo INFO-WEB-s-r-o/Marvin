@@ -107,6 +107,10 @@ for i in $(seq 0 $((domain_count - 1))); do
         # component, so a future config id containing '/' or '..' can't redirect
         # this root-owned write outside STATE_DIR (path-traversal hardening).
         id_safe="${id//[^a-zA-Z0-9_-]/}"
+        # An id of only non-slug chars collapses id_safe to "", so every such
+        # domain would share one "http-.stamp" and throttle each other. Fall back
+        # to the loop index so each domain keeps a distinct stamp file.
+        [[ -z "$id_safe" ]] && id_safe="domain_${i}"
         stamp_file="${STATE_DIR}/http-${id_safe}.stamp"
         now_epoch=$(date +%s)
         last_epoch=0
