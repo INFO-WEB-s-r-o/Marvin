@@ -108,7 +108,7 @@ for i in $(seq 0 $((domain_count - 1))); do
 
         if [[ "$interval_min" -gt 0 ]] && (( now_epoch - last_epoch < interval_min * 60 )); then
             if [[ -f "$OUT_FILE" ]]; then
-                prev=$(jq -c --arg id "$id" '.domains[]? | select(.id == $id)' "$OUT_FILE" 2>/dev/null | head -1)
+                prev=$(jq -c --arg id "$id" '.domains[]? | select(.id == $id)' "$OUT_FILE" 2>/dev/null | head -1) || true
                 if [[ -n "$prev" ]]; then
                     http_code=$(jq -r '.http_code // "null"' <<<"$prev")
                     http_ms=$(jq -r '.response_ms // "null"' <<<"$prev")
