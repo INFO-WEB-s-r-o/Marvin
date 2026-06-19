@@ -196,6 +196,26 @@ _matches_git_head() {
 # counterpart (e.g. /etc/nginx/nginx.conf) return 1 and still alert if changed.
 _matches_repo_source() {
     local filepath="$1"
+    command -v git >/dev/null 2>&1 || return 1
+
+    # /etc/cron.d/marvin is not stored as a standalone committed file — it is
+    # generated from a single-quoted heredoc inside setup/setup-cron.sh. Extract
+    # that heredoc from the COMMITTED blob (HEAD:setup/setup-cron.sh), not the
+    # working-tree copy, so the trust chain stays anchored in the git object
+    # store exactly like _matches_git_head: an attacker editing the on-disk
+    # setup-cron.sh cannot make a tampered live cron "match" until the edit is
+    # committed. The awk extraction is identical to self-test §9d's drift check;
+    # the 'EOF' delimiter is single-quoted so ${MARVIN_DIR} stays literal in
+    # both sides, making a byte-for-byte diff valid.
+    if [[ "$filepath" == /etc/cron.d/marvin ]]; then
+        local heredoc
+        heredoc=$(git -C "$MARVIN_DIR" show "HEAD:setup/setup-cron.sh" 2>/dev/null \
+            | awk '/cat > "\$CRON_FILE" << \047EOF\047/{f=1;next} f&&/^EOF$/{exit} f') || return 1
+        [[ -n "$heredoc" ]] || return 1
+        diff -q <(printf '%s\n' "$heredoc") "$filepath" >/dev/null 2>&1
+        return $?
+    fi
+
     local git_path=""
     # Keep this mapping in sync with MONITORED_PATHS above: any new sites-enabled/*
     # config that has a committed setup/ counterpart needs a parallel case entry,
@@ -205,7 +225,6 @@ _matches_repo_source() {
         /etc/nginx/sites-enabled/monitoring) git_path="setup/nginx-monitoring.conf" ;;
         *) return 1 ;;
     esac
-    command -v git >/dev/null 2>&1 || return 1
     # Compare the live file against the committed blob, not the disk working-tree
     # copy, so the trust chain is anchored in the git object store. diff
     # transparently follows the sites-enabled → sites-available symlink.

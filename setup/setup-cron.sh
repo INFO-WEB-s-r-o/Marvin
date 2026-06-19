@@ -52,7 +52,10 @@ MARVIN_DIR=/home/marvin/git
 */5 * * * * root ${MARVIN_DIR}/agent/health-monitor.sh >> /var/log/marvin-health.log 2>&1
 
 # External-domain monitor — every 5 minutes (offset by 2 to spread load)
-# Reads agent/monitored-domains.json, checks HTTP/SSL/DNS for each
+# Reads agent/monitored-domains.json, checks HTTP/SSL/DNS for each.
+# Per-domain HTTP throttling now lives in-code (monitored-domains.json
+# http_interval_minutes; ai4shops=60) since #789 merged 2026-06-19 — the
+# 2026-06-18 hourly stopgap is reverted so getcairnapp returns to 5-min cadence.
 2-59/5 * * * * root ${MARVIN_DIR}/agent/external-domains-check.sh >> /var/log/marvin-external.log 2>&1
 
 # Disk cleanup — 01:00 local daily
