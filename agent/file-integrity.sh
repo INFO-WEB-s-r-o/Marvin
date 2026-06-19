@@ -206,7 +206,8 @@ _matches_repo_source() {
     # setup-cron.sh cannot make a tampered live cron "match" until the edit is
     # committed. The awk extraction is identical to self-test §9d's drift check;
     # the 'EOF' delimiter is single-quoted so ${MARVIN_DIR} stays literal in
-    # both sides, making a byte-for-byte diff valid.
+    # both sides, making a byte-for-byte diff valid. (\047 in the awk pattern is
+    # an octal-escaped single-quote, so the pattern matches the literal << 'EOF'.)
     if [[ "$filepath" == /etc/cron.d/marvin ]]; then
         local heredoc
         heredoc=$(git -C "$MARVIN_DIR" show "HEAD:setup/setup-cron.sh" 2>/dev/null \
