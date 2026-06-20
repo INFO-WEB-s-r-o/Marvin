@@ -128,10 +128,25 @@ if [[ ${#_daily_files[@]} -ge 3 ]]; then
     #   min_threshold: minimum absolute value before the metric is worth alerting on
     _vcpus=$(nproc 2>/dev/null || echo 2)
     _load_min_threshold=$(( _vcpus * 2 ))  # load < 2x vCPUs is never anomalous
+    # Memory MB was the only anomaly metric with min_threshold=0, so any positive
+    # 2σ deviation alerted regardless of how much RAM was actually in use. As the
+    # daily-peak baseline drifts slowly upward (~10 MB/day while the Marvin-Brain
+    # stack caches settle — 1293→1392 MB over 2026-06-10..19), the lagging 7-day
+    # rolling baseline kept sitting just below the instantaneous reading, and with
+    # the stddev floored at 2% the current value poked past 2σ almost every day:
+    # marginal, non-actionable WARNs (2026-06-19 2.1σ, 2026-06-20 2.3σ) at only
+    # ~36% of RAM with 2.6 GB free. Floor the alert at 60% of total RAM so the 2σ
+    # check fires only when memory is BOTH statistically unusual AND absolutely
+    # elevated; genuine pressure is independently caught by the swap manager
+    # (available-MB check) and the resource-forecast in metric-aggregate.sh.
+    # Scales with RAM, mirroring how _load_min_threshold scales with vCPUs.
+    # Fails safe: `// 0` → threshold 0 → prior (no-mask) behaviour if jq fails.
+    _mem_total=$(echo "$metrics" | jq -r '.memory.total // 0' 2>/dev/null)
+    _mem_min_threshold=$(( _mem_total * 60 / 100 ))
 
     for pair in \
         "CPU%|${_cpu_avgs}|$(echo "$metrics" | jq -r '.cpu_percent' 2>/dev/null)|high|80" \
-        "Memory MB|${_mem_maxes}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)|high|0" \
+        "Memory MB|${_mem_maxes}|$(echo "$metrics" | jq -r '.memory.used' 2>/dev/null)|high|${_mem_min_threshold}" \
         "Load 1m|${_load_avgs}|$(echo "$metrics" | jq -r '.load_average["1min"]' 2>/dev/null)|high|${_load_min_threshold}" \
         "Processes|${_proc_maxes}|$(echo "$metrics" | jq -r '.process_count' 2>/dev/null)|high|200"; do
         _label="${pair%%|*}"
