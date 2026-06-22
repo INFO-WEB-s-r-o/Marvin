@@ -142,7 +142,7 @@ while IFS= read -r line; do
         # is expected_recurrence — a genuine bug that happens to share two tokens
         # with an expected lesson but matches a non-expected lesson more strongly
         # is still surfaced (same rationale as section 4).
-        pat_lower=$(echo "$pattern" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' ' ')
+        pat_lower=$(printf '%s\n' "$pattern" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' ' ')
         best_expected=$(jq -r --arg sig "$pat_lower" '
             .lessons[]
             | select(.resolved == true)
