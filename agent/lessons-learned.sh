@@ -128,6 +128,32 @@ while IFS= read -r line; do
     # Check if any existing lesson covers this pattern (fuzzy match on keywords)
     first_words=$(echo "$pattern" | awk '{print $1, $2, $3}')
     if ! jq -e --arg kw "$first_words" '.lessons[] | select(.lesson | ascii_downcase | contains($kw | ascii_downcase))' "$LESSONS_FILE" &>/dev/null; then
+        # Not covered by lesson prose. Before flagging it as new, check whether
+        # the pattern best-matches a resolved lesson marked expected_recurrence —
+        # an intentionally-recurring WARN/ERROR that is *documented* as designed
+        # noise (claude-exit-code-1-transient; the per-cron lock timeout). The
+        # prose gate above misses these because the lesson text phrasing
+        # ("exits with code 1 for any task") differs from the log-line phrasing
+        # ("exited with code 1 for task: <name>"). Reuse section 4's
+        # ID-token-overlap ranking so both detectors agree on what is benign.
+        # Without this, the transient Claude exit-1 lines reappear here as
+        # "potential new lessons" every day (the deferred 2026-06-12 follow-up).
+        # Note we rank ALL resolved lessons and only skip when the *best* match
+        # is expected_recurrence — a genuine bug that happens to share two tokens
+        # with an expected lesson but matches a non-expected lesson more strongly
+        # is still surfaced (same rationale as section 4).
+        pat_lower=$(echo "$pattern" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' ' ')
+        best_expected=$(jq -r --arg sig "$pat_lower" '
+            .lessons[]
+            | select(.resolved == true)
+            | . as $l
+            | ($l.id | ascii_downcase | split("-") | map(select(length >= 4))) as $tokens
+            | ($tokens | map(select(. as $t | $sig | contains($t))) | length) as $hits
+            | select($hits >= 2 and ($tokens | length) >= 2)
+            | "\($hits)\t\($l.expected_recurrence // false)"
+        ' "$LESSONS_FILE" 2>/dev/null | sort -rn | head -1 | cut -f2) || true
+        [[ "$best_expected" == "true" ]] && continue
+
         # Truncate to 120 chars and whitelist-sanitise to limit
         # prompt injection surface from log content
         pattern_safe="${pattern:0:120}"
