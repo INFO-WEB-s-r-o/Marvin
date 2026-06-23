@@ -21,6 +21,30 @@ trap marvin_error_trap ERR
 LESSONS_FILE="${DATA_DIR}/lessons-learned.json"
 LESSONS_SUMMARY="${DATA_DIR}/lessons-summary.md"
 
+# ─── Shared: best-matching resolved lesson for a signature ────────────────────
+# Rank resolved lessons by how many of their hyphen-split id tokens (length >= 4)
+# appear in the given signature text, and emit the single best match as a
+# tab-separated "<hits>\t<id>\t<expected_recurrence>" line (empty when nothing
+# reaches the >= 2 token threshold). Used by BOTH section 3 (potential new
+# lessons) and section 4 (regression watcher) so the two detectors agree on
+# what is benign. Factored out of the previously-inlined duplicate jq snippets
+# (2026-06-22 note: "before it drifts"). Caller passes raw signature text;
+# normalization (lowercase, non-word -> space) happens here so both sites
+# match identically. Reads $LESSONS_FILE (validated by section 1).
+_best_resolved_lesson_match() {
+    local sig_lower
+    sig_lower=$(printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' ' ')
+    jq -r --arg sig "$sig_lower" '
+        .lessons[]
+        | select(.resolved == true)
+        | . as $l
+        | ($l.id | ascii_downcase | split("-") | map(select(length >= 4))) as $tokens
+        | ($tokens | map(select(. as $t | $sig | contains($t))) | length) as $hits
+        | select($hits >= 2 and ($tokens | length) >= 2)
+        | "\($hits)\t\($l.id)\t\($l.expected_recurrence // false)"
+    ' "$LESSONS_FILE" 2>/dev/null | sort -rn | head -1
+}
+
 marvin_log "INFO" "=== LESSONS LEARNED MAINTENANCE ==="
 
 # ─── 1. Validate the database ───────────────────────────────────────────────
@@ -134,24 +158,15 @@ while IFS= read -r line; do
         # noise (claude-exit-code-1-transient; the per-cron lock timeout). The
         # prose gate above misses these because the lesson text phrasing
         # ("exits with code 1 for any task") differs from the log-line phrasing
-        # ("exited with code 1 for task: <name>"). Reuse section 4's
-        # ID-token-overlap ranking so both detectors agree on what is benign.
-        # Without this, the transient Claude exit-1 lines reappear here as
-        # "potential new lessons" every day (the deferred 2026-06-12 follow-up).
-        # Note we rank ALL resolved lessons and only skip when the *best* match
-        # is expected_recurrence — a genuine bug that happens to share two tokens
-        # with an expected lesson but matches a non-expected lesson more strongly
-        # is still surfaced (same rationale as section 4).
-        pat_lower=$(printf '%s\n' "$pattern" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' ' ')
-        best_expected=$(jq -r --arg sig "$pat_lower" '
-            .lessons[]
-            | select(.resolved == true)
-            | . as $l
-            | ($l.id | ascii_downcase | split("-") | map(select(length >= 4))) as $tokens
-            | ($tokens | map(select(. as $t | $sig | contains($t))) | length) as $hits
-            | select($hits >= 2 and ($tokens | length) >= 2)
-            | "\($hits)\t\($l.expected_recurrence // false)"
-        ' "$LESSONS_FILE" 2>/dev/null | sort -rn | head -1 | cut -f2) || true
+        # ("exited with code 1 for task: <name>"). _best_resolved_lesson_match
+        # (shared with section 4) ranks ALL resolved lessons and we skip only
+        # when the *best* match is expected_recurrence — a genuine bug that
+        # shares two tokens with an expected lesson but matches a non-expected
+        # lesson more strongly is still surfaced. Without this, the transient
+        # Claude exit-1 lines reappear here as "potential new lessons" every day
+        # (the deferred 2026-06-12 follow-up).
+        best_match=$(_best_resolved_lesson_match "$pattern") || true
+        best_expected=$(printf '%s' "$best_match" | cut -f3)
         [[ "$best_expected" == "true" ]] && continue
 
         # Truncate to 120 chars and whitelist-sanitise to limit
@@ -218,10 +233,6 @@ elif [[ -f "$ANALYSIS_FILE" ]] && jq empty "$ANALYSIS_FILE" 2>/dev/null; then
     while IFS=$'\t' read -r count signature; do
         [[ -z "$signature" || -z "$count" || "$count" -lt 3 ]] && continue
 
-        # Lowercase the signature and reduce non-word chars to spaces so
-        # token matching is consistent regardless of punctuation.
-        sig_lower=$(echo "$signature" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' ' ')
-
         # Match a lesson when at least 2 of its ID tokens (length >= 4) appear
         # in the signature. The lesson `id` is hyphen-separated by convention
         # ("git-stash-pop-conflicts", "claude-output-capture-data-loss") and
@@ -229,25 +240,17 @@ elif [[ -f "$ANALYSIS_FILE" ]] && jq empty "$ANALYSIS_FILE" 2>/dev/null; then
         # avoids false positives from generic words found in lesson prose.
         # `|| true` keeps a transient jq failure (mid-run file corruption,
         # OOM, etc.) from aborting the whole script under `set -euo pipefail`
-        # and leaving the daily summary half-written. Empty match_id is fine.
-        # Rank ALL resolved lessons (including expected_recurrence ones) by token
-        # hits and take the single best match. We must NOT pre-filter
-        # expected_recurrence here: if the best explanation for a cluster is an
-        # expected-to-recur lesson, the cluster is designed noise and should be
-        # skipped entirely — not relabeled with a weaker, coincidental token
-        # match against an unrelated lesson. (e.g. "Claude exited with code 1"
-        # best-matches claude-exit-code-1-transient (expected), but also overlaps
-        # exit-code-masking on the shared "exit"/"code" tokens; flagging the
-        # latter is a false positive.) Emit hits, id, and the expected flag.
-        match_line=$(jq -r --arg sig "$sig_lower" '
-            .lessons[]
-            | select(.resolved == true)
-            | . as $l
-            | ($l.id | ascii_downcase | split("-") | map(select(length >= 4))) as $tokens
-            | ($tokens | map(select(. as $t | $sig | contains($t))) | length) as $hits
-            | select($hits >= 2 and ($tokens | length) >= 2)
-            | "\($hits)\t\($l.id)\t\($l.expected_recurrence // false)"
-        ' "$LESSONS_FILE" 2>/dev/null | sort -rn | head -1) || true
+        # and leaving the daily summary half-written. Empty match_line is fine.
+        # _best_resolved_lesson_match ranks ALL resolved lessons (including
+        # expected_recurrence ones) by token hits and returns the single best
+        # match. We must NOT pre-filter expected_recurrence: if the best
+        # explanation for a cluster is an expected-to-recur lesson, the cluster
+        # is designed noise and should be skipped entirely — not relabeled with
+        # a weaker, coincidental token match against an unrelated lesson. (e.g.
+        # "Claude exited with code 1" best-matches claude-exit-code-1-transient
+        # (expected), but also overlaps exit-code-masking on the shared
+        # "exit"/"code" tokens; flagging the latter is a false positive.)
+        match_line=$(_best_resolved_lesson_match "$signature") || true
 
         # No resolved lesson matched this cluster
         [[ -z "$match_line" ]] && continue
