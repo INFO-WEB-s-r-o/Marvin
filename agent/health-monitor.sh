@@ -661,7 +661,10 @@ _expected_ip="80.211.223.26"
 _dns_status="skipped"
 if command -v dig &>/dev/null; then
     _dns_status="ok"
-    _ipv4_re='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+    # Match only a real dotted-quad IPv4 — octets bounded to 0-255 so junk like
+    # 999.999.999.999 can never pass as an "answer" (per PR #799 review).
+    _octet='(25[0-5]|2[0-4][0-9]|[01]?[0-9]{1,2})'
+    _ipv4_re="^(${_octet}\.){3}${_octet}$"
     # Query external DNS (Google) to avoid local resolver entries (127.0.1.1).
     # dig prints diagnostics like ";; no servers could be reached" to stdout when a
     # resolver is unreachable, so keep only lines shaped like a dotted-quad IPv4.
