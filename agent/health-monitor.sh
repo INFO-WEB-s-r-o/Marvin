@@ -661,16 +661,29 @@ _expected_ip="80.211.223.26"
 _dns_status="skipped"
 if command -v dig &>/dev/null; then
     _dns_status="ok"
-    # Query external DNS (Google) to avoid local resolver entries (127.0.1.1)
-    _resolved_ip=$(dig +short robot-marvin.cz A @8.8.8.8 2>/dev/null | tail -1 || echo "")
+    _ipv4_re='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+    # Query external DNS (Google) to avoid local resolver entries (127.0.1.1).
+    # dig prints diagnostics like ";; no servers could be reached" to stdout when a
+    # resolver is unreachable, so keep only lines shaped like a dotted-quad IPv4.
+    _resolved_ip=$(dig +short robot-marvin.cz A @8.8.8.8 2>/dev/null | grep -E "$_ipv4_re" | tail -1 || echo "")
     if [[ -z "$_resolved_ip" ]]; then
+        # No valid answer (resolver unreachable or empty) — transient, not a hijack.
         ISSUES+=("WARNING: DNS resolution failed for robot-marvin.cz")
         marvin_log "WARN" "DNS resolution failed for robot-marvin.cz"
         _dns_status="failing"
     elif [[ "$_resolved_ip" != "$_expected_ip" ]]; then
-        ISSUES+=("CRITICAL: DNS mismatch — robot-marvin.cz resolves to ${_resolved_ip}, expected ${_expected_ip}")
-        marvin_log "CRITICAL" "DNS mismatch: ${_resolved_ip} != ${_expected_ip}"
-        _dns_status="failing"
+        # A valid but wrong IP from one resolver could be a blip; confirm against a
+        # second independent resolver before escalating to a CRITICAL hijack alert.
+        _resolved_ip2=$(dig +short robot-marvin.cz A @1.1.1.1 2>/dev/null | grep -E "$_ipv4_re" | tail -1 || echo "")
+        if [[ -z "$_resolved_ip2" || "$_resolved_ip2" == "$_expected_ip" ]]; then
+            ISSUES+=("WARNING: DNS resolution inconsistent for robot-marvin.cz — 8.8.8.8 returned ${_resolved_ip}, expected ${_expected_ip}")
+            marvin_log "WARN" "DNS inconsistent: 8.8.8.8=${_resolved_ip}, 1.1.1.1=${_resolved_ip2:-unreachable}, expected ${_expected_ip}"
+            _dns_status="failing"
+        else
+            ISSUES+=("CRITICAL: DNS mismatch — robot-marvin.cz resolves to ${_resolved_ip}, expected ${_expected_ip}")
+            marvin_log "CRITICAL" "DNS mismatch: ${_resolved_ip} (8.8.8.8), ${_resolved_ip2} (1.1.1.1) != ${_expected_ip}"
+            _dns_status="failing"
+        fi
     fi
 fi
 
