@@ -405,7 +405,7 @@ while IFS= read -r line; do
             # threat model as PR #761). A runc-named process outside those slices
             # still WARNs and falls through to tracking. Fail-safe: an empty/
             # unreadable cgroup does not match, so it WARNs rather than being hidden.
-            if [[ "$proc_name" == runc* && "$proc_cgroup" =~ /(containerd|docker)\.service ]]; then
+            if [[ "$proc_name" == runc* && "$proc_cgroup" =~ /(containerd|docker)\.service(/|$) ]]; then
                 continue
             fi
             marvin_log "WARN" "Untrusted exe for allowlisted name: ${proc_name} (PID ${proc_pid}, exe=${proc_exe}) at ${proc_cpu}% CPU"
