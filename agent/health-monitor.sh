@@ -383,6 +383,31 @@ while IFS= read -r line; do
                   ( -n "$_trusted_claude_bin" && "$proc_exe" == "$_trusted_claude_bin" ) ]]; then
                 continue
             fi
+            # runc memfd self-exec: runc re-execs itself from an anonymous memfd
+            # (the CVE-2019-5736 mitigation), so a LIVE runc's /proc/PID/exe never
+            # resolves to /usr/bin/runc — readlink -f reads back empty, a
+            # "(deleted)" target, or the literal /proc/PID/exe path. The empty
+            # case is silently skipped above, but the non-empty cases fall through
+            # to a daily false "Untrusted exe" WARN (observed 2026-06-24:
+            # exe=/proc/2673255/exe at 100% CPU). The exe-path gate is therefore
+            # structurally unable to verify a live runc, so the `runc*` allowlist
+            # entry only ever covered the dead/empty case. runc cannot be
+            # host-killed by this loop regardless (sub-minute container-setup
+            # spikes never reach the 600s sustained threshold). Verify provenance
+            # the way the top-of-loop cgroup guard does instead: a genuine runc is
+            # launched by containerd-shim-runc-v2, which lives in the containerd /
+            # docker systemd service slice (e.g. /system.slice/containerd.service),
+            # so runc inherits that cgroup. That is NOT the per-container
+            # docker-<hash>.scope the guard at line 321 matches — it's the runtime
+            # *management* slice, a root-only, unforgeable cgroup (cgroupfs) that an
+            # attacker cannot place a prctl(PR_SET_NAME)-spoofed `runc` into without
+            # already holding root, in which case the monitor is moot anyway (same
+            # threat model as PR #761). A runc-named process outside those slices
+            # still WARNs and falls through to tracking. Fail-safe: an empty/
+            # unreadable cgroup does not match, so it WARNs rather than being hidden.
+            if [[ "$proc_name" == runc* && "$proc_cgroup" =~ /(containerd|docker)\.service(/|$) ]]; then
+                continue
+            fi
             marvin_log "WARN" "Untrusted exe for allowlisted name: ${proc_name} (PID ${proc_pid}, exe=${proc_exe}) at ${proc_cpu}% CPU"
         ;;
         find|git)
