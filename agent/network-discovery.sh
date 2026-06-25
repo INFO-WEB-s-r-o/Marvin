@@ -277,7 +277,16 @@ if [[ -f "$PEERS_FILE" ]]; then
         fi
 
         # Beacon score (0-25): has valid ai-managed.json
+        # beacon_status records *why* the score landed where it did — the score
+        # alone can't distinguish "unreachable" from "reachable but serves HTML
+        # not JSON" (both score 0). That distinction is real (e.g. posledniping.cz
+        # is reachable but ships an SPA HTML page, no JSON beacon, for 100+ days)
+        # and was previously only captured in free-text notes. Purely additive
+        # observability — does not alter the score, fetch, or any SSRF/validation
+        # logic. Enum: no_domain | skipped_cidr | skipped_invalid | skipped_private
+        # | unreachable_dns | unreachable_http | reachable_no_json | valid_json.
         beacon_score=0
+        beacon_status="no_domain"
         if [[ -n "$peer_domain" && "$peer_domain" != "null" ]]; then
             # Strip IPv6 brackets if present (#480), then validate
             clean_domain="${peer_domain#[}"; clean_domain="${clean_domain%]}"
@@ -286,16 +295,19 @@ if [[ -f "$PEERS_FILE" ]]; then
             # produce a daily "invalid domain" WARN — they're deliberately stored.
             if [[ "$clean_domain" == */* ]]; then
                 beacon_score=0
+                beacon_status="skipped_cidr"
             # Validate peer_domain — reject URLs with path/query/fragment injection characters
             elif ! echo "$clean_domain" | grep -qP '^[a-zA-Z0-9]([a-zA-Z0-9.\-]{0,253}[a-zA-Z0-9])?$' \
                && ! echo "$clean_domain" | grep -qP '^\d{1,3}(\.\d{1,3}){3}$' \
                && ! echo "$clean_domain" | grep -qP '^[0-9a-fA-F:]+$'; then
                 marvin_log "WARN" "Skipping beacon check for invalid domain: ${peer_domain}"
                 beacon_score=0
+                beacon_status="skipped_invalid"
             # Block private/reserved IPs, IPv6, and localhost to prevent SSRF (#458/#480)
             elif echo "$clean_domain" | grep -qiP '^(localhost)$' || _is_private_ip "$clean_domain"; then
                 marvin_log "WARN" "Skipping beacon check for private/reserved IP: ${peer_domain}"
                 beacon_score=0
+                beacon_status="skipped_private"
             else
                 # Detect bare IP peers early (#475) — they skip DNS rebinding check
                 # since the private IP blocklist above already validated the literal IP
@@ -320,6 +332,7 @@ if [[ -f "$PEERS_FILE" ]]; then
 
                 if [[ "$beacon_blocked" == "true" ]]; then
                     beacon_score=0
+                    beacon_status="unreachable_dns"
                 else
                     # Determine beacon URL and port (#485: use actual port, not hardcoded 443)
                     beacon_port=443
@@ -335,8 +348,18 @@ if [[ -f "$PEERS_FILE" ]]; then
                     fi
                     # --max-redirs 0 prevents SSRF via HTTP redirect to internal IPs (#466)
                     beacon_json=$(curl -sf --max-time 5 --max-redirs 0 "${beacon_resolve_opt[@]}" "$beacon_url" 2>/dev/null || echo "")
+                    # Default status from reachability; the valid-JSON branch below
+                    # overrides to valid_json. Empty body = curl failed (host down,
+                    # TLS error, non-2xx via -f, timeout); non-empty = something was
+                    # served but it isn't a valid JSON beacon (e.g. an SPA HTML page).
+                    if [[ -z "$beacon_json" ]]; then
+                        beacon_status="unreachable_http"
+                    else
+                        beacon_status="reachable_no_json"
+                    fi
                     if [[ -n "$beacon_json" ]] && echo "$beacon_json" | jq empty 2>/dev/null; then
                         beacon_score=10  # Valid JSON
+                        beacon_status="valid_json"
                         # Bonus for expected fields — only over HTTPS (#467: HTTP responses are spoofable)
                         if [[ "$is_ip_peer" != "true" ]]; then
                             echo "$beacon_json" | jq -e '.name' &>/dev/null && beacon_score=$((beacon_score + 5))
@@ -373,7 +396,13 @@ if [[ -f "$PEERS_FILE" ]]; then
         jq_updates+=" | .peers[$idx].trust_score = $total_score | .peers[$idx].trust_level = \$trust_level_${idx} | .peers[$idx].trust_updated = \$now_ts"
         jq_updates+=" | .peers[$idx].trust_breakdown = {\"longevity\": $longevity_score, \"aliveness\": $alive_score, \"beacon\": $beacon_score, \"identity\": $identity_score}"
         jq_updates+=" | .peers[$idx].days_known = ${days_known:-0}"
+        # Persist structured beacon outcome (#470: pass enum via --arg, never interpolate).
+        # last_beacon_ok stamps only on valid_json, preserving the prior value otherwise.
+        jq_updates+=" | .peers[$idx].beacon_status = \$beacon_status_${idx}"
+        jq_updates+=" | .peers[$idx].last_beacon_check = \$now_ts"
+        jq_updates+=" | .peers[$idx].last_beacon_ok = (if \$beacon_status_${idx} == \"valid_json\" then \$now_ts else (.peers[$idx].last_beacon_ok // null) end)"
         jq_args+=(--arg "trust_level_${idx}" "$trust_level")
+        jq_args+=(--arg "beacon_status_${idx}" "$beacon_status")
     done
 
     # Set last_scan timestamp
