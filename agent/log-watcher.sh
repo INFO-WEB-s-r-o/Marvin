@@ -373,8 +373,26 @@ Respond ONLY with the JSON array. No markdown fences, no explanation."
 
 # Run Claude analysis
 if ! check_claude; then
-    marvin_log "ERROR" "Claude not available, saving raw logs for next run"
-    echo "$collected_logs" >> "${COMMS_DIR}/pending-log-review.txt"
+    # Claude unavailable. scan_logs already advanced the file offsets above, so
+    # the next run will NOT re-read these lines — this file is a forensic record
+    # of what went un-analyzed during an outage, not a work queue that gets
+    # replayed (nothing reads it back). Bound it: this path fires every 30 min
+    # during a prolonged outage and would otherwise grow without limit (it
+    # reached 418 KB in the 2026-04-18/19 Claude outage; the roadmap explicitly
+    # targets surviving a 24h+ API outage). Keep only the most recent bytes.
+    marvin_log "ERROR" "Claude not available — appending raw logs to forensic record (not auto-reanalyzed)"
+    PENDING_REVIEW_FILE="${COMMS_DIR}/pending-log-review.txt"
+    PENDING_REVIEW_MAX=524288  # 512 KB cap
+    echo "$collected_logs" >> "$PENDING_REVIEW_FILE"
+    _psize=$(stat -c%s "$PENDING_REVIEW_FILE" 2>/dev/null || echo 0)
+    if [[ "$_psize" -gt "$PENDING_REVIEW_MAX" ]]; then
+        _ptmp=$(mktemp "${PENDING_REVIEW_FILE}.XXXXXX" 2>/dev/null) || _ptmp=""
+        if [[ -n "$_ptmp" ]] && tail -c "$PENDING_REVIEW_MAX" "$PENDING_REVIEW_FILE" > "$_ptmp" 2>/dev/null; then
+            mv -f "$_ptmp" "$PENDING_REVIEW_FILE"
+        else
+            [[ -n "$_ptmp" ]] && rm -f "$_ptmp"
+        fi
+    fi
     exit 1
 fi
 

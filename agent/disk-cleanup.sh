@@ -166,6 +166,25 @@ while IFS= read -r -d '' f; do
 done < <(find "${LOGS_DIR}" -maxdepth 1 -type f -name 'claude-output-*.tmp' -mtime +0 -print0 2>/dev/null)
 track_freed "Orphaned Claude output temp files (>1d)" "$claude_tmp_size"
 
+# ─── 6c. Orphaned log-watcher forensic artifacts in COMMS_DIR (>30 days) ────
+# log-watcher.sh writes two forensic-only files when Claude is unavailable or
+# its output won't parse: pending-log-review.txt (raw logs that went
+# un-analyzed during an outage, since offsets advance regardless) and
+# log-analysis-raw-<ts>.txt (one per parse failure). Neither is read back by
+# any consumer, and COMMS_DIR is not swept by any section above. Stale records
+# (>30d — the outage they captured is long over) are safe to remove. The live
+# pending file self-caps at 512 KB in log-watcher.sh, so during an active
+# outage it stays bounded AND fresh (mtime recent → not matched here); only
+# records gone quiet for a month are cleaned. The per-day log-analysis-*.json
+# analysis files are deliberately NOT matched (consumed by the dashboard).
+comms_forensic_size=0
+while IFS= read -r -d '' f; do
+    fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
+    comms_forensic_size=$((comms_forensic_size + fsize))
+    marvin_is_dry_run || rm -f "$f"
+done < <(find "${COMMS_DIR}" -maxdepth 1 -type f \( -name 'log-analysis-raw-*.txt' -o -name 'pending-log-review.txt' \) -mtime +30 -print0 2>/dev/null)
+track_freed "Stale log-watcher forensic records (>30d)" "$comms_forensic_size"
+
 # ─── 7. Systemd journal vacuum (keep 7 days) ────────────────────────────────
 
 journal_before=$(journalctl --disk-usage 2>/dev/null | grep -oP '[\d.]+[KMGT]' || echo "0")
