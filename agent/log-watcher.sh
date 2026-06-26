@@ -382,8 +382,8 @@ if ! check_claude; then
     # targets surviving a 24h+ API outage). Keep only the most recent bytes.
     marvin_log "ERROR" "Claude not available — appending raw logs to forensic record (not auto-reanalyzed)"
     PENDING_REVIEW_FILE="${COMMS_DIR}/pending-log-review.txt"
-    PENDING_REVIEW_MAX=524288  # 512 KB cap
-    echo "$collected_logs" >> "$PENDING_REVIEW_FILE"
+    readonly PENDING_REVIEW_MAX=524288  # 512 KB cap
+    printf '%s\n' "$collected_logs" >> "$PENDING_REVIEW_FILE"
     _psize=$(stat -c%s "$PENDING_REVIEW_FILE" 2>/dev/null || echo 0)
     if [[ "$_psize" -gt "$PENDING_REVIEW_MAX" ]]; then
         _ptmp=$(mktemp "${PENDING_REVIEW_FILE}.XXXXXX" 2>/dev/null) || _ptmp=""
