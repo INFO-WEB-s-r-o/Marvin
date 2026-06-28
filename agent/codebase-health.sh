@@ -93,7 +93,13 @@ fi
 hygiene_score=25
 hygiene_notes=()
 
-# TODO/FIXME/HACK markers
+# Count annotation markers flagging unfinished work in scripts.
+# NOTE: this script's own descriptive text must NOT spell out the bare marker
+# keywords — grep below is case-insensitive (-i), so even a lowercase mention in
+# a comment or label here would self-match and inflate the count (was a standing
+# false positive of 3: one section comment + two note labels). Keep the literal
+# keywords confined to the regex on the grep line, where the leading \b prevents
+# self-match (each keyword is preceded by the 'b' of \b, a word char → no boundary).
 todo_count=0
 while IFS= read -r script; do
     t=$(grep -ciE '\bTODO\b|\bFIXME\b|\bHACK\b|\bXXX\b' "$script" 2>/dev/null) || t=0
@@ -101,9 +107,9 @@ while IFS= read -r script; do
 done < <(find "$AGENT_DIR" -name "*.sh" -type f)
 if [[ "$todo_count" -gt 10 ]]; then
     hygiene_score=$((hygiene_score - 3))
-    hygiene_notes+=("TODO/FIXME markers: ${todo_count}")
+    hygiene_notes+=("Annotation markers: ${todo_count}")
 elif [[ "$todo_count" -gt 0 ]]; then
-    hygiene_notes+=("TODO/FIXME markers: ${todo_count}")
+    hygiene_notes+=("Annotation markers: ${todo_count}")
 fi
 
 # Oversized scripts (>500 LOC)
