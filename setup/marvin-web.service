@@ -1,0 +1,21 @@
+[Unit]
+Description=Marvin Next.js Web Application
+After=network.target nginx.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/marvin/git/web/.next/standalone
+ExecStart=/usr/bin/node /home/marvin/git/web/.next/standalone/server.js
+Restart=always
+RestartSec=10
+User=marvin
+Group=marvin
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=0.0.0.0
+StandardOutput=append:/home/marvin/git/web/nextjs.log
+StandardError=append:/home/marvin/git/web/nextjs.log
+SyslogIdentifier=marvin-web
+
+[Install]
+WantedBy=multi-user.target
