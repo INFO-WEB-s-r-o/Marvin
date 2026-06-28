@@ -17,5 +17,14 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=marvin-web
 
+# Defense-in-depth hardening (PR #803 review). The service already runs as a
+# non-root user and binds loopback only; these remove escalation/tamper paths
+# if a Node.js or dependency CVE ever achieves code execution in-process.
+# NB: no ProtectHome — the blog SQLite DB lives under /home/marvin/blog.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/home/marvin/git/web /home/marvin/blog
+
 [Install]
 WantedBy=multi-user.target
