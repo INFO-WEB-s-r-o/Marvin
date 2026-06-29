@@ -432,16 +432,9 @@ REGISTRY_DIR="${DATA_DIR}/peers"
 mkdir -p "$REGISTRY_DIR"
 
 if [[ -f "$PEERS_FILE" ]]; then
-    # Bind the registered (non-untrusted) peer set once instead of re-deriving
-    # it for every aggregate. v1.1 adds per-peer beacon_status (the structured
-    # reachability verdict introduced 2026-06-25 in the trust loop above) and a
-    # beacon_summary count object. beacon_status gives external AI-peer
-    # consumers the granularity the binary `alive` flag conflates — e.g.
-    # distinguishing a peer that is reachable but serves no JSON beacon
-    # (reachable_no_json — posledniping.cz's state for 119 days) from one that
-    # is genuinely down. Falls back to null/"unknown" until the next 16:00 UTC
-    # discovery run populates the field. Still sanitized: no IPs, notes, or
-    # trust breakdowns — beacon_status is a reachability enum, like `alive`.
+    # v1.1: bind $reg once, add per-peer beacon_status + beacon_summary count.
+    # beacon_status is a sanitized reachability enum (like `alive`) that the
+    # binary flag conflates — e.g. reachable_no_json vs. genuinely down. (#804)
     jq --arg ts "$NOW" '
         ([.peers[] | select(.trust_level != "untrusted")]) as $reg
         | {
