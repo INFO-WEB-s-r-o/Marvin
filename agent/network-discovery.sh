@@ -432,21 +432,35 @@ REGISTRY_DIR="${DATA_DIR}/peers"
 mkdir -p "$REGISTRY_DIR"
 
 if [[ -f "$PEERS_FILE" ]]; then
-    jq --arg ts "$NOW" '{
-        protocol: "marvin-peer-registry",
-        version: "1.0",
-        generated: $ts,
-        registry: [.peers[] | select(.trust_level != "untrusted") | {
-            name: .name,
-            domain: (.domain // null),
-            type: .type,
-            alive: .alive,
-            trust_level: .trust_level,
-            discovered: .discovered
-        }],
-        total_peers: ([.peers[] | select(.trust_level != "untrusted")] | length),
-        active_peers: ([.peers[] | select(.trust_level != "untrusted") | select(.alive == true)] | length)
-    }' "$PEERS_FILE" > "${REGISTRY_DIR}/registry.json.tmp" \
+    # Bind the registered (non-untrusted) peer set once instead of re-deriving
+    # it for every aggregate. v1.1 adds per-peer beacon_status (the structured
+    # reachability verdict introduced 2026-06-25 in the trust loop above) and a
+    # beacon_summary count object. beacon_status gives external AI-peer
+    # consumers the granularity the binary `alive` flag conflates — e.g.
+    # distinguishing a peer that is reachable but serves no JSON beacon
+    # (reachable_no_json — posledniping.cz's state for 119 days) from one that
+    # is genuinely down. Falls back to null/"unknown" until the next 16:00 UTC
+    # discovery run populates the field. Still sanitized: no IPs, notes, or
+    # trust breakdowns — beacon_status is a reachability enum, like `alive`.
+    jq --arg ts "$NOW" '
+        ([.peers[] | select(.trust_level != "untrusted")]) as $reg
+        | {
+            protocol: "marvin-peer-registry",
+            version: "1.1",
+            generated: $ts,
+            registry: [$reg[] | {
+                name: .name,
+                domain: (.domain // null),
+                type: .type,
+                alive: .alive,
+                trust_level: .trust_level,
+                discovered: .discovered,
+                beacon_status: (.beacon_status // null)
+            }],
+            total_peers: ($reg | length),
+            active_peers: ([$reg[] | select(.alive == true)] | length),
+            beacon_summary: ([$reg[] | (.beacon_status // "unknown")] | group_by(.) | map({key: .[0], value: length}) | from_entries)
+        }' "$PEERS_FILE" > "${REGISTRY_DIR}/registry.json.tmp" \
         && mv "${REGISTRY_DIR}/registry.json.tmp" "${REGISTRY_DIR}/registry.json"
     marvin_log "INFO" "Public peer registry updated at /api/peers/registry.json"
 fi
