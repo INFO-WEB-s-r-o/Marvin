@@ -427,6 +427,28 @@ for _pair in "${_nginx_drift_pairs[@]}"; do
     fi
 done
 
+# systemd: the marvin-web unit runs the entire dashboard but lived ONLY on the
+# host (hand-created 2026-03-01, untracked) until 2026-06-28 — a rebuild had no
+# source to regenerate it from. Now captured at setup/marvin-web.service and
+# installed by bootstrap.sh from that file; this diff catches any future
+# divergence (e.g. a manual `systemctl edit` that the source never learns about).
+# Same WARN-only, read-only-diff contract as the nginx/cron pairs above.
+_systemd_drift_pairs=(
+    "${MARVIN_DIR}/setup/marvin-web.service /etc/systemd/system/marvin-web.service marvin-web.service"
+)
+for _pair in "${_systemd_drift_pairs[@]}"; do
+    read -r _src _live _label <<< "$_pair"
+    if [[ ! -f "$_src" ]]; then
+        test_warn "config drift: ${_label} source missing (${_src})"
+    elif [[ ! -f "$_live" ]]; then
+        test_warn "config drift: ${_label} live unit not present (${_live})"
+    elif diff -q "$_src" "$_live" >/dev/null 2>&1; then
+        test_pass "config in sync: ${_label}"
+    else
+        test_warn "config drift: ${_label} — ${_src} differs from live ${_live} (reconcile before next deploy/bootstrap)"
+    fi
+done
+
 # cron: extract the /etc/cron.d/marvin heredoc that setup-cron.sh would write
 # and diff it against the live file. The heredoc delimiter is single-quoted
 # ('EOF'), so ${MARVIN_DIR} stays literal in both — a byte-for-byte comparison
