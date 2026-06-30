@@ -560,6 +560,21 @@ systemctl start marvin-negotiate
 log "Negotiate listener service started on port 8043."
 
 # =============================================================================
+# 11b. Web application service
+# =============================================================================
+# Installed from the tracked unit (setup/marvin-web.service) rather than an
+# inline heredoc, so there is a single source of truth and self-test.sh's
+# config-drift check stays meaningful. Enabled (survives reboot) but not
+# started here — the standalone build must exist first; deploy-web.sh /
+# morning-check.sh perform the build + start and own the health check.
+
+log "Installing web application systemd service..."
+install -m 644 "${MARVIN_DIR}/setup/marvin-web.service" /etc/systemd/system/marvin-web.service
+systemctl daemon-reload
+systemctl enable marvin-web
+log "Web application service installed and enabled (start deferred to first web deploy)."
+
+# =============================================================================
 # Done
 # =============================================================================
 
