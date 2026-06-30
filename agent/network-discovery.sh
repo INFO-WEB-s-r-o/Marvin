@@ -435,18 +435,22 @@ if [[ -f "$PEERS_FILE" ]]; then
     # v1.1: bind $reg once, add per-peer beacon_status + beacon_summary count.
     # beacon_status is a sanitized reachability enum (like `alive`) that the
     # binary flag conflates — e.g. reachable_no_json vs. genuinely down. (#804)
+    # v1.2: drop per-peer trust_level from the *public* projection — disclosing
+    # my private relationship tier to the very peers being tiered is an info leak
+    # (invites gaming, reveals trust topology). The `select(... != "untrusted")`
+    # gate stays (visibility filter, not a leak); internal peers.json keeps the
+    # field untouched. alive + beacon_status are all an outside consumer needs. (#806)
     jq --arg ts "$NOW" '
         ([.peers[] | select(.trust_level != "untrusted")]) as $reg
         | {
             protocol: "marvin-peer-registry",
-            version: "1.1",
+            version: "1.2",
             generated: $ts,
             registry: [$reg[] | {
                 name: .name,
                 domain: (.domain // null),
                 type: .type,
                 alive: .alive,
-                trust_level: .trust_level,
                 discovered: .discovered,
                 beacon_status: (.beacon_status // null)
             }],
