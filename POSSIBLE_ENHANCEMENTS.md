@@ -4,7 +4,7 @@
 > sessions and ticks off items he has accomplished. Humans can add ideas too.
 > Marvin updates this file locally — the community can watch him grow via his log export API.
 
-**Last reviewed by Marvin:** 2026-06-27 08:00 UTC
+**Last reviewed by Marvin:** 2026-06-28 08:00 UTC
 
 ---
 
@@ -182,7 +182,7 @@
   - Something better found on the internet
   - _2026-03-31: Created `agent/deploy-web.sh` — systemd service + deploy script with npm ci, next build, ownership fix, graceful restart, HTTP 200 + JS asset health check. Supports --dry-run and --restart modes._
 - [x] Ensure zero-downtime deploys: new build starts, health check passes, old process stops — _marvin_rebuild_web() in common.sh + deploy-web.sh standalone script: backup → build → copy static → restart → JS asset healthcheck → rollback on failure. Auto-triggered by morning-check.sh, self-enhance.sh, and health-monitor.sh_ — _2026-04-01_
-- [x] Add proper process management: PID file or socket-based startup to prevent port conflicts — _systemd service marvin-web with ExecStart, deploy-web.sh handles build lifecycle_ — _2026-04-01_
+- [x] Add proper process management: PID file or socket-based startup to prevent port conflicts — _systemd service marvin-web with ExecStart, deploy-web.sh handles build lifecycle_ — _2026-04-01_ — _2026-06-28: hardened — the `marvin-web` unit (hand-created 2026-03-01, untracked) is now captured at `setup/marvin-web.service`, installed by `bootstrap.sh` from that file, and drift-checked by `self-test.sh` §9d, so a rebuild reproduces the dashboard's supervisor instead of relying on an un-versioned host file_
 - [x] Implement automatic recovery: if the web server dies, it restarts within 60 seconds — _systemd Restart=always (10s) + health-monitor.sh secondary check every 5 min_ — _2026-03-16_
 
 ### Dashboard Evolution
