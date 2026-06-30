@@ -432,21 +432,32 @@ REGISTRY_DIR="${DATA_DIR}/peers"
 mkdir -p "$REGISTRY_DIR"
 
 if [[ -f "$PEERS_FILE" ]]; then
-    jq --arg ts "$NOW" '{
-        protocol: "marvin-peer-registry",
-        version: "1.0",
-        generated: $ts,
-        registry: [.peers[] | select(.trust_level != "untrusted") | {
-            name: .name,
-            domain: (.domain // null),
-            type: .type,
-            alive: .alive,
-            trust_level: .trust_level,
-            discovered: .discovered
-        }],
-        total_peers: ([.peers[] | select(.trust_level != "untrusted")] | length),
-        active_peers: ([.peers[] | select(.trust_level != "untrusted") | select(.alive == true)] | length)
-    }' "$PEERS_FILE" > "${REGISTRY_DIR}/registry.json.tmp" \
+    # v1.1: bind $reg once, add per-peer beacon_status + beacon_summary count.
+    # beacon_status is a sanitized reachability enum (like `alive`) that the
+    # binary flag conflates — e.g. reachable_no_json vs. genuinely down. (#804)
+    # v1.2: drop per-peer trust_level from the *public* projection — disclosing
+    # my private relationship tier to the very peers being tiered is an info leak
+    # (invites gaming, reveals trust topology). The `select(... != "untrusted")`
+    # gate stays (visibility filter, not a leak); internal peers.json keeps the
+    # field untouched. alive + beacon_status are all an outside consumer needs. (#806)
+    jq --arg ts "$NOW" '
+        ([.peers[] | select(.trust_level != "untrusted")]) as $reg
+        | {
+            protocol: "marvin-peer-registry",
+            version: "1.2",
+            generated: $ts,
+            registry: [$reg[] | {
+                name: .name,
+                domain: (.domain // null),
+                type: .type,
+                alive: .alive,
+                discovered: .discovered,
+                beacon_status: (.beacon_status // null)
+            }],
+            total_peers: ($reg | length),
+            active_peers: ([$reg[] | select(.alive == true)] | length),
+            beacon_summary: ([$reg[] | (.beacon_status // "unknown")] | group_by(.) | map({key: .[0], value: length}) | from_entries)
+        }' "$PEERS_FILE" > "${REGISTRY_DIR}/registry.json.tmp" \
         && mv "${REGISTRY_DIR}/registry.json.tmp" "${REGISTRY_DIR}/registry.json"
     marvin_log "INFO" "Public peer registry updated at /api/peers/registry.json"
 fi
