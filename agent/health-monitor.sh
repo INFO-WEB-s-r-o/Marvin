@@ -340,7 +340,7 @@ while IFS= read -r line; do
     # comm field spoofing via prctl(PR_SET_NAME) (#38)
     proc_exe=$(readlink -f "/proc/${proc_pid}/exe" 2>/dev/null || echo "")
     case "$proc_name" in
-        claude|apt*|dpkg*|unattended-upgr*|ps|jq|fail2ban*|file|appstreamcli|shellcheck|pg_isready|gzip|runc*|chkproc|certbot)
+        claude|apt*|dpkg*|unattended-upgr*|ps|jq|fail2ban*|file|appstreamcli|shellcheck|pg_isready|gzip|runc*|chkproc|certbot|cnf-update-db)
             # High-frequency, low-risk short-lived children — silent skip when
             # exe is unreadable (they exit between ps and readlink constantly).
             # Contrast with find|git below which logs + falls through, because
@@ -373,6 +373,16 @@ while IFS= read -r line; do
             # Pinned to the specific binary rather than the package dir glob so
             # any future chkrootkit helper that pegs CPU still gets a deliberate
             # review rather than a silent skip (PR #786 review).
+            # cnf-update-db: the command-not-found database updater, fired by the
+            # apt hook /etc/apt/apt.conf.d/50command-not-found after every apt
+            # operation (e.g. right after unattended-upgrades applies a security
+            # update — observed 2026-07-01 at 66.6% CPU). It is a #!/usr/bin/python3
+            # script, so /proc/PID/exe resolves to the interpreter (/usr/bin/
+            # python3.x) — already covered by the /usr/bin/* trusted-path check
+            # below, so no pinned exe entry is needed (unlike chkproc). It rebuilds
+            # /var/lib/command-not-found/commands.db in seconds and can never reach
+            # the 600s sustained-CPU kill threshold, so the WARN was pure noise. A
+            # cnf-update-db-named process running an UNtrusted exe still WARNs.
             if [[ -z "$proc_exe" ]]; then
                 continue
             fi
