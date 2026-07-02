@@ -392,7 +392,12 @@ marvin_rebuild_web() {
             # at this level lets parent pipefail propagate npm's status. (#680/#681)
             local _ci_ok=true
             if [[ "$_drop_to_marvin" == "true" ]]; then
-                su -s /bin/bash marvin -c 'cd "$1" && npm ci --production=false' -- "$web_dir" 2>&1 | tail -5 || _ci_ok=false
+                # `su … -c CMD -- ARG0 ARG1`: with util-linux su the FIRST word
+                # after `--` becomes the shell's $0, so a lone `-- "$web_dir"`
+                # leaves $1 empty and `cd "$1"` runs `cd ""` → "cd: : Permission
+                # denied" (rebuild failed silently on 2026-06-04 & 2026-07-01).
+                # Pass a descriptive $0 placeholder so "$web_dir" lands in $1.
+                su -s /bin/bash marvin -c 'cd "$1" && npm ci --production=false' -- marvin-rebuild-web "$web_dir" 2>&1 | tail -5 || _ci_ok=false
             else
                 (cd "$web_dir" && npm ci --production=false) 2>&1 | tail -5 || _ci_ok=false
             fi
@@ -407,7 +412,8 @@ marvin_rebuild_web() {
         marvin_log "INFO" "Running next build..."
         local build_output build_ok=true
         if [[ "$_drop_to_marvin" == "true" ]]; then
-            build_output=$(su -s /bin/bash marvin -c 'cd "$1" && timeout 300 npm run build' -- "$web_dir" 2>&1) || build_ok=false
+            # $0 placeholder so "$web_dir" lands in $1 (see npm ci note above).
+            build_output=$(su -s /bin/bash marvin -c 'cd "$1" && timeout 300 npm run build' -- marvin-rebuild-web "$web_dir" 2>&1) || build_ok=false
         else
             build_output=$(cd "$web_dir" && timeout 300 npm run build 2>&1) || build_ok=false
         fi
