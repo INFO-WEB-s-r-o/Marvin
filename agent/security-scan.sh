@@ -692,12 +692,16 @@ marvin_log "INFO" "CVE status: ${upgradable_all} upgradable (${upgradable_securi
 # ─── 6. Generate report ─────────────────────────────────────────────────────
 
 # Determine overall status
+# Note: gate on actionable (not total) pending security updates so an all-phased
+# day does not log "all N phased-deferred (will auto-apply)" and then contradict
+# itself with "Overall status: warnings". On any parse failure the classifier
+# leaves actionable == total, so this stays fail-safe (still warns).
 overall_status="clean"
 if [[ "$rkhunter_status" == "infected" || "$chkrootkit_status" == "infected" ]]; then
     overall_status="infected"
 elif [[ "$fim_status" == "alert" ]]; then
     overall_status="alert"
-elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security" -gt 0 || "$unexpected_count" -gt 0 || "$suspicious_count" -gt 0 || "$high_rate_count" -gt 0 || "$outbound_unexpected" -gt 0 ]]; then
+elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security_actionable" -gt 0 || "$unexpected_count" -gt 0 || "$suspicious_count" -gt 0 || "$high_rate_count" -gt 0 || "$outbound_unexpected" -gt 0 ]]; then
     overall_status="warnings"
 fi
 
