@@ -605,6 +605,8 @@ apt-get update -qq 2>/dev/null || true
 # Check for upgradable packages and identify security updates
 upgradable_all=0
 upgradable_security=0
+upgradable_security_phased=0
+upgradable_security_actionable=0
 upgradable_list=""
 security_list=""
 
@@ -615,7 +617,33 @@ if upgradable_raw=$(apt list --upgradable 2>/dev/null | tail -n +2); then
     if [[ -n "$security_raw" ]]; then
         upgradable_security=$(echo "$security_raw" | wc -l | tr -d ' ')
         security_list=$(echo "$security_raw" | head -20)
-        marvin_log "WARN" "Found ${upgradable_security} pending security update(s)"
+
+        # Distinguish phased-deferred security updates from genuinely actionable
+        # ones. Ubuntu rolls a security update out to a fraction of machines at a
+        # time ("phasing"); unattended-upgrades correctly holds a phased update
+        # back until this host's phase is reached, then applies it automatically.
+        # A NON-phased security update still pending is a different, real signal
+        # (unattended-upgrades failing, a dependency-blocked package, a manual
+        # hold). Both previously collapsed into one daily WARN, so a genuinely
+        # stuck update was indistinguishable from routine, self-healing phasing.
+        # Fail-safe: any parse failure leaves the phased set empty, so every
+        # pending security update counts as actionable — this can never hide one.
+        _phased_pkgs=$(apt-get -s upgrade 2>/dev/null | awk '/^The following upgrades have been deferred due to phasing:/{f=1;next} /^[^ ]/{f=0} f{for(i=1;i<=NF;i++)print $i}' || true)
+        while IFS= read -r _sec_line; do
+            [[ -z "$_sec_line" ]] && continue
+            _sec_pkg="${_sec_line%%/*}"   # "pkg/repo ver arch [..]" → "pkg"
+            if [[ -n "$_phased_pkgs" ]] && grep -qxF "$_sec_pkg" <<< "$_phased_pkgs"; then
+                upgradable_security_phased=$((upgradable_security_phased + 1))
+            else
+                upgradable_security_actionable=$((upgradable_security_actionable + 1))
+            fi
+        done <<< "$security_raw"
+
+        if [[ "$upgradable_security_actionable" -gt 0 ]]; then
+            marvin_log "WARN" "Found ${upgradable_security} pending security update(s): ${upgradable_security_actionable} actionable, ${upgradable_security_phased} phased-deferred by Ubuntu"
+        else
+            marvin_log "INFO" "Found ${upgradable_security} pending security update(s), all ${upgradable_security_phased} phased-deferred by Ubuntu (will auto-apply)"
+        fi
     fi
     upgradable_list=$(echo "$upgradable_raw" | head -30)
 fi
@@ -647,6 +675,8 @@ cat > "$CVE_REPORT" << CVEEOF
   "timestamp": "${NOW}",
   "upgradable_total": ${upgradable_all},
   "upgradable_security": ${upgradable_security},
+  "upgradable_security_phased": ${upgradable_security_phased},
+  "upgradable_security_actionable": ${upgradable_security_actionable},
   "security_packages": $(echo "$security_list" | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]"),
   "all_upgradable": $(echo "$upgradable_list" | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]"),
   "auto_patches_applied": ${auto_patched},
@@ -696,6 +726,8 @@ cat > "$REPORT_FILE" << EOF
   "cve_monitoring": {
     "upgradable_total": ${upgradable_all},
     "upgradable_security": ${upgradable_security},
+    "upgradable_security_phased": ${upgradable_security_phased},
+    "upgradable_security_actionable": ${upgradable_security_actionable},
     "auto_patches_applied": ${auto_patched}
   },
   "network": {

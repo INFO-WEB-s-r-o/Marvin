@@ -567,7 +567,14 @@ if [[ -f "$LATEST_SCAN" ]] && jq empty "$LATEST_SCAN" 2>/dev/null; then
     scan_infected=$((rk_infected + ck_infected))
     world_writable=$(jq -r '.file_integrity.world_writable_count // 0' "$LATEST_SCAN" 2>/dev/null)
     [[ "$world_writable" =~ ^[0-9]+$ ]] || world_writable=0
-    sec_updates=$(jq -r '.cve_monitoring.upgradable_security // 0' "$LATEST_SCAN" 2>/dev/null)
+    # Score only ACTIONABLE pending security updates. A phased-deferred update
+    # is Ubuntu deliberately throttling a rollout — unattended-upgrades applies
+    # it automatically once this host's phase is reached — so it is not a
+    # hardening deficiency and should not dock the grade (same accuracy spirit
+    # as splitting rootkit_scan out of overall_status). Falls back to the total
+    # `upgradable_security` when the new actionable field is absent (older scan
+    # JSON), preserving prior behavior; then to 0.
+    sec_updates=$(jq -r '.cve_monitoring.upgradable_security_actionable // .cve_monitoring.upgradable_security // 0' "$LATEST_SCAN" 2>/dev/null)
     [[ "$sec_updates" =~ ^[0-9]+$ ]] || sec_updates=0
 
     if [[ "$scan_infected" -gt 0 ]]; then
