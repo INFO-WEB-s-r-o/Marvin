@@ -201,6 +201,44 @@ PORTEOF
 chmod 644 "$PORT_INVENTORY"
 marvin_validate_json_or_warn "$PORT_INVENTORY" "port-inventory" || true
 
+# ─── Shared: active Docker bridge subnet detection ───────────────────────────
+# Used by BOTH the suspicious-connection check (3b) and the outbound audit (3d)
+# so container↔container / docker-proxy↔container bridge traffic (e.g. the
+# Marvin-Brain + monitoring stacks talking on 172.18/172.19 to ports like 4317
+# OTEL-gRPC and 3100 marvin-brain-mcp) is not mislabeled as "unusual". Collected
+# once per run. Only skips subnets Docker actually uses, not the whole 172.16/12
+# range (fixes #591). Defined here (before 3b) rather than inside 3d so 3b can
+# reuse it — otherwise 3b flags the exact bridge traffic 3d correctly ignores.
+_docker_bridges=""
+if command -v docker &>/dev/null; then
+    _docker_bridges=$(docker network ls --format '{{.ID}}' 2>/dev/null \
+        | xargs -I{} docker network inspect {} --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null \
+        | tr ' ' '\n' | grep -E '^[0-9]+\.' | sort -u || true)
+fi
+
+# _ip_in_docker_cidr — check if an IP falls within any active Docker subnet
+# Uses bitwise arithmetic to support arbitrary prefix lengths (e.g. /16, /20, /24).
+_ip_in_docker_cidr() {
+    local IFS ip="$1" ip_a ip_b ip_c ip_d ip_int
+    # Guard: only process valid IPv4 addresses (reject IPv6, IPv4-mapped IPv6, malformed)
+    [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+    IFS='.' read -r ip_a ip_b ip_c ip_d <<< "$ip"
+    ip_d=${ip_d:-0}
+    ip_int=$(( (ip_a << 24) | (ip_b << 16) | (ip_c << 8) | ip_d ))
+    IFS=$' \t\n'   # reset before iterating — IFS='.' from read persists in local scope
+    local cidr net mask net_a net_b net_c net_d net_int mask_int
+    for cidr in $_docker_bridges; do
+        IFS='/' read -r net mask <<< "$cidr"
+        [[ "$mask" =~ ^[0-9]+$ && "$mask" -ge 1 && "$mask" -le 32 ]] || continue
+        IFS='.' read -r net_a net_b net_c net_d <<< "$net"
+        net_d=${net_d:-0}
+        net_int=$(( (net_a << 24) | (net_b << 16) | (net_c << 8) | net_d ))
+        mask_int=$(( 0xFFFFFFFF << (32 - mask) & 0xFFFFFFFF ))
+        [[ $(( ip_int & mask_int )) -eq $(( net_int & mask_int )) ]] && return 0
+    done
+    return 1
+}
+
 # ─── 3b. Active connection tracking & suspicious connection detection ─────────
 # Snapshot established connections and flag unusual destinations
 
@@ -240,6 +278,15 @@ if [[ -n "$established_output" ]]; then
         # false-positive WARN noise about "unusual remote ports".
         if [[ "$remote_ip" == "127.0.0.1" || "$remote_ip" == "::1" ]] \
             || [[ "$remote_ip" =~ ^127\. ]]; then
+            continue
+        fi
+
+        # Skip traffic to active Docker bridge subnets — container↔container and
+        # docker-proxy↔container traffic (Marvin-Brain/monitoring stacks) is not
+        # an outbound destination worth flagging. Mirrors the 3d outbound-audit
+        # skip; without it, ports like 4317 (OTEL-gRPC) and 3100 (marvin-brain-mcp)
+        # on 172.18/172.19 produce false-positive "unusual remote ports" WARNs.
+        if [[ -n "$_docker_bridges" ]] && _ip_in_docker_cidr "$remote_ip"; then
             continue
         fi
 
@@ -369,37 +416,8 @@ LOCAL_SERVICE_PORTS="22 25 80 443 465 587 993 3000 6379 8043 11332 11333 11334"
 
 outbound_output=$(ss -tnp state established 2>/dev/null || echo "")
 
-# Collect active Docker bridge CIDRs dynamically (fixes #591)
-# Only skip traffic to subnets actually in use by Docker, not the entire 172.16/12 range.
-_docker_bridges=""
-if command -v docker &>/dev/null; then
-    _docker_bridges=$(docker network ls --format '{{.ID}}' 2>/dev/null \
-        | xargs -I{} docker network inspect {} --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null \
-        | tr ' ' '\n' | grep -E '^[0-9]+\.' | sort -u || true)
-fi
-
-# _ip_in_docker_cidr — check if an IP falls within any active Docker subnet
-# Uses bitwise arithmetic to support arbitrary prefix lengths (e.g. /16, /20, /24).
-_ip_in_docker_cidr() {
-    local IFS ip="$1" ip_a ip_b ip_c ip_d ip_int
-    # Guard: only process valid IPv4 addresses (reject IPv6, IPv4-mapped IPv6, malformed)
-    [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
-    IFS='.' read -r ip_a ip_b ip_c ip_d <<< "$ip"
-    ip_d=${ip_d:-0}
-    ip_int=$(( (ip_a << 24) | (ip_b << 16) | (ip_c << 8) | ip_d ))
-    IFS=$' \t\n'   # reset before iterating — IFS='.' from read persists in local scope
-    local cidr net mask net_a net_b net_c net_d net_int mask_int
-    for cidr in $_docker_bridges; do
-        IFS='/' read -r net mask <<< "$cidr"
-        [[ "$mask" =~ ^[0-9]+$ && "$mask" -ge 1 && "$mask" -le 32 ]] || continue
-        IFS='.' read -r net_a net_b net_c net_d <<< "$net"
-        net_d=${net_d:-0}
-        net_int=$(( (net_a << 24) | (net_b << 16) | (net_c << 8) | net_d ))
-        mask_int=$(( 0xFFFFFFFF << (32 - mask) & 0xFFFFFFFF ))
-        [[ $(( ip_int & mask_int )) -eq $(( net_int & mask_int )) ]] && return 0
-    done
-    return 1
-}
+# Docker bridge detection (_docker_bridges + _ip_in_docker_cidr) is defined
+# once, before section 3b, and shared by both connection checks (fixes #591).
 
 if [[ -n "$outbound_output" ]]; then
     # Build outbound connection inventory: connections FROM this server TO remote hosts
