@@ -111,7 +111,14 @@ def analyze_claude(records):
     def task_summary(recs):
         durations = [r.get("duration_s") for r in recs if "duration_s" in r]
         out_chars = [r.get("output_chars") for r in recs if "output_chars" in r]
-        errors = sum(1 for r in recs if r.get("exit_code", 0) != 0)
+        # Exclude session-limit throttles (fail_reason=="session_limit"): benign
+        # subscription throttles that self-resolve, not failures. Keeps this metric
+        # consistent with log-alerting.sh §6 and weekly-analytics.sh. Pre-
+        # classification rows (no fail_reason) are still counted.
+        errors = sum(
+            1 for r in recs
+            if r.get("exit_code", 0) != 0 and r.get("fail_reason") != "session_limit"
+        )
         total_dur = sum(d for d in durations if isinstance(d, (int, float)))
         total_out = sum(c for c in out_chars if isinstance(c, (int, float)))
         summary = {
