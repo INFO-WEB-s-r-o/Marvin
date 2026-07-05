@@ -181,11 +181,18 @@ fi
 
 usage_file="${METRICS_DIR}/claude-usage-${TODAY}.jsonl"
 if [[ -f "$usage_file" ]]; then
-    failed_runs=$(jq -s '[.[] | select(.exit_code != 0)] | length' "$usage_file" 2>/dev/null || echo 0)
+    # Exclude session/usage-limit throttles: a "You've hit your session limit"
+    # exit is benign and self-resolving (the window rolls over on its own — see
+    # 2026-07-04, where 5 such exits tripped this alert and it auto-resolved once
+    # the limit reset at 14:30 UTC). run_claude() tags these fail_reason=
+    # "session_limit"; only genuine API/tooling errors should page here. The
+    # `(.fail_reason // "")` guard keeps pre-classification entries (no field →
+    # null) counted, so this never *hides* a real historical failure.
+    failed_runs=$(jq -s '[.[] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")] | length' "$usage_file" 2>/dev/null || echo 0)
     total_runs=$(wc -l < "$usage_file" 2>/dev/null || echo 0)
     if [[ "$failed_runs" -gt 2 ]]; then
-        # Get the most recent failure
-        last_fail=$(jq -s '[.[] | select(.exit_code != 0)] | last | .task // "unknown"' "$usage_file" 2>/dev/null || echo "unknown")
+        # Get the most recent genuine (non-throttle) failure
+        last_fail=$(jq -s '[.[] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")] | last | .task // "unknown"' "$usage_file" 2>/dev/null || echo "unknown")
         alert_id="claude-failures"
         NEW_ALERTS+=("$(_make_alert "$alert_id" "warning" "Claude API failures (${failed_runs}/${total_runs} runs)" "Last failed task: ${last_fail}" "$failed_runs")")
     fi
