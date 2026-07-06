@@ -143,8 +143,27 @@ ${prompt}"
     # (temp file cleanup handled by RETURN trap above)
     output=$(<"$output_file") || { marvin_log "ERROR" "Failed to read Claude output temp file: ${output_file}" >&2; output=""; }
 
+    # Classify *why* a run failed so downstream alerting can tell a benign,
+    # self-resolving subscription throttle ("You've hit your session limit ·
+    # resets …" — clears automatically when the usage window rolls over) apart
+    # from a genuine API/tooling error. Only meaningful when exit_code != 0.
+    # The generic WARN below is left EXACTLY as-is: lessons-learned.sh keys its
+    # `claude-exit-code-1-transient` expected-recurrence lesson on that string.
+    local fail_reason=""
     if [[ "$exit_code" -ne 0 ]]; then
         marvin_log "WARN" "Claude exited with code ${exit_code} for task: ${task_name}" >&2
+        # Match the throttle message's distinctive verb phrase ("You've hit your
+        # session limit ·"), not a bare "(session|usage) limit" substring: some
+        # tasks (e.g. log-analysis) feed raw log content into the prompt, and a
+        # genuine failure whose response merely echoes those words from the input
+        # must NOT be masked as a benign throttle in log-alerting.sh §6. Kept
+        # tolerant of apostrophe styling / leading whitespace (no strict ^ anchor).
+        if printf '%s' "$output" | grep -qiE 'hit your (session|usage) limit'; then
+            fail_reason="session_limit"
+            marvin_log "INFO" "Claude session/usage limit reached for ${task_name} — benign, resets automatically (not counted as an API failure)" >&2
+        else
+            fail_reason="error"
+        fi
     fi
 
     # Log the full interaction
@@ -179,7 +198,8 @@ EOF
         --argjson prompt_chars "$prompt_len" \
         --argjson output_chars "$output_len" \
         --argjson exit_code "$exit_code" \
-        '{timestamp: $ts, task: $task, duration_s: $duration, prompt_chars: $prompt_chars, output_chars: $output_chars, exit_code: $exit_code}' \
+        --arg fail_reason "$fail_reason" \
+        '{timestamp: $ts, task: $task, duration_s: $duration, prompt_chars: $prompt_chars, output_chars: $output_chars, exit_code: $exit_code, fail_reason: (if $fail_reason == "" then null else $fail_reason end)}' \
         >> "$usage_file" 2>/dev/null || true
 
     # Release the Claude concurrency lock

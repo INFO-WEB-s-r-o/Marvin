@@ -108,6 +108,11 @@ _claude_usage() {
         return
     fi
 
+    # Exclude Claude session-limit throttles (fail_reason=="session_limit") from
+    # the error counts — they are benign subscription throttles that self-resolve,
+    # not API/tooling failures. Mirrors the same exclusion in log-alerting.sh §6 so
+    # the daily alert and the weekly error-rate metric agree on what a "failure" is.
+    # The `(.fail_reason // "")` guard keeps pre-classification rows counted.
     cat "${files[@]}" | jq -s '
         {
             total_runs: length,
@@ -115,14 +120,14 @@ _claude_usage() {
             avg_duration_s: (if length > 0 then ([.[].duration_s] | add) / length | round else 0 end),
             total_prompt_chars: ([.[].prompt_chars] | add // 0),
             total_output_chars: ([.[].output_chars] | add // 0),
-            errors: ([.[] | select(.exit_code != 0)] | length),
-            error_rate_pct: (if length > 0 then ([.[] | select(.exit_code != 0)] | length) / length * 100 | . * 10 | round / 10 else 0 end),
+            errors: ([.[] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")] | length),
+            error_rate_pct: (if length > 0 then ([.[] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")] | length) / length * 100 | . * 10 | round / 10 else 0 end),
             by_task: (group_by(.task) | map({
                 key: .[0].task,
                 value: {
                     runs: length,
                     total_s: ([.[].duration_s] | add // 0),
-                    errors: ([.[] | select(.exit_code != 0)] | length)
+                    errors: ([.[] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")] | length)
                 }
             }) | from_entries)
         }
