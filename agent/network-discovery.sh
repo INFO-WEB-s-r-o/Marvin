@@ -215,14 +215,31 @@ $(grep -i "well-known\|ai-managed\|echo\|marvin" /var/log/nginx/access.log 2>/de
 \`\`\`
 "
     
+    # Capture the exit code instead of a bare `OUTPUT=$(run_claude ...)`: under
+    # `set -euo pipefail` + the ERR trap, a transient Claude failure (exit 1) or
+    # a lock timeout on cron overlap (exit 2) would otherwise fire the trap, log
+    # a spurious `network-discovery.sh:NNN — command failed (exit 1)` ERROR, and
+    # kill the script mid-run — which crashed it on 2026-07-02 and skipped the
+    # peer trust scoring (section 5) entirely. Mirrors the github-interact.sh /
+    # hourly-check.sh handler, but here the Claude call is only section 4 of a
+    # larger script: on failure we skip writing the analysis yet still fall
+    # through to trust scoring rather than exiting. See lessons
+    # claude-exit-code-1-transient and claude-lock-timeout-expected-on-cron-overlap.
+    export CLAUDE_LOCK_TIMEOUT=60
     OUTPUT=$(run_claude "network-discovery" "${DISCOVERY_PROMPT}
 
-${CONTEXT}")
-    
-    echo "" >> "$COMM_LOG"
-    echo "## Claude's Analysis" >> "$COMM_LOG"
-    # Anonymize IP addresses before writing to public log (privacy, issue #70)
-    printf '%s\n' "$OUTPUT" | anonymize_ips >> "$COMM_LOG"
+${CONTEXT}") && CLAUDE_RC=0 || CLAUDE_RC=$?
+
+    if [[ "$CLAUDE_RC" -eq 0 && -n "$OUTPUT" ]]; then
+        echo "" >> "$COMM_LOG"
+        echo "## Claude's Analysis" >> "$COMM_LOG"
+        # Anonymize IP addresses before writing to public log (privacy, issue #70)
+        printf '%s\n' "$OUTPUT" | anonymize_ips >> "$COMM_LOG"
+    elif [[ "$CLAUDE_RC" -eq 2 ]]; then
+        marvin_log "INFO" "network-discovery Claude skipped — lock held by another task; continuing to trust scoring"
+    else
+        marvin_log "WARN" "network-discovery Claude exit ${CLAUDE_RC} — skipping analysis; continuing to trust scoring"
+    fi
 fi
 
 # =============================================================================
