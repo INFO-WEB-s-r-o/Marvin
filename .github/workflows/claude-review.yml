@@ -30,7 +30,7 @@ jobs:
           claude_args: >-
             --allowedTools
             "Read,Glob,Grep,
-            Bash(gh pr view:*),Bash(gh pr diff:*),
+            Bash(gh pr diff:*),
             mcp__github__get_pull_request,
             mcp__github__get_pull_request_diff,
             mcp__github__get_pull_request_files,
@@ -54,7 +54,7 @@ jobs:
               and `mcp__github__*` call — e.g. `gh pr diff ${{ github.event.pull_request.number }}`,
               or mcp__github__get_pull_request_diff with pullNumber=${{ github.event.pull_request.number }}.
               Do NOT rely on the checked-out git branch: `actions/checkout` leaves a detached
-              HEAD on `pull_request` events, so a bare `gh pr view` / `gh pr diff` with no
+              HEAD on `pull_request` events, so a bare `gh pr diff` with no
               number fails with "could not determine current branch".
             - Run each shell command on its own — do NOT pipe or chain commands (no `|`,
               `;`, or `&&`), because the action requires separate approval for each part
