@@ -38,8 +38,7 @@ jobs:
             mcp__github__get_commit,
             mcp__github__add_issue_comment,
             mcp__github__create_issue,
-            mcp__github__list_issues,
-            mcp__github__list_pull_requests"
+            mcp__github__list_issues"
           prompt: |
             Review this pull request following the guidelines in .github/CLAUDE.md.
             Perform both a code review and a security review.
@@ -58,5 +57,7 @@ jobs:
             - Post your complete review as a PR comment with the
               mcp__github__add_issue_comment tool (issue_number = this PR's number). Do not
               post the review via `gh pr comment`; the structured tool is reliable headless.
-            - If you find any Critical or Warning issues, open GitHub issues for them with
-              mcp__github__create_issue and link them in your review comment.
+            - If you find any Critical or Warning issues, first check for an existing
+              open issue with mcp__github__list_issues so you do not file a duplicate,
+              then open a GitHub issue for each new finding with mcp__github__create_issue
+              and link it in your review comment.
