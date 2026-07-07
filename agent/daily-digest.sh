@@ -82,13 +82,23 @@ usage_file="${METRICS_DIR}/claude-usage-${TODAY}.jsonl"
 claude_runs=0
 claude_total_duration=0
 claude_errors=0
+claude_throttles=0
 claude_tasks_json='[]'
 
 if [[ -f "$usage_file" ]]; then
     claude_runs=$(wc -l < "$usage_file")
     claude_total_duration=$(jq -s '[.[].duration_s] | add // 0' "$usage_file" 2>/dev/null || echo 0)
-    claude_errors=$(jq -s '[.[] | select(.exit_code != 0)] | length' "$usage_file" 2>/dev/null || echo 0)
-    claude_tasks_json=$(jq -s 'group_by(.task) | map({task: .[0].task, runs: length, total_duration_s: ([.[].duration_s] | add), errors: ([.[] | select(.exit_code != 0)] | length)}) | sort_by(-.runs)' "$usage_file" 2>/dev/null || echo '[]')
+    # Genuine failures exclude session_limit throttles — benign, self-resolving
+    # subscription throttles that clear when the usage window rolls over (see the
+    # fail_reason classification in run_claude(), 2026-07-05). This matches the
+    # failure definition already used by log-alerting.sh §6 and weekly-analytics.sh,
+    # so the daily digest no longer over-reports Claude errors on a throttle day.
+    # The `(.fail_reason // "")` guard keeps pre-classification rows (null/absent
+    # field) counted as errors, so no genuine historical failure is ever hidden.
+    claude_errors=$(jq -s '[.[] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")] | length' "$usage_file" 2>/dev/null || echo 0)
+    # Separate visibility for throttles (does not page — surfaced for awareness only).
+    claude_throttles=$(jq -s '[.[] | select((.fail_reason // "") == "session_limit")] | length' "$usage_file" 2>/dev/null || echo 0)
+    claude_tasks_json=$(jq -s 'group_by(.task) | map({task: .[0].task, runs: length, total_duration_s: ([.[].duration_s] | add), errors: ([.[] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")] | length)}) | sort_by(-.runs)' "$usage_file" 2>/dev/null || echo '[]')
 fi
 
 # ─── Health status summary ───────────────────────────────────────────────────
@@ -140,6 +150,7 @@ jq -n \
     --argjson claude_runs "$claude_runs" \
     --argjson claude_duration "$claude_total_duration" \
     --argjson claude_errors "$claude_errors" \
+    --argjson claude_throttles "$claude_throttles" \
     --argjson claude_tasks "$claude_tasks_json" \
     --argjson health_checks "$total_checks" \
     --argjson anomaly_count "$anomaly_count" \
@@ -159,6 +170,7 @@ jq -n \
             total_runs: $claude_runs,
             total_duration_s: $claude_duration,
             error_runs: $claude_errors,
+            session_limit_throttles: $claude_throttles,
             by_task: $claude_tasks
         },
         health: {
