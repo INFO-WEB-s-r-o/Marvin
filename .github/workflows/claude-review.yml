@@ -40,7 +40,8 @@ jobs:
             mcp__github__get_file_contents,
             mcp__github__get_commit"
           prompt: |
-            Review this pull request following the guidelines in .github/CLAUDE.md.
+            Review pull request #${{ github.event.pull_request.number }} in the repository ${{ github.repository }}, following the guidelines in .github/CLAUDE.md.
+            Use that PR number and repository for every `gh pr ...` and `mcp__github__*` call (e.g. `gh pr diff ${{ github.event.pull_request.number }}`, or `mcp__github__get_pull_request_diff` with pullNumber=${{ github.event.pull_request.number }}). Do NOT rely on the checked-out git branch: `actions/checkout` leaves a detached HEAD on `pull_request` events, so a bare `gh pr view` / `gh pr diff` with no number fails with "could not determine current branch".
             Perform both a code review and a security review.
             Be concise. Use severity labels: Critical, Warning, Suggestion, Good.
             When done, post your complete review as a comment on this pull request using `gh pr comment`.
