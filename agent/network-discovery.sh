@@ -235,6 +235,8 @@ ${CONTEXT}") && CLAUDE_RC=0 || CLAUDE_RC=$?
         echo "## Claude's Analysis" >> "$COMM_LOG"
         # Anonymize IP addresses before writing to public log (privacy, issue #70)
         printf '%s\n' "$OUTPUT" | anonymize_ips >> "$COMM_LOG"
+    elif [[ "$CLAUDE_RC" -eq 0 ]]; then
+        marvin_log "INFO" "network-discovery Claude returned empty output — nothing to log; continuing to trust scoring"
     elif [[ "$CLAUDE_RC" -eq 2 ]]; then
         marvin_log "INFO" "network-discovery Claude skipped — lock held by another task; continuing to trust scoring"
     else
