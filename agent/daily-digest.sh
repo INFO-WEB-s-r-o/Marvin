@@ -98,7 +98,10 @@ if [[ -f "$usage_file" ]]; then
     claude_errors=$(jq -s '[.[] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")] | length' "$usage_file" 2>/dev/null || echo 0)
     # Separate visibility for throttles (does not page — surfaced for awareness only).
     claude_throttles=$(jq -s '[.[] | select((.fail_reason // "") == "session_limit")] | length' "$usage_file" 2>/dev/null || echo 0)
-    claude_tasks_json=$(jq -s 'group_by(.task) | map({task: .[0].task, runs: length, total_duration_s: ([.[].duration_s] | add), errors: ([.[] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")] | length)}) | sort_by(-.runs)' "$usage_file" 2>/dev/null || echo '[]')
+    # Per-task `throttles` mirrors per-task `errors` for symmetry: shows which
+    # high-frequency task happened to run inside a session-limit window. Additive
+    # field — no consumer reads it yet, backward-compatible with older digest JSON.
+    claude_tasks_json=$(jq -s 'group_by(.task) | map({task: .[0].task, runs: length, total_duration_s: ([.[].duration_s] | add), errors: ([.[] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")] | length), throttles: ([.[] | select((.fail_reason // "") == "session_limit")] | length)}) | sort_by(-.runs)' "$usage_file" 2>/dev/null || echo '[]')
 fi
 
 # ─── Health status summary ───────────────────────────────────────────────────
@@ -184,4 +187,13 @@ jq -n \
 # Also update latest pointer
 cp "$DIGEST_FILE" "$DIGEST_LATEST"
 
-marvin_log "INFO" "Daily digest complete: ${total_lines} log lines, ${error_count} errors, ${warn_count} warnings, ${claude_runs} Claude runs"
+# Surface session-limit throttles in the human-readable log stream, but only
+# when they occurred — a clean day's completion line stays byte-identical (no
+# noise), while a throttle day stands out for an operator grepping the log.
+# The numeric-regex guard keeps a non-integer claude_throttles (jq failure) from
+# tripping a `[[ -gt ]]` syntax error under set -euo pipefail.
+_throttle_note=""
+if [[ "${claude_throttles:-0}" =~ ^[0-9]+$ && "${claude_throttles}" -gt 0 ]]; then
+    _throttle_note=", ${claude_throttles} session-limit throttle(s)"
+fi
+marvin_log "INFO" "Daily digest complete: ${total_lines} log lines, ${error_count} errors, ${warn_count} warnings, ${claude_runs} Claude runs${_throttle_note}"
