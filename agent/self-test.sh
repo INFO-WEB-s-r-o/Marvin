@@ -449,6 +449,29 @@ for _pair in "${_systemd_drift_pairs[@]}"; do
     fi
 done
 
+# certbot deploy hook: reloads dovecot/postfix/nginx after a cert renewal so a
+# long-running service can't keep serving a stale in-memory cert (the 2026-07-08
+# IMAPS incident — dovecot served a cert 13 days from expiry while the on-disk
+# cert had 73 days left). Installed by bootstrap.sh from the tracked source;
+# this diff catches a hand-edited live hook the source never learns about.
+# Same WARN-only, read-only-diff contract as the pairs above. Only flagged when
+# both exist — a host without SSL configured has no live hook and is skipped.
+_deployhook_drift_pairs=(
+    "${MARVIN_DIR}/setup/letsencrypt-deploy-hook.sh /etc/letsencrypt/renewal-hooks/deploy/reload-services.sh letsencrypt-deploy-hook"
+)
+for _pair in "${_deployhook_drift_pairs[@]}"; do
+    read -r _src _live _label <<< "$_pair"
+    if [[ ! -f "$_src" ]]; then
+        test_warn "config drift: ${_label} source missing (${_src})"
+    elif [[ ! -f "$_live" ]]; then
+        test_warn "config drift: ${_label} live hook not present (${_live})"
+    elif diff -q "$_src" "$_live" >/dev/null 2>&1; then
+        test_pass "config in sync: ${_label}"
+    else
+        test_warn "config drift: ${_label} — ${_src} differs from live ${_live} (reconcile before next deploy/bootstrap)"
+    fi
+done
+
 # cron: extract the /etc/cron.d/marvin heredoc that setup-cron.sh would write
 # and diff it against the live file. The heredoc delimiter is single-quoted
 # ('EOF'), so ${MARVIN_DIR} stays literal in both — a byte-for-byte comparison
