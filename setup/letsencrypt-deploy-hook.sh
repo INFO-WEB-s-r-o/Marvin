@@ -28,7 +28,13 @@
 # already renewed, and masking that behind a non-zero hook (which certbot would
 # report as a renewal failure) helps no one. nginx config is validated before
 # reload so a pre-existing bad config can never take the web server down here.
-set -uo pipefail
+#
+# NOTE ON `-e`: the never-fail contract is enforced by the explicit `exit 0` and
+# the fact that every command below is a plain assignment or lives inside an
+# `if`/`||` guard (so `_reload` always returns 0). `-e` therefore cannot trip the
+# hook; it is kept only to match the project convention `set -euo pipefail` and
+# to catch a genuinely unguarded mistake in any future edit.
+set -euo pipefail
 
 _marvin_log="/home/marvin/git/data/logs/$(date -u +%Y-%m-%d).log"
 
