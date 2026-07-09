@@ -36,7 +36,12 @@
 # to catch a genuinely unguarded mistake in any future edit.
 set -euo pipefail
 
-_marvin_log="/home/marvin/git/data/logs/$(date -u +%Y-%m-%d).log"
+# Bind the log path to MARVIN_DIR (project convention) with the same
+# standalone-safe fallback the sibling setup scripts use — this hook runs
+# under certbot before common.sh can be sourced, so it can't rely on the
+# exported value being present.
+_marvin_dir="${MARVIN_DIR:-/home/marvin/git}"
+_marvin_log="${_marvin_dir}/data/logs/$(date -u +%Y-%m-%d).log"
 
 _log() {
     local level="$1"; shift
