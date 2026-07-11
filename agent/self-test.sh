@@ -407,6 +407,23 @@ fi
 
 marvin_log "INFO" "Self-test: checking source ⇆ live config drift"
 
+# Shared drift check for a single source⇆live pair (WARN-only, read-only diff).
+# Extracted so the nginx/systemd/deploy-hook checks below share one body and
+# can't silently drift apart. Only flagged when the source exists; a live file
+# absent on this host (config not installed) is informational, not a failure.
+_check_config_drift() {
+    local _src="$1" _live="$2" _label="$3"
+    if [[ ! -f "$_src" ]]; then
+        test_warn "config drift: ${_label} source missing (${_src})"
+    elif [[ ! -f "$_live" ]]; then
+        test_warn "config drift: ${_label} live copy not present (${_live})"
+    elif diff -q "$_src" "$_live" >/dev/null 2>&1; then
+        test_pass "config in sync: ${_label}"
+    else
+        test_warn "config drift: ${_label} — ${_src} differs from live ${_live} (reconcile before next deploy/bootstrap)"
+    fi
+}
+
 # nginx: (repo-source live-installed label) — only flagged when both exist.
 _nginx_drift_pairs=(
     "${MARVIN_DIR}/setup/nginx-site.conf /etc/nginx/sites-available/marvin nginx-site"
@@ -415,16 +432,7 @@ _nginx_drift_pairs=(
 )
 for _pair in "${_nginx_drift_pairs[@]}"; do
     read -r _src _live _label <<< "$_pair"
-    if [[ ! -f "$_src" ]]; then
-        test_warn "config drift: ${_label} source missing (${_src})"
-    elif [[ ! -f "$_live" ]]; then
-        # Live file absent (e.g. config not installed on this host) — informational only.
-        test_warn "config drift: ${_label} live config not present (${_live})"
-    elif diff -q "$_src" "$_live" >/dev/null 2>&1; then
-        test_pass "config in sync: ${_label}"
-    else
-        test_warn "config drift: ${_label} — ${_src} differs from live ${_live} (reconcile before next deploy/bootstrap)"
-    fi
+    _check_config_drift "$_src" "$_live" "$_label"
 done
 
 # systemd: the marvin-web unit runs the entire dashboard but lived ONLY on the
@@ -438,15 +446,22 @@ _systemd_drift_pairs=(
 )
 for _pair in "${_systemd_drift_pairs[@]}"; do
     read -r _src _live _label <<< "$_pair"
-    if [[ ! -f "$_src" ]]; then
-        test_warn "config drift: ${_label} source missing (${_src})"
-    elif [[ ! -f "$_live" ]]; then
-        test_warn "config drift: ${_label} live unit not present (${_live})"
-    elif diff -q "$_src" "$_live" >/dev/null 2>&1; then
-        test_pass "config in sync: ${_label}"
-    else
-        test_warn "config drift: ${_label} — ${_src} differs from live ${_live} (reconcile before next deploy/bootstrap)"
-    fi
+    _check_config_drift "$_src" "$_live" "$_label"
+done
+
+# certbot deploy hook: reloads dovecot/postfix/nginx after a cert renewal so a
+# long-running service can't keep serving a stale in-memory cert (the 2026-07-08
+# IMAPS incident — dovecot served a cert 13 days from expiry while the on-disk
+# cert had 73 days left). Installed by bootstrap.sh from the tracked source;
+# this diff catches a hand-edited live hook the source never learns about.
+# Same WARN-only, read-only-diff contract as the pairs above. Only flagged when
+# both exist — a host without SSL configured has no live hook and is skipped.
+_deployhook_drift_pairs=(
+    "${MARVIN_DIR}/setup/letsencrypt-deploy-hook.sh /etc/letsencrypt/renewal-hooks/deploy/reload-services.sh letsencrypt-deploy-hook"
+)
+for _pair in "${_deployhook_drift_pairs[@]}"; do
+    read -r _src _live _label <<< "$_pair"
+    _check_config_drift "$_src" "$_live" "$_label"
 done
 
 # cron: extract the /etc/cron.d/marvin heredoc that setup-cron.sh would write
