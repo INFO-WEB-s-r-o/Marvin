@@ -210,8 +210,25 @@ FULL_PROMPT="${ENHANCE_PROMPT}
 
 ${SELF_CONTEXT}"
 
-# Run Claude for self-enhancement
-OUTPUT=$(run_claude "self-enhance" "$FULL_PROMPT")
+# Run Claude for self-enhancement. Up to 2 retries on transient exit=1 with
+# escalating backoff — self-enhance runs once per day, so a single transient
+# API error / stochastic classifier rejection would otherwise lose the whole
+# day's enhancement. Crucially, a bare `OUTPUT=$(run_claude ...)` under
+# `set -euo pipefail` + the ERR trap does not just skip — it fires
+# marvin_error_trap and kills the session before the rollback/validation logic
+# below can run (exactly what happened 2026-07-10T08:00:11Z at :214). Capture
+# the exit code and skip gracefully instead — same pattern as morning-check.sh
+# (retry) and hourly-check.sh (graceful skip). On failure Claude applied no
+# changes (the request is rejected before any work), so there is nothing to
+# roll back; the next daily run retries.
+CLAUDE_EXIT=0
+OUTPUT=$(run_claude_with_retry "self-enhance" "$FULL_PROMPT" 2) || CLAUDE_EXIT=$?
+
+if [[ $CLAUDE_EXIT -ne 0 ]]; then
+    marvin_log "WARN" "Claude run failed (exit=${CLAUDE_EXIT}) — skipping this self-enhance cycle (no changes applied; next daily run retries)"
+    marvin_log "INFO" "=== SELF-ENHANCEMENT COMPLETE (SKIPPED — transient Claude failure) ==="
+    exit 0
+fi
 
 # ─── Post-enhancement validation ────────────────────────────────────────────
 # If Claude's changes broke any scripts, roll back automatically
