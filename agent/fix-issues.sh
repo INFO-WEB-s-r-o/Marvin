@@ -214,7 +214,18 @@ marvin_log "INFO" "Working on branch: ${BRANCH}"
 # ─── Run Claude ──────────────────────────────────────────────────────────────
 
 marvin_log "INFO" "Asking Claude to fix an issue..."
-OUTPUT=$(run_claude "fix-issues" "$FULL_PROMPT")
+# Capture the exit code instead of a bare `OUTPUT=$(run_claude ...)`: under
+# `set -euo pipefail` + the ERR trap, a transient Claude exit 1 (the documented
+# claude-exit-code-1-transient condition) or a lock timeout (exit 2) would fire
+# the trap and kill the script before it can skip gracefully. fix-issues runs
+# every 2h, so the next cron cycle is a cheap retry — no in-run retry needed
+# (matches the hourly-check.sh precedent). The EXIT cleanup trap returns to
+# clean main, so the fix branch created above is torn down on this early exit.
+OUTPUT=$(run_claude "fix-issues" "$FULL_PROMPT") && CLAUDE_RC=0 || CLAUDE_RC=$?
+if [[ "$CLAUDE_RC" -ne 0 ]]; then
+    marvin_log "WARN" "fix-issues Claude exit ${CLAUDE_RC} — skipping this cycle (next 2-hourly run is a cheap retry)"
+    exit 0
+fi
 
 # ─── Check for changes ──────────────────────────────────────────────────────
 
