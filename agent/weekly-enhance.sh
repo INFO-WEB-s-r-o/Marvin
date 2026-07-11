@@ -265,8 +265,20 @@ Write a brief plan: what should next week's daily enhancement sessions focus on?
 cd "${MARVIN_DIR}"
 git stash --include-untracked -m "pre-enhance-weekly-${TIMESTAMP}" 2>/dev/null || true
 
-# Run Claude for deep enhancement
-OUTPUT=$(run_claude "weekly-deep-enhance" "$DEEP_PROMPT")
+# Run Claude for deep enhancement.
+# Guard the exit code instead of a bare `OUTPUT=$(run_claude ...)`: under
+# `set -euo pipefail` + the ERR trap, a transient Claude exit 1 (the documented
+# claude-exit-code-1-transient condition) would fire the trap and kill the
+# session before the post-enhance validation/rollback below can run. This task
+# runs only Sundays 12:00 UTC, so a crash here loses a full week — the highest
+# cost of any run_claude call site — so retry before giving up, then skip
+# gracefully. Mirrors morning-check.sh (#821, #822).
+CLAUDE_EXIT=0
+OUTPUT=$(run_claude_with_retry "weekly-deep-enhance" "$DEEP_PROMPT" 2) || CLAUDE_EXIT=$?
+if [[ $CLAUDE_EXIT -ne 0 ]]; then
+    marvin_log "WARN" "Claude run failed (exit=${CLAUDE_EXIT}) — skipping this week's deep enhancement cycle (next run is next Sunday)"
+    exit 0
+fi
 
 # Save the weekly report
 WEEKLY_REPORT="${ENHANCE_DIR}/weekly-${TODAY}.md"
