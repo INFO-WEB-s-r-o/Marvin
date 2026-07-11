@@ -222,6 +222,10 @@ marvin_log "INFO" "Asking Claude to fix an issue..."
 # (matches the hourly-check.sh precedent). The EXIT cleanup trap returns to
 # clean main, so the fix branch created above is torn down on this early exit.
 OUTPUT=$(run_claude "fix-issues" "$FULL_PROMPT") && CLAUDE_RC=0 || CLAUDE_RC=$?
+if [[ "$CLAUDE_RC" -eq 2 ]]; then
+    marvin_log "INFO" "fix-issues skipped — Claude lock held by another task; next 2-hourly run will catch up"
+    exit 0
+fi
 if [[ "$CLAUDE_RC" -ne 0 ]]; then
     marvin_log "WARN" "fix-issues Claude exit ${CLAUDE_RC} — skipping this cycle (next 2-hourly run is a cheap retry)"
     exit 0
