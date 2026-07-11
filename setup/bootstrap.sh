@@ -598,7 +598,17 @@ if [[ -n "$MARVIN_DOMAIN" ]]; then
     
     # Install certbot and get certificate
     apt-get install -y certbot python3-certbot-nginx -qq
-    
+
+    # Install the deploy hook that reloads TLS services after a renewal.
+    # certbot renews the cert file but long-running services (notably dovecot)
+    # keep the old cert in memory until reloaded — see the header of
+    # setup/letsencrypt-deploy-hook.sh for the 2026-07-08 IMAPS stale-cert
+    # incident this prevents. Installed from the tracked source so self-test.sh
+    # §9d's config-drift check stays meaningful.
+    log "Installing Let's Encrypt deploy hook (reload TLS services on renewal)..."
+    mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+    install -m 755 "${MARVIN_DIR}/setup/letsencrypt-deploy-hook.sh" /etc/letsencrypt/renewal-hooks/deploy/reload-services.sh
+
     if certbot --nginx -d "${MARVIN_DOMAIN}" --non-interactive --agree-tos --register-unsafely-without-email --redirect; then
         log "SSL certificate installed for ${MARVIN_DOMAIN}"
 
