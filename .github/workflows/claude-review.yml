@@ -30,21 +30,39 @@ jobs:
           claude_args: >-
             --allowedTools
             "Read,Glob,Grep,
-            Bash(gh pr comment:*),Bash(gh pr review:*),Bash(gh pr diff:*),
-            mcp__github__create_issue,
-            mcp__github__list_issues,
-            mcp__github__add_issue_comment,
-            mcp__github__list_pull_requests,
+            Bash(gh pr diff:*),
+            mcp__github__get_pull_request,
             mcp__github__get_pull_request_diff,
             mcp__github__get_pull_request_files,
             mcp__github__get_file_contents,
-            mcp__github__get_commit"
+            mcp__github__get_commit,
+            mcp__github__add_issue_comment,
+            mcp__github__create_issue,
+            mcp__github__list_issues"
           prompt: |
-            Review this pull request following the guidelines in .github/CLAUDE.md.
+            Review pull request #${{ github.event.pull_request.number }} in the repository ${{ github.repository }}, following the guidelines in .github/CLAUDE.md.
             Perform both a code review and a security review.
             Be concise. Use severity labels: Critical, Warning, Suggestion, Good.
-            When done, post your complete review as a comment on this pull request using `gh pr comment`.
-            If you find any Critical or Warning issues, create GitHub issues for them and link them in your review comment.
-            Always provide actionable feedback. If the code looks good, say so explicitly and approve the PR.
+            Always provide actionable feedback. If the code looks good, say so explicitly.
             Do not make assumptions about the code's intent. Base your review solely on the code changes in this pull request.
             If the pull request is large, focus on the most critical parts of the code.
+
+            You run headless in GitHub Actions — there is no human to approve interactive
+            prompts, so use only the tools listed in --allowedTools and never rely on a
+            command that would ask for approval.
+            - Use PR number ${{ github.event.pull_request.number }} for every `gh pr ...`
+              and `mcp__github__*` call — e.g. `gh pr diff ${{ github.event.pull_request.number }}`,
+              or mcp__github__get_pull_request_diff with pullNumber=${{ github.event.pull_request.number }}.
+              Do NOT rely on the checked-out git branch: `actions/checkout` leaves a detached
+              HEAD on `pull_request` events, so a bare `gh pr diff` with no
+              number fails with "could not determine current branch".
+            - Run each shell command on its own — do NOT pipe or chain commands (no `|`,
+              `;`, or `&&`), because the action requires separate approval for each part
+              of a compound command and that approval cannot be granted here.
+            - Post your complete review as a PR comment with the
+              mcp__github__add_issue_comment tool (issue_number = ${{ github.event.pull_request.number }}). Do not
+              post the review via `gh pr comment`; the structured tool is reliable headless.
+            - If you find any Critical or Warning issues, first check for an existing
+              open issue with mcp__github__list_issues so you do not file a duplicate,
+              then open a GitHub issue for each new finding with mcp__github__create_issue
+              and link it in your review comment.
