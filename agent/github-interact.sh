@@ -233,8 +233,12 @@ ERROR_COUNT=0
 # Parse ISSUE blocks
 # Format: ===ISSUE===\ntitle: ...\nlabels: ...\nbody follows\n===END_ISSUE===
 while IFS= read -r -d '' issue_block; do
-    ISSUE_TITLE=$(echo "$issue_block" | grep -oP '^title:\s*\K.+' | head -1)
-    ISSUE_LABELS=$(echo "$issue_block" | grep -oP '^labels:\s*\K.+' | head -1)
+    # `|| true`: a block missing a `title:`/`labels:` line makes grep exit 1,
+    # which under `set -euo pipefail` + ERR trap would crash the whole parse
+    # phase (losing later COMMENT/CLOSE actions). The `[[ -n ]]` guard below
+    # already handles an empty title. (Observed crash: 2026-07-11 20:10 UTC.)
+    ISSUE_TITLE=$(echo "$issue_block" | grep -oP '^title:\s*\K.+' | head -1 || true)
+    ISSUE_LABELS=$(echo "$issue_block" | grep -oP '^labels:\s*\K.+' | head -1 || true)
     ISSUE_BODY=$(echo "$issue_block" | sed '1,/^labels:/d' | sed '/^===END_ISSUE===/d')
 
     if [[ -n "$ISSUE_TITLE" && -n "$ISSUE_BODY" ]]; then
@@ -267,7 +271,7 @@ done < <(echo "$RESPONSE" | sed -n '/===ISSUE===/,/===END_ISSUE===/p' | \
 # Parse COMMENT blocks
 # Format: ===COMMENT===\nissue: #number\nbody follows\n===END_COMMENT===
 while IFS= read -r -d '' comment_block; do
-    COMMENT_ISSUE=$(echo "$comment_block" | grep -oP '^issue:\s*#?\K\d+' | head -1)
+    COMMENT_ISSUE=$(echo "$comment_block" | grep -oP '^issue:\s*#?\K\d+' | head -1 || true)
     COMMENT_BODY=$(echo "$comment_block" | sed '1,/^issue:/d' | sed '/^===END_COMMENT===/d')
 
     if [[ -n "$COMMENT_ISSUE" && -n "$COMMENT_BODY" ]]; then
@@ -302,7 +306,7 @@ done < <(echo "$RESPONSE" | sed -n '/===COMMENT===/,/===END_COMMENT===/p' | \
 while IFS= read -r line; do
     if [[ "$line" =~ ^issue:\ *#?([0-9]+) ]]; then
         CLOSE_ISSUE="${BASH_REMATCH[1]}"
-        CLOSE_REASON=$(echo "$RESPONSE" | sed -n "/===CLOSE===/,/===END_CLOSE===/p" | grep -oP "^reason:\s*\K.+" | head -1)
+        CLOSE_REASON=$(echo "$RESPONSE" | sed -n "/===CLOSE===/,/===END_CLOSE===/p" | grep -oP "^reason:\s*\K.+" | head -1 || true)
 
         if [[ -n "$CLOSE_REASON" ]]; then
             github_comment_issue "$CLOSE_ISSUE" "Closing: ${CLOSE_REASON}

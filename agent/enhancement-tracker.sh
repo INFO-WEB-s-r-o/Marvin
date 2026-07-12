@@ -44,7 +44,10 @@ while IFS= read -r file; do
     fi
 
     # Extract date for weekly grouping (handles both "YYYY-MM-DD-*.md" and "sync-learn-YYYY-MM-DD-*.md")
-    file_date=$(echo "$fname" | grep -oP '\d{4}-\d{2}-\d{2}' | head -1)
+    # `|| true`: a report filename without a date makes grep exit 1, which
+    # under `set -euo pipefail` + ERR trap would abort the tracker before the
+    # `[[ -n "$file_date" ]]` guard below (which already handles empty).
+    file_date=$(echo "$fname" | grep -oP '\d{4}-\d{2}-\d{2}' | head -1 || true)
     if [[ -n "$file_date" && "$file_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
         # ISO week number
         week_key=$(date -d "$file_date" +%G-W%V 2>/dev/null || echo "unknown")
