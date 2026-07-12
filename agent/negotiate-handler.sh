@@ -170,7 +170,23 @@ Active negotiations: $(cat "$NEGOTIATIONS_FILE" | jq '.total // 0')
 
 Respond ONLY with the JSON response object. No markdown fences, no explanation."
 
-    raw_output=$(run_claude "negotiate-${negotiation_id}" "$full_prompt")
+    # Capture the exit code instead of a bare `raw_output=$(run_claude ...)`:
+    # under `set -euo pipefail` + the `marvin_error_trap ERR` (lines 8/10), a
+    # transient Claude exit 1 (or lock-timeout exit 2 on cron overlap) would
+    # otherwise trip the ERR trap and kill the whole negotiation session
+    # mid-loop. Skip just this one request instead and leave "$request_file" in
+    # place so the next cron cycle retries it. Mirrors the guard merged for the
+    # other run_claude sites (#814/#821/#823). See lessons
+    # claude-exit-code-1-transient and claude-lock-timeout-expected-on-cron-overlap.
+    raw_output=$(run_claude "negotiate-${negotiation_id}" "$full_prompt") && CLAUDE_RC=0 || CLAUDE_RC=$?
+    if [[ "$CLAUDE_RC" -ne 0 ]]; then
+        if [[ "$CLAUDE_RC" -eq 2 ]]; then
+            marvin_log "INFO" "negotiate-${negotiation_id}: Claude lock timeout (exit 2) — leaving request for next cycle"
+        else
+            marvin_log "WARN" "negotiate-${negotiation_id}: Claude exited ${CLAUDE_RC} — skipping this request, will retry next cycle"
+        fi
+        continue
+    fi
 
     # Extract JSON response
     response_json=$(echo "$raw_output" | sed -n '/^{/,/^}/p' | head -100)
