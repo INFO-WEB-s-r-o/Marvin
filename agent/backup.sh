@@ -268,7 +268,10 @@ if [[ ${#_all_backups[@]} -gt $DAILY_RETENTION ]]; then
     for (( i = DAILY_RETENTION; i < ${#_all_backups[@]}; i++ )); do
         _bfile="${_all_backups[$i]}"
         # Extract date from filename: marvin-backup-YYYYMMDD-HHMMSS.tar.gz
-        _bdate=$(basename "$_bfile" | grep -oP '\d{8}' | head -1)
+        # `|| true`: a stray file without an 8-digit date makes grep exit 1,
+        # which under `set -euo pipefail` + ERR trap would abort the whole
+        # rotation. The `[[ -z ]]` guard below already prunes such files.
+        _bdate=$(basename "$_bfile" | grep -oP '\d{8}' | head -1 || true)
         if [[ -z "$_bdate" ]]; then
             rm -f "$_bfile" && _cleaned=$((_cleaned + 1))
             continue
