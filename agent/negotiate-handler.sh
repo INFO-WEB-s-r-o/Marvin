@@ -16,6 +16,19 @@ PROMPT_FILE="${PROMPTS_DIR}/negotiate.md"
 RATE_LIMIT_FILE="${COMMS_DIR}/negotiate-rate.json"
 MAX_PER_IP_PER_DAY=5
 
+# Charge one request against a peer's daily rate budget. Call this ONLY when a
+# request is genuinely consumed — i.e. right before we `rm -f "$request_file"`
+# to reject or answer it — never on the paths that leave the file in the inbox
+# for a retry (Claude unavailable / transient exit). Otherwise a peer hitting a
+# transient Claude failure would have their counter incremented once per retry
+# cycle and burn their MAX_PER_IP_PER_DAY budget on infra flakiness rather than
+# genuine requests. Reassigns the loop-scoped `rate_limits` accumulator.
+_bump_rate() {
+    rate_limits=$(echo "$rate_limits" | jq --arg ip "$1" --arg today "$TODAY" '
+        .[$ip] = {count: ((.[$ip].count // 0) + 1), date: $today}
+    ')
+}
+
 # Ensure directories and state files
 mkdir -p "$INBOX_DIR" "$OUTBOX_DIR"
 [[ -f "$NEGOTIATIONS_FILE" ]] || echo '{"negotiations":[],"total":0,"last_processed":""}' > "$NEGOTIATIONS_FILE"
@@ -112,11 +125,6 @@ while IFS= read -r request_file; do
         continue
     fi
 
-    # Update rate counter
-    rate_limits=$(echo "$rate_limits" | jq --arg ip "$source_ip" --arg today "$TODAY" '
-        .[$ip] = {count: ((.[$ip].count // 0) + 1), date: $today}
-    ')
-
     # Security pre-check — reject obviously malicious requests
     dangerous_keywords=$(echo "$sanitized_json" | grep -oiE 'ssh|shell|exec|eval|sudo|root|rm -|chmod|/bin/|reverse.shell|bind.shell' | wc -l || true)
     if [[ "$dangerous_keywords" -gt 2 ]]; then
@@ -134,6 +142,7 @@ while IFS= read -r request_file; do
                 security_notes: "Proposal contained multiple dangerous keywords suggesting malicious intent.",
                 timestamp: $ts
             }' > "${OUTBOX_DIR}/${negotiation_id}.json"
+        _bump_rate "$source_ip"
         rm -f "$request_file"
         rejected=$((rejected + 1))
         continue
@@ -170,7 +179,23 @@ Active negotiations: $(cat "$NEGOTIATIONS_FILE" | jq '.total // 0')
 
 Respond ONLY with the JSON response object. No markdown fences, no explanation."
 
-    raw_output=$(run_claude "negotiate-${negotiation_id}" "$full_prompt")
+    # Capture the exit code instead of a bare `raw_output=$(run_claude ...)`:
+    # under `set -euo pipefail` + the `marvin_error_trap ERR` (lines 8/10), a
+    # transient Claude exit 1 (or lock-timeout exit 2 on cron overlap) would
+    # otherwise trip the ERR trap and kill the whole negotiation session
+    # mid-loop. Skip just this one request instead and leave "$request_file" in
+    # place so the next cron cycle retries it. Mirrors the guard merged for the
+    # other run_claude sites (#814/#821/#823). See lessons
+    # claude-exit-code-1-transient and claude-lock-timeout-expected-on-cron-overlap.
+    raw_output=$(run_claude "negotiate-${negotiation_id}" "$full_prompt") && CLAUDE_RC=0 || CLAUDE_RC=$?
+    if [[ "$CLAUDE_RC" -ne 0 ]]; then
+        if [[ "$CLAUDE_RC" -eq 2 ]]; then
+            marvin_log "INFO" "negotiate-${negotiation_id}: Claude lock timeout (exit 2) — leaving request for next cycle"
+        else
+            marvin_log "WARN" "negotiate-${negotiation_id}: Claude exited ${CLAUDE_RC} — skipping this request, will retry next cycle"
+        fi
+        continue
+    fi
 
     # Extract JSON response
     response_json=$(echo "$raw_output" | sed -n '/^{/,/^}/p' | head -100)
@@ -182,6 +207,7 @@ Respond ONLY with the JSON response object. No markdown fences, no explanation."
     if [[ -z "$response_json" ]]; then
         marvin_log "WARN" "Could not parse negotiation response for ${negotiation_id}"
         echo "$raw_output" > "${COMMS_DIR}/negotiate-raw-${negotiation_id}.txt"
+        _bump_rate "$source_ip"
         rm -f "$request_file"
         continue
     fi
@@ -210,7 +236,9 @@ Respond ONLY with the JSON response object. No markdown fences, no explanation."
 
     marvin_log "INFO" "Negotiation ${negotiation_id} from ${source_ip}: ${status}"
 
-    # Clean up inbox
+    # Clean up inbox — charge the request against the peer's daily budget only
+    # now that it has been genuinely answered (not on the retry-in-place paths).
+    _bump_rate "$source_ip"
     rm -f "$request_file"
     processed=$((processed + 1))
 
