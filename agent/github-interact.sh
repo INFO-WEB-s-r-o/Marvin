@@ -266,7 +266,7 @@ ${SIGNATURE}
         fi
     fi
 done < <(echo "$RESPONSE" | sed -n '/===ISSUE===/,/===END_ISSUE===/p' | \
-    awk '/===ISSUE===/{if(NR>1) printf "\0"; next} /===END_ISSUE===/{next} {print}')
+    awk '/===ISSUE===/{next} /===END_ISSUE===/{printf "\0"; next} {print}')
 
 # Parse COMMENT blocks
 # Format: ===COMMENT===\nissue: #number\nbody follows\n===END_COMMENT===
@@ -299,7 +299,7 @@ ${SIGNATURE}
         fi
     fi
 done < <(echo "$RESPONSE" | sed -n '/===COMMENT===/,/===END_COMMENT===/p' | \
-    awk '/===COMMENT===/{if(NR>1) printf "\0"; next} /===END_COMMENT===/{next} {print}')
+    awk '/===COMMENT===/{next} /===END_COMMENT===/{printf "\0"; next} {print}')
 
 # Parse CLOSE blocks
 # Format: ===CLOSE===\nissue: #number\nreason: ...\n===END_CLOSE===
