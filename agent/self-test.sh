@@ -120,10 +120,18 @@ while IFS= read -r _hit; do
     [[ -z "$_hit" ]] && continue
     _cf="${_hit%%:*}"
     _cl="${_hit#*:}"; _cl="${_cl%%:*}"
-    # Window: the call line plus the next 4 lines — covers multiline
-    # invocations whose `|| rc=$?` capture lands a couple of lines below the
-    # `run_claude` line (e.g. network-discovery.sh spreads it across 3 lines).
-    _cwin=$(sed -n "${_cl},$((_cl + 4))p" "$_cf" 2>/dev/null)
+    # Window heuristic (not an exact call→capture pairing): the call line plus
+    # the next 4 lines — covers multiline invocations whose `|| rc=$?` capture
+    # lands a couple of lines below the `run_claude` line (e.g.
+    # network-discovery.sh spreads it across 3 lines). Trade-off: an unrelated
+    # `X=$?` within the window reads as guarded (false negative — low risk at
+    # our call-site density). The `|| true` keeps this detector from tripping
+    # its own rule: a bare `$(sed …)` here would abort self-test on the ERR trap
+    # if `$_cf` were ever unreadable — exactly the crash class §1d exists to catch.
+    _cwin=$(sed -n "${_cl},$((_cl + 4))p" "$_cf" 2>/dev/null) || true
+    # Guard idiom recognised: `VAR=$?` (incl. `&& rc=0 || rc=$?`). A call site
+    # that tests `$?` inline without assigning it would false-positive here — no
+    # current site does; keep captures in the `VAR=$?` form.
     if ! grep -qE '=\$\?' <<< "$_cwin"; then
         test_fail "run_claude call site missing exit-code capture: $(basename "$_cf"):${_cl}"
         _unguarded_calls=$((_unguarded_calls + 1))
