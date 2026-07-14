@@ -203,7 +203,12 @@ fi
 
 cve_pending=0
 if [[ -f "${DATA_DIR}/security/cve-status.json" ]]; then
-    cve_pending=$(jq -r '.security_updates_available // 0' "${DATA_DIR}/security/cve-status.json" 2>/dev/null || echo 0)
+    # cve-status.json is written by security-scan.sh; its pending-security-update
+    # count lives in .upgradable_security_actionable (falling back to the total
+    # .upgradable_security for older scan files). The previous field name
+    # `.security_updates_available` was produced by no writer, so this metric
+    # silently reported 0 forever. Mirrors self-test.sh's proven read pattern.
+    cve_pending=$(jq -r '.upgradable_security_actionable // .upgradable_security // 0' "${DATA_DIR}/security/cve-status.json" 2>/dev/null || echo 0)
 fi
 
 security_json=$(jq -n \
