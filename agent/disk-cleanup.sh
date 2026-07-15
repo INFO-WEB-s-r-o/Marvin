@@ -175,8 +175,9 @@ track_freed "Orphaned Claude output temp files (>1d)" "$claude_tmp_size"
 # (>30d — the outage they captured is long over) are safe to remove. The live
 # pending file self-caps at 512 KB in log-watcher.sh, so during an active
 # outage it stays bounded AND fresh (mtime recent → not matched here); only
-# records gone quiet for a month are cleaned. The per-day log-analysis-*.json
-# analysis files are deliberately NOT matched (consumed by the dashboard).
+# records gone quiet for a month are cleaned. The per-day
+# log-analysis-YYYY-MM-DD.json analysis files are handled separately by section
+# 6d below (compress + long retain, not deleted here).
 comms_forensic_size=0
 while IFS= read -r -d '' f; do
     fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
@@ -184,6 +185,48 @@ while IFS= read -r -d '' f; do
     marvin_is_dry_run || rm -f "$f"
 done < <(find "${COMMS_DIR}" -maxdepth 1 -type f \( -name 'log-analysis-raw-*.txt' -o -name 'pending-log-review.txt' \) -mtime +30 -print0 2>/dev/null)
 track_freed "Stale log-watcher forensic records (>30d)" "$comms_forensic_size"
+
+# ─── 6d. Per-day comms log-analysis JSON retention (compress >30d, del >180d) ─
+# log-watcher.sh writes one ${COMMS_DIR}/log-analysis-YYYY-MM-DD.json per day —
+# Claude's classification of that day's incoming signals / attack attempts.
+# Every consumer (log-watcher, evening-report, update-website) reads ONLY
+# ${TODAY}'s file by exact constructed name; nothing reads a historical date,
+# /api/comms/ is deny-all (not dashboard- or export-served), and no retention
+# section above matched them — so this family grew unbounded one file/day since
+# 2026-02-28 (137 files / 13 MB by 2026-07-15). Mirror the section-5 policy:
+# compress the forensic record at 30 days, delete the .gz at 180 days. This
+# bounds growth while keeping a 180-day compressed history of AI-contact/attack
+# classifications (never deleting logging data outright). The ????-??-??-anchored
+# glob never matches today's live file, the log-analysis-raw-*.txt dumps swept
+# by 6c, or any *-latest pointer.
+comms_analysis_compressed=0
+comms_analysis_bytes=0
+while IFS= read -r -d '' f; do
+    if [[ ! -f "${f}.gz" ]]; then
+        fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
+        if marvin_is_dry_run; then
+            comms_analysis_bytes=$((comms_analysis_bytes + fsize / 2))  # estimate 50% compression
+            comms_analysis_compressed=$((comms_analysis_compressed + 1))
+        elif gzip "$f" 2>/dev/null; then
+            gz_size=$(stat -c%s "${f}.gz" 2>/dev/null || echo 0)
+            saved=$((fsize - gz_size))
+            [[ "$saved" -lt 0 ]] && saved=0
+            comms_analysis_bytes=$((comms_analysis_bytes + saved))
+            comms_analysis_compressed=$((comms_analysis_compressed + 1))
+        fi
+    fi
+done < <(find "${COMMS_DIR}" -maxdepth 1 -type f -name 'log-analysis-????-??-??.json' -mtime +30 -print0 2>/dev/null)
+if [[ "$comms_analysis_compressed" -gt 0 ]]; then
+    track_freed "Compressed ${comms_analysis_compressed} comms log-analysis JSON (>30d)" "$comms_analysis_bytes"
+fi
+
+comms_analysis_gz_size=0
+while IFS= read -r -d '' f; do
+    fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
+    comms_analysis_gz_size=$((comms_analysis_gz_size + fsize))
+    marvin_is_dry_run || rm -f "$f"
+done < <(find "${COMMS_DIR}" -maxdepth 1 -type f -name 'log-analysis-????-??-??.json.gz' -mtime +180 -print0 2>/dev/null)
+track_freed "Old comms log-analysis JSON.gz (>180d)" "$comms_analysis_gz_size"
 
 # ─── 7. Systemd journal vacuum (keep 7 days) ────────────────────────────────
 
