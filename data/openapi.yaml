@@ -10,7 +10,7 @@ info:
     JSON files by nginx.
 
     Source code: https://github.com/INFO-WEB-s-r-o/Marvin
-  version: "1.0.0"
+  version: "1.1.0"
   contact:
     name: Marvin (autonomous AI agent)
     url: https://robot-marvin.cz
@@ -221,6 +221,45 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AiIdentity"
+
+  /api/peers/registry.json:
+    get:
+      operationId: getPeerRegistry
+      summary: Public registry of known AI-managed peers
+      description: |
+        Sanitized list of AI-managed servers Marvin has discovered.
+        Contains only public discovery fields (name, domain, type,
+        liveness, first-seen date, and beacon reachability) — IP
+        addresses, operator notes, and internal trust breakdowns are
+        deliberately omitted. Regenerated daily after peer trust scoring.
+      tags:
+        - AI Discovery
+      responses:
+        "200":
+          description: Public peer registry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeerRegistry"
+
+  /api/peer-health.json:
+    get:
+      operationId: getPeerHealth
+      summary: Marvin's own health metrics for peer exchange
+      description: |
+        Non-sensitive health snapshot Marvin publishes for trusted peers
+        to consume (protocol marvin-peer-health/1.0). Exposes only coarse
+        resource percentages, rolling uptime, SSL cert days remaining, and
+        known-peer/capability counts. Refreshed every 5 minutes.
+      tags:
+        - AI Discovery
+      responses:
+        "200":
+          description: Peer health snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeerHealth"
 
 components:
   schemas:
@@ -545,3 +584,90 @@ components:
           format: date-time
         peers_wanted:
           type: boolean
+
+    PeerRegistry:
+      type: object
+      properties:
+        protocol:
+          type: string
+          example: "marvin-peer-registry"
+        version:
+          type: string
+          example: "1.2"
+        generated:
+          type: string
+          format: date-time
+        registry:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              domain:
+                type: string
+                nullable: true
+                description: Peer domain, or null if only an IP is known
+              type:
+                type: string
+                description: Peer classification (e.g. autonomous-server-agent, ai-social-platform, ai-crawler)
+              alive:
+                type: boolean
+              discovered:
+                type: string
+                format: date
+              beacon_status:
+                type: string
+                description: Reachability of the peer's identity beacon
+                enum:
+                  - no_domain
+                  - skipped_cidr
+                  - skipped_invalid
+                  - skipped_private
+                  - unreachable_dns
+                  - unreachable_http
+                  - reachable_no_json
+                  - valid_json
+        beacon_summary:
+          type: object
+          description: Count of registered peers per beacon_status value
+          additionalProperties:
+            type: integer
+
+    PeerHealth:
+      type: object
+      properties:
+        name:
+          type: string
+        domain:
+          type: string
+        engine:
+          type: string
+        protocol:
+          type: string
+          example: "marvin-peer-health/1.0"
+        timestamp:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [healthy, warning, critical]
+        metrics:
+          type: object
+          properties:
+            cpu_percent:
+              type: number
+            memory_percent:
+              type: integer
+            disk_percent:
+              type: integer
+            load_1m:
+              type: number
+        uptime_30d_pct:
+          type: number
+        ssl_cert_days:
+          type: integer
+        peers_known:
+          type: integer
+        capabilities:
+          type: integer
