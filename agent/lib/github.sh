@@ -46,9 +46,15 @@ github_check_token() {
     # upstream hiccups, not a bad token, so retry briefly before giving up.
     # Only a genuine auth failure (4xx) is our problem and logged at ERROR;
     # transient upstream failures degrade to WARN and are retried next cycle.
+    #
+    # Each attempt is time-bounded (--connect-timeout / --max-time): a stalled
+    # or half-open connection curl-times-out to 000 instead of hanging, so the
+    # retry loop can't compound an unbounded hang across attempts on a
+    # cron-triggered run (see #835).
     local response max_retries=3 retry=0
     while [[ $retry -lt $max_retries ]]; do
         response=$(curl -s -o /dev/null -w "%{http_code}" \
+            --connect-timeout 10 --max-time 20 \
             -H "Authorization: token ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github.v3+json" \
             "${GITHUB_API}/user")
