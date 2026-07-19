@@ -103,6 +103,45 @@ else
     test_warn "shellcheck not installed — skipping static analysis"
 fi
 
+# ─── 1d. run_claude call-site exit-code capture ──────────────────────────────
+# Every `VAR=$(run_claude ...)` / `VAR=$(run_claude_with_retry ...)` call site
+# must capture the exit code (via `|| rc=$?` or `&& rc=0 || rc=$?`). A bare
+# command substitution under `set -euo pipefail` + `trap marvin_error_trap ERR`
+# crashes the whole script on ANY non-zero return (transient exit 1, lock-timeout
+# exit 2) BEFORE the call site's post-run logic can run — the class that killed
+# hourly-check (2026-06-12), network-discovery (2026-07-06), self-enhance
+# (2026-07-11) and evening-report (latent, fixed 2026-07-13). Detect the pattern
+# structurally instead of waiting for the next crash in the logs.
+
+marvin_log "INFO" "Self-test: checking run_claude call sites capture exit codes"
+
+_unguarded_calls=0
+while IFS= read -r _hit; do
+    [[ -z "$_hit" ]] && continue
+    _cf="${_hit%%:*}"
+    _cl="${_hit#*:}"; _cl="${_cl%%:*}"
+    # Window heuristic (not an exact call→capture pairing): the call line plus
+    # the next 4 lines — covers multiline invocations whose `|| rc=$?` capture
+    # lands a couple of lines below the `run_claude` line (e.g.
+    # network-discovery.sh spreads it across 3 lines). Trade-off: an unrelated
+    # `X=$?` within the window reads as guarded (false negative — low risk at
+    # our call-site density). The `|| true` keeps this detector from tripping
+    # its own rule: a bare `$(sed …)` here would abort self-test on the ERR trap
+    # if `$_cf` were ever unreadable — exactly the crash class §1d exists to catch.
+    _cwin=$(sed -n "${_cl},$((_cl + 4))p" "$_cf" 2>/dev/null) || true
+    # Guard idiom recognised: `VAR=$?` (incl. `&& rc=0 || rc=$?`). A call site
+    # that tests `$?` inline without assigning it would false-positive here — no
+    # current site does; keep captures in the `VAR=$?` form.
+    if ! grep -qE '=\$\?' <<< "$_cwin"; then
+        test_fail "run_claude call site missing exit-code capture: $(basename "$_cf"):${_cl}"
+        _unguarded_calls=$((_unguarded_calls + 1))
+    fi
+done < <(grep -rnE '[A-Za-z_][A-Za-z0-9_]*=\$\(run_claude' "${MARVIN_DIR}/agent" --include='*.sh' 2>/dev/null \
+            | grep -vE ':[0-9]+:[[:space:]]*#' || true)
+if [[ "$_unguarded_calls" -eq 0 ]]; then
+    test_pass "run_claude call sites: all capture exit codes"
+fi
+
 # ─── 2. JSON data file validation ────────────────────────────────────────────
 
 marvin_log "INFO" "Self-test: validating JSON data files"
