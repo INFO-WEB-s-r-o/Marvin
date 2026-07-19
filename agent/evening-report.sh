@@ -128,7 +128,21 @@ ${EXTRA_CONTEXT}"
 # Run Claude for the evening blog. Up to 2 retries on transient exit=1 with
 # escalating backoff (15s, 60s): same reasoning as morning-check — once-per-
 # day task, transient failures would otherwise cost us a whole day's blog.
-OUTPUT=$(run_claude_with_retry "evening-report" "$FULL_PROMPT" 2)
+#
+# Capture the exit code: a bare OUTPUT=$(run_claude_with_retry ...) under
+# `set -euo pipefail` + the ERR trap crashes this script on ANY non-zero return
+# (exhausted retries → exit 1, lock timeout → exit 2) BEFORE the blog is written,
+# losing the whole evening post — the exact class that hit self-enhance on
+# 2026-07-11. Mirror the morning-check.sh guard: skip the write, exit cleanly so
+# the next daily run retries instead of the cron job dying mid-script.
+CLAUDE_EXIT=0
+OUTPUT=$(run_claude_with_retry "evening-report" "$FULL_PROMPT" 2) || CLAUDE_EXIT=$?
+
+if [[ $CLAUDE_EXIT -ne 0 ]]; then
+    marvin_log "WARN" "Claude run failed (exit=${CLAUDE_EXIT}) — skipping evening blog write to avoid publishing error messages"
+    marvin_log "INFO" "=== EVENING REPORT COMPLETE (SKIPPED — Claude exit ${CLAUDE_EXIT}) ==="
+    exit 0
+fi
 
 # Save the evening blog — split into EN and CS versions
 DAY_NUM=$(( ($(date +%s) - $(date -d "2026-01-01" +%s 2>/dev/null || echo "$(date +%s)")) / 86400 ))
