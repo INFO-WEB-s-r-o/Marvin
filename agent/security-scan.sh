@@ -127,7 +127,16 @@ if [[ -n "$world_writable" ]]; then
 fi
 
 # Check for SUID/SGID binaries (just count — changes from last scan are interesting)
-suid_count=$(find /usr/bin /usr/sbin /usr/local/bin /usr/lib /usr/libexec -type f \( -perm -4000 -o -perm -2000 \) 2>/dev/null | wc -l || echo 0)
+# `find | wc -l` under `set -o pipefail`: if find exits non-zero (a missing path,
+# or EACCES on an unreadable dir — e.g. inside a container, or if /usr/libexec is
+# ever dropped) the pipeline fails, so the old `|| echo 0` fired *in addition to*
+# wc having already printed the real count, yielding "N\n0". Spliced into the JSON
+# at `"suid_sgid_count": ${suid_count}` (line ~746) that produced invalid JSON and
+# corrupted latest-scan.json (read by self-test §9c, incident-report, dashboard).
+# Capture-then-fallback keeps wc's count and swallows only the exit code.
+# (grep-c-double-output lesson; same class as the six sites fixed 2026-05-01.)
+suid_count=$(find /usr/bin /usr/sbin /usr/local/bin /usr/lib /usr/libexec -type f \( -perm -4000 -o -perm -2000 \) 2>/dev/null | wc -l || true)
+suid_count=${suid_count:-0}
 
 # Check for unauthorized listening ports (capture once, reuse below)
 ss_output=$(ss -tlnp 2>/dev/null || echo "")
