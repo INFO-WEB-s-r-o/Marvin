@@ -41,19 +41,40 @@ github_check_token() {
         return 1
     fi
 
-    # Verify token works
-    local response
-    response=$(curl -s -o /dev/null -w "%{http_code}" \
-        -H "Authorization: token ${GITHUB_TOKEN}" \
-        -H "Accept: application/vnd.github.v3+json" \
-        "${GITHUB_API}/user")
+    # Verify token works. GitHub occasionally returns transient 5xx (service
+    # unavailable) or curl reports a connection failure (000) — these are
+    # upstream hiccups, not a bad token, so retry briefly before giving up.
+    # Only a genuine auth failure (4xx) is our problem and logged at ERROR;
+    # transient upstream failures degrade to WARN and are retried next cycle.
+    local response max_retries=3 retry=0
+    while [[ $retry -lt $max_retries ]]; do
+        response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "${GITHUB_API}/user")
 
-    if [[ "$response" != "200" ]]; then
+        if [[ "$response" == "200" ]]; then
+            return 0
+        fi
+
+        # Transient: 5xx server error or 000 (connection failed/timeout).
+        if [[ "$response" =~ ^5 || "$response" == "000" ]]; then
+            retry=$((retry + 1))
+            if [[ $retry -lt $max_retries ]]; then
+                marvin_log "WARN" "GitHub token check transient failure (HTTP ${response}), retry ${retry}/${max_retries}" >&2
+                sleep 3
+                continue
+            fi
+            marvin_log "WARN" "GitHub token check failed after ${max_retries} tries — transient upstream error (HTTP ${response}); will retry next cycle" >&2
+            return 1
+        fi
+
+        # Non-transient (4xx / anything else): genuine auth problem, our fault.
         marvin_log "ERROR" "GitHub token validation failed (HTTP ${response})" >&2
         return 1
-    fi
+    done
 
-    return 0
+    return 1
 }
 
 # ─── Core API call ───────────────────────────────────────────────────────────
