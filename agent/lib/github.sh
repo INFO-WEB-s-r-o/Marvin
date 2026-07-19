@@ -74,6 +74,10 @@ github_check_token() {
         return 1
     done
 
+    # Defense-in-depth: unreachable today (every loop path returns/continues),
+    # but a bash function with no explicit return yields its last command's
+    # status — the while, which exits 0 on normal termination. This guards the
+    # failure contract if a future edit ever swaps a `return` for a `break`.
     return 1
 }
 
