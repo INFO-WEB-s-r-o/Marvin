@@ -44,6 +44,7 @@ github_check_token() {
     # Verify token works
     local response
     response=$(curl -s -o /dev/null -w "%{http_code}" \
+        --connect-timeout 10 --max-time 20 \
         -H "Authorization: token ${GITHUB_TOKEN}" \
         -H "Accept: application/vnd.github.v3+json" \
         "${GITHUB_API}/user")
