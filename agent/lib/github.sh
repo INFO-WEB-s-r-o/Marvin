@@ -102,6 +102,7 @@ github_api() {
     while [[ $retry -lt $max_retries ]]; do
         local curl_args=(
             -s
+            --connect-timeout 10 --max-time 30
             -X "$method"
             -H "Authorization: token ${GITHUB_TOKEN}"
             -H "Accept: application/vnd.github.v3+json"
