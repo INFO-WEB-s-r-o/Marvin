@@ -336,6 +336,9 @@ marvin_log "INFO" "Attempting fix for issue: #${FIXED_ISSUE:-unknown} — ${FIXE
 # Best-effort: if this re-fetch also fails ("[]"), we fall through — no worse
 # than the pre-existing input path, which had the same failure mode.
 if [[ -n "$FIXED_ISSUE" ]]; then
+    # Fetch 20 here (vs 10 at the top of the run): by the time Claude has
+    # finished, more PRs may have landed, so widen the window to reduce the
+    # chance the just-created duplicate hides past the fetch limit.
     _fresh_prs=$(github_list_prs 20 2>/dev/null || echo "[]")
     _existing_pr_nums=$(_extract_pr_issue_numbers "$_fresh_prs")
     if [[ ",${_existing_pr_nums}," == *",${FIXED_ISSUE},"* ]]; then
