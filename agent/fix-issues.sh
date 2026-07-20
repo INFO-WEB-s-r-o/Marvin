@@ -74,6 +74,34 @@ if [[ -f "$LOCK_FILE" ]]; then
 fi
 echo "$$" > "${LOCK_FILE}"
 
+# ─── Shared: extract issue numbers referenced by a set of open PRs ───────────
+# Given a JSON array of open PRs, echo a sorted comma-separated list of the
+# GitHub issue numbers they reference — from PR titles (#NNN / "issue NNN"),
+# bodies (Fixes/Closes/Resolves #NNN), and branch names (issue/NNN, issue-NNN).
+# Used by BOTH the input-side dedup (filter candidate issues) and the
+# output-side duplicate guard (re-check before push), so the two can't drift.
+_extract_pr_issue_numbers() {
+    local prs_json="$1"
+    local nums="" _t _b _br
+    # Source 1: PR titles — match #NNN or "issue NNN"/"issue-NNN" patterns
+    _t=$(echo "$prs_json" | jq -r '.[].title' 2>/dev/null \
+        | grep -oiP '(?:#|issue[\s-])\K\d+' | sort -u | paste -sd',' - || echo "")
+    [[ -n "$_t" ]] && nums+="${_t},"
+    # Source 2: PR bodies — "Fixes #NNN", "Closes #NNN", "Resolves #NNN"
+    _b=$(echo "$prs_json" | jq -r '.[].body // ""' 2>/dev/null \
+        | grep -oiP '(?:fix(?:es)?|closes?|resolves?)\s*#\K\d+' | sort -u | paste -sd',' - || echo "")
+    [[ -n "$_b" ]] && nums+="${_b},"
+    # Source 3: Branch names — "fix/issue-NNN-*" or "fix-issue-NNN"
+    _br=$(echo "$prs_json" | jq -r '.[].head.ref // ""' 2>/dev/null \
+        | grep -oiP 'issue[/-]\K\d+' | sort -u | paste -sd',' - || echo "")
+    [[ -n "$_br" ]] && nums+="${_br},"
+    if [[ -n "$nums" ]]; then
+        echo "$nums" | tr ',' '\n' | sed '/^$/d' | sort -un | paste -sd',' -
+    else
+        echo ""
+    fi
+}
+
 marvin_log "INFO" "=== ISSUE FIXER STARTING ==="
 
 # ─── Pre-flight ──────────────────────────────────────────────────────────────
@@ -103,28 +131,10 @@ issues_json=$(github_list_issues "" 50 2>/dev/null || echo "[]")
 # every 2 hours when a PR can't be auto-merged (e.g. branch protection rules).
 pr_issue_numbers=""
 if [[ "$open_pr_count" -gt 0 ]]; then
-    # Collect issue numbers from multiple sources, combine at the end
-    _dedup_nums=""
-
-    # Source 1: PR titles — match #NNN or "issue NNN"/"issue-NNN" patterns
-    _title_nums=$(echo "$open_prs" | jq -r '.[].title' 2>/dev/null \
-        | grep -oiP '(?:#|issue[\s-])\K\d+' | sort -u | paste -sd',' - || echo "")
-    [[ -n "$_title_nums" ]] && _dedup_nums+="${_title_nums},"
-
-    # Source 2: PR bodies — "Fixes #NNN", "Closes #NNN", "Resolves #NNN"
-    _body_nums=$(echo "$open_prs" | jq -r '.[].body // ""' 2>/dev/null \
-        | grep -oiP '(?:fix(?:es)?|closes?|resolves?)\s*#\K\d+' | sort -u | paste -sd',' - || echo "")
-    [[ -n "$_body_nums" ]] && _dedup_nums+="${_body_nums},"
-
-    # Source 3: Branch names — "fix/issue-NNN-*" or "fix-issue-NNN"
-    _branch_nums=$(echo "$open_prs" | jq -r '.[].head.ref // ""' 2>/dev/null \
-        | grep -oiP 'issue[/-]\K\d+' | sort -u | paste -sd',' - || echo "")
-    [[ -n "$_branch_nums" ]] && _dedup_nums+="${_branch_nums},"
-
-    # Deduplicate combined results
-    if [[ -n "$_dedup_nums" ]]; then
-        pr_issue_numbers=$(echo "$_dedup_nums" | tr ',' '\n' | sed '/^$/d' | sort -un | paste -sd',' -)
-    fi
+    # Collect issue numbers referenced by open PRs (titles, bodies, branches).
+    # Shared with the output-side duplicate guard below via the same helper so
+    # the two dedup paths can never disagree on what "already has a PR" means.
+    pr_issue_numbers=$(_extract_pr_issue_numbers "$open_prs")
 
     # Only warn if PRs look like issue-fix PRs but we couldn't extract numbers.
     # Enhancement/feature PRs (branch starts with enhance/, feature/, add/) are expected
@@ -311,6 +321,31 @@ if [[ -z "$FIXED_ISSUE" ]]; then
 fi
 
 marvin_log "INFO" "Attempting fix for issue: #${FIXED_ISSUE:-unknown} — ${FIXED_TITLE}"
+
+# ─── Output-side duplicate guard (defense-in-depth) ──────────────────────────
+# The input dedup at the top of the run filters candidate issues against a
+# SNAPSHOT of open PRs taken before Claude ran. That snapshot can be stale or
+# empty: a single transient failure on the initial `github_list_prs` yields
+# "[]", which skips dedup entirely and lets Claude re-pick an already-PR'd
+# issue — and Claude itself runs for minutes, during which a PR may appear.
+# Re-fetch open PRs NOW and abort before push if one already references the
+# issue we just fixed, so we validate our OUTPUT, not just our input. Without
+# this, fix-issues created three duplicate PRs (#836/#837/#838) for issue #835
+# on 2026-07-20 while earlier PRs for it were still open. Exiting here lets the
+# EXIT cleanup trap return to clean main and drop the unpushed local branch.
+# Best-effort: if this re-fetch also fails ("[]"), we fall through — no worse
+# than the pre-existing input path, which had the same failure mode.
+if [[ -n "$FIXED_ISSUE" ]]; then
+    # Fetch 20 here (vs 10 at the top of the run): by the time Claude has
+    # finished, more PRs may have landed, so widen the window to reduce the
+    # chance the just-created duplicate hides past the fetch limit.
+    _fresh_prs=$(github_list_prs 20 2>/dev/null || echo "[]")
+    _existing_pr_nums=$(_extract_pr_issue_numbers "$_fresh_prs")
+    if [[ ",${_existing_pr_nums}," == *",${FIXED_ISSUE},"* ]]; then
+        marvin_log "WARN" "Issue #${FIXED_ISSUE} already has an open PR — aborting before push to avoid a duplicate (${FIXED_TITLE})"
+        exit 0
+    fi
+fi
 
 # ─── Stage and commit ────────────────────────────────────────────────────────
 
