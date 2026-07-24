@@ -112,8 +112,22 @@ github_check_token || exit 1
 cd "$MARVIN_DIR"
 git checkout main 2>/dev/null || true
 
-# Skip if too many open PRs already (don't pile up)
-open_prs=$(github_list_prs 10 2>/dev/null || echo "[]")
+# Skip if too many open PRs already (don't pile up).
+#
+# Fetch the open-PR list ONCE here; it's reused below for per-issue dedup.
+# Critically, a transient github_list_prs failure must NOT be collapsed to
+# "[]": that sets open_pr_count=0, which BOTH skips the pile-up guard AND skips
+# the entire dedup block below (guarded by `open_pr_count -gt 0`), leaving
+# Claude free to re-pick an issue that already has an open PR — the 2026-07-19
+# #835 incident that spawned duplicate PRs #836/#837/#838. Capture the fetch
+# exit code and validate the payload is a JSON array; on failure skip this run
+# so dedup stays reliable — the next 2-hourly cron is a cheap retry. This is
+# the input-side complement to the output-side duplicate guard added 2026-07-20.
+open_prs=$(github_list_prs 10 2>/dev/null) && _prs_fetch_ok=true || _prs_fetch_ok=false
+if [[ "$_prs_fetch_ok" != "true" ]] || ! echo "$open_prs" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    marvin_log "WARN" "Could not fetch open PRs (transient) — skipping this run so per-issue dedup stays reliable; next 2-hourly run will retry"
+    exit 0
+fi
 open_pr_count=$(echo "$open_prs" | jq 'length' 2>/dev/null || echo "0")
 if [[ "$open_pr_count" -ge 3 ]]; then
     marvin_log "INFO" "Already ${open_pr_count} open PRs — skipping issue fixing to avoid pile-up"
