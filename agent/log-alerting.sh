@@ -198,13 +198,29 @@ done < <(ls -1t "${METRICS_DIR}"/claude-usage-*.jsonl 2>/dev/null | head -2)
 # jq -s over a file with a single truncated line fails outright and takes every
 # count with it — the alert would go silent exactly when something is corrupting
 # writes. Parse line by line and drop only the lines that are actually bad.
+#
+# The `|| echo '[]'` fallback must never run *in addition to* a successful jq —
+# it used to. `pipefail` reports the pipeline's status as the last command that
+# failed, not the last command in the pipe, so a `cat` that exited non-zero (a
+# file from the `ls -1t` snapshot vanishing or being compressed a moment later)
+# propagated past two perfectly successful jq stages and fired the fallback
+# after jq had already printed a valid array. The function then emitted two
+# concatenated JSON documents, `recent_total`/`recent_failed`/`recent_auth`
+# became multi-line strings, and every `[[ ... -gt ... ]]` escalation test below
+# died on an arithmetic syntax error — which `set -e` does *not* catch inside an
+# `if` condition, so the script sailed on with both critical branches silently
+# evaluating false. A hardening path that silently disarmed the escalation it
+# exists to protect (#843). Fallbacks are now assignments, not extra output.
 _slurp_usage() {
     [[ $# -eq 0 ]] && { echo '[]'; return 0; }
-    cat "$@" 2>/dev/null | jq -R 'fromjson? // empty' | jq -s '.' 2>/dev/null || echo '[]'
+    local out
+    out=$({ cat "$@" 2>/dev/null || true; } | jq -R 'fromjson? // empty' | jq -s '.' 2>/dev/null) || out=""
+    printf '%s\n' "${out:-[]}"
 }
 
 recent_json=$(_slurp_usage "${recent_files[@]+"${recent_files[@]}"}" \
-    | jq 'map(select(.timestamp != null)) | sort_by(.timestamp) | .[-10:]' 2>/dev/null || echo '[]')
+    | jq 'map(select(.timestamp != null)) | sort_by(.timestamp) | .[-10:]' 2>/dev/null) || recent_json=""
+[[ -n "$recent_json" ]] || recent_json='[]'
 
 # Exclude session/usage-limit throttles: a "You've hit your session limit"
 # exit is benign and self-resolving (the window rolls over on its own — see
@@ -215,17 +231,24 @@ recent_json=$(_slurp_usage "${recent_files[@]+"${recent_files[@]}"}" \
 # null) counted, so this never *hides* a real historical failure.
 _genuine_failures='[.[] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")]'
 
-recent_total=$(jq 'length' <<< "$recent_json" 2>/dev/null || echo 0)
-recent_failed=$(jq "${_genuine_failures} | length" <<< "$recent_json" 2>/dev/null || echo 0)
-recent_auth=$(jq '[.[] | select((.fail_reason // "") == "auth")] | length' <<< "$recent_json" 2>/dev/null || echo 0)
+# Belt and braces on top of the _slurp_usage fix above. Everything below does
+# bash arithmetic on these three counters, and arithmetic on a value that isn't
+# a plain integer fails *quietly* inside an `if` condition — the escalation just
+# stops escalating and nothing anywhere says why. Anything that is not digits
+# becomes 0, so a malformed counter can only ever under-report, never disarm.
+_int() { [[ "$1" =~ ^[0-9]+$ ]] && printf '%s' "$1" || printf '0'; }
+
+recent_total=$(_int "$(jq 'length' <<< "$recent_json" 2>/dev/null || echo 0)")
+recent_failed=$(_int "$(jq "${_genuine_failures} | length" <<< "$recent_json" 2>/dev/null || echo 0)")
+recent_auth=$(_int "$(jq '[.[] | select((.fail_reason // "") == "auth")] | length' <<< "$recent_json" 2>/dev/null || echo 0)")
 
 failed_runs=0
 total_runs=0
 last_fail="unknown"
 if [[ -f "$usage_file" ]]; then
     today_json=$(_slurp_usage "$usage_file")
-    failed_runs=$(jq "${_genuine_failures} | length" <<< "$today_json" 2>/dev/null || echo 0)
-    total_runs=$(jq 'length' <<< "$today_json" 2>/dev/null || echo 0)
+    failed_runs=$(_int "$(jq "${_genuine_failures} | length" <<< "$today_json" 2>/dev/null || echo 0)")
+    total_runs=$(_int "$(jq 'length' <<< "$today_json" 2>/dev/null || echo 0)")
     # Most recent genuine (non-throttle) failure of the day
     last_fail=$(jq -r "${_genuine_failures} | last | .task // \"unknown\"" <<< "$today_json" 2>/dev/null || echo "unknown")
 fi
@@ -269,7 +292,10 @@ if [[ "$failed_runs" -gt 2 || "$severity" == "critical" ]]; then
     # count feeds the dashboard's "how bad" column — during the first runs of a
     # new day the day tally understates it, so take whichever is larger.
     alert_count="$failed_runs"
-    [[ "${recent_failed:-0}" -gt "$alert_count" ]] && alert_count="$recent_failed"
+    # `|| true`: the common case is this test being false, and a bare `cond &&
+    # assign` inherits that non-zero status. Harmless where it sits today, fatal
+    # under `set -e` the day someone moves it to the end of a function or file.
+    { [[ "${recent_failed:-0}" -gt "$alert_count" ]] && alert_count="$recent_failed"; } || true
     NEW_ALERTS+=("$(_make_alert "$alert_id" "$severity" "$title" "$detail" "$alert_count")")
 fi
 
