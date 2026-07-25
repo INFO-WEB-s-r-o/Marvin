@@ -192,9 +192,41 @@ if [[ -f "$usage_file" ]]; then
     total_runs=$(wc -l < "$usage_file" 2>/dev/null || echo 0)
     if [[ "$failed_runs" -gt 2 ]]; then
         # Get the most recent genuine (non-throttle) failure
-        last_fail=$(jq -s '[.[] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")] | last | .task // "unknown"' "$usage_file" 2>/dev/null || echo "unknown")
+        last_fail=$(jq -sr '[.[] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")] | last | .task // "unknown"' "$usage_file" 2>/dev/null || echo "unknown")
         alert_id="claude-failures"
-        NEW_ALERTS+=("$(_make_alert "$alert_id" "warning" "Claude API failures (${failed_runs}/${total_runs} runs)" "Last failed task: ${last_fail}" "$failed_runs")")
+
+        # Severity is a function of *how much* is broken, not just that something
+        # is. A couple of scattered API errors is a warning; a pipeline where
+        # (nearly) every run dies is an outage nobody can see from the inside,
+        # because the tasks that would report it are themselves dead. Escalate so
+        # incident-report.sh picks it up on its next pass.
+        #
+        # Escalation reads the TAIL of the day (last 10 runs), not the daily
+        # totals: the day-long counts can never recover before midnight UTC, so a
+        # cumulative test would keep screaming "outage" for hours after the
+        # pipeline came back. The warning below stays day-scoped — that one is a
+        # tally, this one is a state.
+        severity="warning"
+        title="Claude API failures (${failed_runs}/${total_runs} runs)"
+        detail="Last failed task: ${last_fail}"
+
+        recent_total=$(jq -s '.[-10:] | length' "$usage_file" 2>/dev/null || echo 0)
+        recent_failed=$(jq -s '[.[-10:][] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")] | length' "$usage_file" 2>/dev/null || echo 0)
+        recent_auth=$(jq -s '[.[-10:][] | select((.fail_reason // "") == "auth")] | length' "$usage_file" 2>/dev/null || echo 0)
+
+        if [[ "${recent_auth:-0}" -gt 0 ]]; then
+            # Credentials expired: no retry, no next cron cycle, and no agent run
+            # can fix this — only an interactive login by the human can.
+            severity="critical"
+            title="Claude auth expired — pipeline halted (${recent_failed}/${recent_total} recent runs failed)"
+            detail="${recent_auth} of the last ${recent_total} run(s) failed with expired OAuth credentials. Requires interactive re-auth on the host (run \`claude\` and log in); no automated task can recover this. Last failed task: ${last_fail}"
+        elif [[ "${recent_total:-0}" -ge 10 && $((recent_failed * 100 / recent_total)) -ge 90 ]]; then
+            severity="critical"
+            title="Claude pipeline outage (${recent_failed}/${recent_total} recent runs failed)"
+            detail="Near-total failure rate over the last ${recent_total} runs — every scheduled task is dying. Last failed task: ${last_fail}"
+        fi
+
+        NEW_ALERTS+=("$(_make_alert "$alert_id" "$severity" "$title" "$detail" "$failed_runs")")
     fi
 fi
 
@@ -221,12 +253,18 @@ while IFS= read -r existing_id; do
         # Alert is still active — update last_seen and count from new data
         new_data=$(for a in "${NEW_ALERTS[@]}"; do echo "$a"; done | jq -s --arg id "$existing_id" '.[] | select(.id == $id)')
         new_count=$(echo "$new_data" | jq -r '.count')
-        # Preserve first_seen from existing, update last_seen
+        # Preserve first_seen from existing, update last_seen.
+        # Title and severity are refreshed too: both can carry live numbers
+        # (e.g. "Claude API failures (7/62 runs)") or escalate over time, and a
+        # frozen title made the dashboard show 4-day-old counts for an alert whose
+        # real state had gone from 7/62 to 94/94.
         merged=$(echo "$existing_alert" | jq \
             --arg last "$NOW" \
             --argjson count "$new_count" \
             --arg detail "$(echo "$new_data" | jq -r '.detail')" \
-            '.last_seen = $last | .count = $count | .detail = $detail | .resolved = false')
+            --arg title "$(echo "$new_data" | jq -r '.title')" \
+            --arg sev "$(echo "$new_data" | jq -r '.severity')" \
+            '.last_seen = $last | .count = $count | .detail = $detail | .title = $title | .severity = $sev | .resolved = false')
         merged_alerts=$(echo "$merged_alerts" | jq --argjson a "$merged" '. + [$a]')
     else
         # Alert not firing — auto-resolve if it was active, keep if recently resolved

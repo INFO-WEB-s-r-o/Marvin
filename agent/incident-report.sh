@@ -224,10 +224,14 @@ if [[ "$DO_DETECT" == "true" ]]; then
 
     # --- 6. Repeated errors from log-alerting ---
     if [[ -f "$ALERTS_FILE" ]]; then
-        critical_alert_count=$(jq '[.alerts[] | select(.severity == "critical")] | length' "$ALERTS_FILE" 2>/dev/null || echo 0)
+        # Only *unresolved* criticals count: log-alerting.sh keeps resolved alerts
+        # in the file for 24h of dashboard visibility, so an unfiltered count would
+        # hold this incident open for a full day after the condition cleared — and
+        # block the recovery branch below from ever running.
+        critical_alert_count=$(jq '[.alerts[] | select(.severity == "critical" and .resolved == false)] | length' "$ALERTS_FILE" 2>/dev/null || echo 0)
         if [[ "${critical_alert_count:-0}" -gt 0 ]]; then
             if ! _has_active_incident "alert-escalation"; then
-                alert_titles=$(jq -r '[.alerts[] | select(.severity == "critical") | .title] | join(", ")' "$ALERTS_FILE" 2>/dev/null || echo "unknown")
+                alert_titles=$(jq -r '[.alerts[] | select(.severity == "critical" and .resolved == false) | .title] | join(", ")' "$ALERTS_FILE" 2>/dev/null || echo "unknown")
                 _create_incident \
                     "$(_incident_id "alert")" \
                     "high" \
@@ -328,7 +332,9 @@ if [[ "$DO_CLOSE" == "true" ]]; then
                 fi
                 ;;
             alert-escalation)
-                crit_count=$(jq '[.alerts[] | select(.severity == "critical")] | length' \
+                # Same filter as the detection side (§6): resolved-but-retained
+                # criticals must not keep the incident open.
+                crit_count=$(jq '[.alerts[] | select(.severity == "critical" and .resolved == false)] | length' \
                     "${DATA_DIR}/alerts/active-alerts.json" 2>/dev/null || echo 0)
                 if [[ "${crit_count:-0}" -eq 0 ]]; then
                     should_resolve=true

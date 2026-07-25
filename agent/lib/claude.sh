@@ -161,6 +161,17 @@ ${prompt}"
         if printf '%s' "$output" | grep -qiE 'hit your (session|usage) limit'; then
             fail_reason="session_limit"
             marvin_log "INFO" "Claude session/usage limit reached for ${task_name} — benign, resets automatically (not counted as an API failure)" >&2
+        # Expired OAuth credentials are the opposite of benign: unlike a session
+        # limit they never clear on their own — every subsequent cron run dies the
+        # same way until a human re-authenticates interactively. Tagging them
+        # separately lets log-alerting.sh §6 escalate instead of filing yet another
+        # indistinguishable "Claude API failure" warning (2026-07-21 → 07-25: 338
+        # consecutive runs lost this way, alert stuck at severity=warning).
+        # Patterns are the CLI's own auth-failure wording, distinctive enough not to
+        # collide with log text echoed back by log-analysis-style prompts.
+        elif printf '%s' "$output" | grep -qiE 'OAuth access token has expired|Re-authenticate to continue|Failed to authenticate\. API Error: 40[13]'; then
+            fail_reason="auth"
+            marvin_log "ERROR" "Claude authentication failed for ${task_name} — credentials expired, requires interactive re-auth (no cron run can recover this)" >&2
         else
             fail_reason="error"
         fi
