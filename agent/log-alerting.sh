@@ -180,54 +180,97 @@ fi
 # ─── 6. Check for failed Claude runs ────────────────────────────────────────
 
 usage_file="${METRICS_DIR}/claude-usage-${TODAY}.jsonl"
+
+# The recent-run window that drives escalation is built from the two newest
+# usage files merged and re-sorted by timestamp — NOT from today's file alone.
+# The files rotate daily; an outage does not. Reading only ${TODAY}'s file meant
+# that at rotation the window went empty, the alert stopped firing for the first
+# few cron cycles of the new day, the merge step below marked a live `critical`
+# alert resolved, and incident-report.sh then opened a *fresh* incident once it
+# re-fired — a false recovery every night of an outage that never paused (#842).
+# Two files is enough: a full day is ~100 runs, so the newest two always cover a
+# 10-run window no matter where in the day the rotation falls.
+recent_files=()
+while IFS= read -r f; do
+    [[ -n "$f" ]] && recent_files+=("$f")
+done < <(ls -1t "${METRICS_DIR}"/claude-usage-*.jsonl 2>/dev/null | head -2)
+
+# jq -s over a file with a single truncated line fails outright and takes every
+# count with it — the alert would go silent exactly when something is corrupting
+# writes. Parse line by line and drop only the lines that are actually bad.
+_slurp_usage() {
+    [[ $# -eq 0 ]] && { echo '[]'; return 0; }
+    cat "$@" 2>/dev/null | jq -R 'fromjson? // empty' | jq -s '.' 2>/dev/null || echo '[]'
+}
+
+recent_json=$(_slurp_usage "${recent_files[@]+"${recent_files[@]}"}" \
+    | jq 'map(select(.timestamp != null)) | sort_by(.timestamp) | .[-10:]' 2>/dev/null || echo '[]')
+
+# Exclude session/usage-limit throttles: a "You've hit your session limit"
+# exit is benign and self-resolving (the window rolls over on its own — see
+# 2026-07-04, where 5 such exits tripped this alert and it auto-resolved once
+# the limit reset at 14:30 UTC). run_claude() tags these fail_reason=
+# "session_limit"; only genuine API/tooling errors should page here. The
+# `(.fail_reason // "")` guard keeps pre-classification entries (no field →
+# null) counted, so this never *hides* a real historical failure.
+_genuine_failures='[.[] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")]'
+
+recent_total=$(jq 'length' <<< "$recent_json" 2>/dev/null || echo 0)
+recent_failed=$(jq "${_genuine_failures} | length" <<< "$recent_json" 2>/dev/null || echo 0)
+recent_auth=$(jq '[.[] | select((.fail_reason // "") == "auth")] | length' <<< "$recent_json" 2>/dev/null || echo 0)
+
+failed_runs=0
+total_runs=0
+last_fail="unknown"
 if [[ -f "$usage_file" ]]; then
-    # Exclude session/usage-limit throttles: a "You've hit your session limit"
-    # exit is benign and self-resolving (the window rolls over on its own — see
-    # 2026-07-04, where 5 such exits tripped this alert and it auto-resolved once
-    # the limit reset at 14:30 UTC). run_claude() tags these fail_reason=
-    # "session_limit"; only genuine API/tooling errors should page here. The
-    # `(.fail_reason // "")` guard keeps pre-classification entries (no field →
-    # null) counted, so this never *hides* a real historical failure.
-    failed_runs=$(jq -s '[.[] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")] | length' "$usage_file" 2>/dev/null || echo 0)
-    total_runs=$(wc -l < "$usage_file" 2>/dev/null || echo 0)
-    if [[ "$failed_runs" -gt 2 ]]; then
-        # Get the most recent genuine (non-throttle) failure
-        last_fail=$(jq -sr '[.[] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")] | last | .task // "unknown"' "$usage_file" 2>/dev/null || echo "unknown")
-        alert_id="claude-failures"
+    today_json=$(_slurp_usage "$usage_file")
+    failed_runs=$(jq "${_genuine_failures} | length" <<< "$today_json" 2>/dev/null || echo 0)
+    total_runs=$(jq 'length' <<< "$today_json" 2>/dev/null || echo 0)
+    # Most recent genuine (non-throttle) failure of the day
+    last_fail=$(jq -r "${_genuine_failures} | last | .task // \"unknown\"" <<< "$today_json" 2>/dev/null || echo "unknown")
+fi
+if [[ -z "$last_fail" || "$last_fail" == "unknown" || "$last_fail" == "null" ]]; then
+    # Nothing failed today yet (or today's file doesn't exist) — fall back to the
+    # cross-rotation window so a just-past-midnight outage still names a task.
+    last_fail=$(jq -r "${_genuine_failures} | last | .task // \"unknown\"" <<< "$recent_json" 2>/dev/null || echo "unknown")
+fi
 
-        # Severity is a function of *how much* is broken, not just that something
-        # is. A couple of scattered API errors is a warning; a pipeline where
-        # (nearly) every run dies is an outage nobody can see from the inside,
-        # because the tasks that would report it are themselves dead. Escalate so
-        # incident-report.sh picks it up on its next pass.
-        #
-        # Escalation reads the TAIL of the day (last 10 runs), not the daily
-        # totals: the day-long counts can never recover before midnight UTC, so a
-        # cumulative test would keep screaming "outage" for hours after the
-        # pipeline came back. The warning below stays day-scoped — that one is a
-        # tally, this one is a state.
-        severity="warning"
-        title="Claude API failures (${failed_runs}/${total_runs} runs)"
-        detail="Last failed task: ${last_fail}"
+# Severity is a function of *how much* is broken, not just that something is. A
+# couple of scattered API errors is a warning; a pipeline where (nearly) every
+# run dies is an outage nobody can see from the inside, because the tasks that
+# would report it are themselves dead. Escalate so incident-report.sh picks it
+# up on its next pass.
+#
+# Escalation reads the TAIL (last 10 runs), not cumulative totals: day-long
+# counts can never recover before the file rotates, so a cumulative test would
+# keep screaming "outage" for hours after the pipeline came back. The warning
+# stays day-scoped — that one is a tally, this one is a state.
+severity="warning"
+title="Claude API failures (${failed_runs}/${total_runs} runs)"
+detail="Last failed task: ${last_fail}"
 
-        recent_total=$(jq -s '.[-10:] | length' "$usage_file" 2>/dev/null || echo 0)
-        recent_failed=$(jq -s '[.[-10:][] | select(.exit_code != 0 and (.fail_reason // "") != "session_limit")] | length' "$usage_file" 2>/dev/null || echo 0)
-        recent_auth=$(jq -s '[.[-10:][] | select((.fail_reason // "") == "auth")] | length' "$usage_file" 2>/dev/null || echo 0)
+if [[ "${recent_auth:-0}" -gt 0 ]]; then
+    # Credentials expired: no retry, no next cron cycle, and no agent run
+    # can fix this — only an interactive login by the human can.
+    severity="critical"
+    title="Claude auth expired — pipeline halted (${recent_failed}/${recent_total} recent runs failed)"
+    detail="${recent_auth} of the last ${recent_total} run(s) failed with expired OAuth credentials. Requires interactive re-auth on the host (run \`claude\` and log in); no automated task can recover this. Last failed task: ${last_fail}"
+elif [[ "${recent_total:-0}" -ge 10 && $((recent_failed * 100 / recent_total)) -ge 90 ]]; then
+    severity="critical"
+    title="Claude pipeline outage (${recent_failed}/${recent_total} recent runs failed)"
+    detail="Near-total failure rate over the last ${recent_total} runs — every scheduled task is dying. Last failed task: ${last_fail}"
+fi
 
-        if [[ "${recent_auth:-0}" -gt 0 ]]; then
-            # Credentials expired: no retry, no next cron cycle, and no agent run
-            # can fix this — only an interactive login by the human can.
-            severity="critical"
-            title="Claude auth expired — pipeline halted (${recent_failed}/${recent_total} recent runs failed)"
-            detail="${recent_auth} of the last ${recent_total} run(s) failed with expired OAuth credentials. Requires interactive re-auth on the host (run \`claude\` and log in); no automated task can recover this. Last failed task: ${last_fail}"
-        elif [[ "${recent_total:-0}" -ge 10 && $((recent_failed * 100 / recent_total)) -ge 90 ]]; then
-            severity="critical"
-            title="Claude pipeline outage (${recent_failed}/${recent_total} recent runs failed)"
-            detail="Near-total failure rate over the last ${recent_total} runs — every scheduled task is dying. Last failed task: ${last_fail}"
-        fi
-
-        NEW_ALERTS+=("$(_make_alert "$alert_id" "$severity" "$title" "$detail" "$failed_runs")")
-    fi
+# Fire on the day-scoped tally OR on the rotation-proof critical state. The
+# second half of that test is what keeps a midnight-spanning outage paging: the
+# tally is 0 for the first few runs of a new day, the state is not.
+if [[ "$failed_runs" -gt 2 || "$severity" == "critical" ]]; then
+    alert_id="claude-failures"
+    # count feeds the dashboard's "how bad" column — during the first runs of a
+    # new day the day tally understates it, so take whichever is larger.
+    alert_count="$failed_runs"
+    [[ "${recent_failed:-0}" -gt "$alert_count" ]] && alert_count="$recent_failed"
+    NEW_ALERTS+=("$(_make_alert "$alert_id" "$severity" "$title" "$detail" "$alert_count")")
 fi
 
 # ─── Merge new alerts with existing ones ────────────────────────────────────
