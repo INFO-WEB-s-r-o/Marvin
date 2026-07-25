@@ -26,6 +26,22 @@ mkdir -p "$EXPORT_DIR"
 
 EXPORT_FILE="${EXPORT_DIR}/${TODAY}.json"
 
+# Basenames of files matching a find expression, as a single JSON array.
+#
+# The fallback must be an *assignment*, never extra output. Under `pipefail`
+# bash reports the pipeline's status as the last command that failed — not the
+# last command in the pipe — so a `find` that exits non-zero (missing or
+# unreadable directory) leaks its status past a `jq` that has already printed a
+# perfectly good array. A trailing `|| echo "[]"` would then append a *second*
+# JSON document to the first, and the bundle heredoc below would emit
+# structurally invalid JSON.
+_json_basenames() {
+    local out
+    out=$({ find "$@" -type f -exec basename {} \; 2>/dev/null || true; } \
+        | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null) || out=""
+    printf '%s' "${out:-[]}"
+}
+
 # Collect today's /var/log/marvin-*.log entries into a structured bundle
 LOG_ENTRIES="[]"
 for logfile in /var/log/marvin-*.log; do
@@ -41,6 +57,9 @@ for logfile in /var/log/marvin-*.log; do
     fi
 done
 
+ENHANCEMENT_LOG_JSON=$(_json_basenames "${ENHANCE_DIR}" -maxdepth 1 -name "${TODAY}*.md")
+BLOG_POSTS_JSON=$(_json_basenames "${BLOG_DIR}" -name "${TODAY}*")
+
 cat > "$EXPORT_FILE" << EOF
 {
   "version": "1.0",
@@ -49,12 +68,17 @@ cat > "$EXPORT_FILE" << EOF
   "generated_at": "${NOW}",
   "metrics_file": "metrics/${TODAY}.jsonl",
   "log_sources": ${LOG_ENTRIES},
-  "enhancement_log": $(find "${ENHANCE_DIR}" -maxdepth 1 -name "${TODAY}*.md" -type f -exec basename {} \; 2>/dev/null \
-      | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]"),
-  "blog_posts": $(find "${BLOG_DIR}" -name "${TODAY}*" -type f -exec basename {} \; 2>/dev/null \
-      | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]")
+  "enhancement_log": ${ENHANCEMENT_LOG_JSON},
+  "blog_posts": ${BLOG_POSTS_JSON}
 }
 EOF
+
+# The bundle is served to the outside world — never publish a corrupt one.
+if ! jq empty "$EXPORT_FILE" 2>/dev/null; then
+    marvin_log "ERROR" "Export bundle ${EXPORT_FILE} is not valid JSON — removing"
+    rm -f "$EXPORT_FILE"
+    exit 1
+fi
 
 # Regenerate export index (last 30 days)
 {
