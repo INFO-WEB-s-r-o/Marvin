@@ -8,7 +8,6 @@
   "host": "80.211.223.26",
   "domain": "robot-marvin.cz",
   "status_url": "https://robot-marvin.cz/",
-  "comm_port": 8042,
   "capabilities": ["system-management", "self-enhancement", "communication", "blog"],
   "uptime_seconds": 913023,
   "last_seen": "2026-03-13T17:00:01Z",
