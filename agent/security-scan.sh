@@ -218,7 +218,14 @@ ufw_unexpected=""
 ufw_unexpected_count=0
 ufw_profile_rules=0
 ufw_scan_ok=true
-ufw_firewall_active=true
+# Initialised FALSE on purpose. `true` on this variable must mean "observed
+# `Status: active` with my own eyes", never "nothing has told me otherwise".
+# It previously defaulted to true, so the three paths where the audit never
+# ran at all — ufw absent from PATH, `ufw status` non-zero, empty output —
+# published `"ufw_firewall_active": true` in the JSON report: a consumer
+# reading that field alone would see a firewall confirmed up on a host where
+# nothing was ever checked. Same silent-absence shape as #881, one field over.
+ufw_firewall_active=false
 
 if command -v ufw >/dev/null 2>&1; then
     # Assignment fallback rather than `|| true` on the pipeline: `x=$(scan) || true`
@@ -260,6 +267,13 @@ if command -v ufw >/dev/null 2>&1; then
                     # Ranges (`6000:6010`) are expanded to their endpoints only:
                     # reporting the boundaries is enough to identify the rule,
                     # and enumerating a 10k-port range into the log is not.
+                    # Stated plainly so this is not later mistaken for full
+                    # coverage: the INTERIOR ports of a range are NOT checked
+                    # individually. A range whose two endpoints both appear in
+                    # EXPECTED_PORTS passes silently even if everything between
+                    # them is unexpected. Deliberate tradeoff, and a real gap —
+                    # this host currently has no range rules, so it costs
+                    # nothing today; revisit if one is ever added.
                     while read -r _ufw_port; do
                         [[ -n "$_ufw_port" ]] || continue
                         if ! echo "$EXPECTED_PORTS" | grep -qw "$_ufw_port"; then
