@@ -142,6 +142,278 @@ if [[ "$_unguarded_calls" -eq 0 ]]; then
     test_pass "run_claude call sites: all capture exit codes"
 fi
 
+# ─── 1e. negotiate-listener handler: reachable, and answers valid JSON ───────
+# The listener spent 2026-02-22 → 2026-07-26 `active (running)` and completely
+# inert: socat re-invokes this script as its own per-connection handler, so a
+# `command -v socat` test placed before the `--handle` test sent every child
+# back into the listen branch to die on EADDRINUSE against its own parent. Five
+# months of 502s that no monitor noticed, because the parent never exited.
+#
+# Drive the handler directly (no socat, no port, no service) and assert on what
+# a peer would actually receive. A functional check rather than a grep for the
+# branch order: it also covers the response framing, where a character-counted
+# Content-Length was truncating the body past a multi-byte em dash.
+
+marvin_log "INFO" "Self-test: checking negotiate listener answers a synthetic proposal"
+
+_negotiate_ls="${MARVIN_DIR}/agent/negotiate-listener.sh"
+if [[ ! -f "$_negotiate_ls" ]]; then
+    test_fail "negotiate-listener.sh missing"
+elif ! command -v jq &>/dev/null; then
+    test_warn "jq not installed — skipping negotiate listener handler test"
+else
+    _neg_tmp=$(mktemp -d)
+    _neg_body='{"self_test":true,"from":"self-test.sh"}'
+    _neg_resp=$(
+        printf 'POST /.well-known/ai-negotiate HTTP/1.1\r\nX-Real-IP: 127.0.0.1\r\nX-Request-Id: self-test\r\nContent-Length: %s\r\n\r\n%s' \
+            "${#_neg_body}" "$_neg_body" \
+        | MARVIN_NEGOTIATE_INBOX="$_neg_tmp" bash "$_negotiate_ls" --handle 2>/dev/null
+    ) || _neg_resp=""
+    rm -rf "$_neg_tmp"
+
+    # Split on the header/body boundary and compare the advertised byte count
+    # against the body actually emitted — a client reads exactly the former.
+    _neg_declared=$(grep -aiE '^Content-Length:' <<< "$_neg_resp" | tr -d '\r' | awk '{print $2}' | head -1)
+    _neg_payload=${_neg_resp#*$'\r\n\r\n'}
+    _neg_actual=$(printf '%s' "$_neg_payload" | LC_ALL=C wc -c | tr -d '[:space:]')
+
+    if [[ -z "$_neg_resp" ]]; then
+        test_fail "negotiate listener: --handle produced no response (dispatch order regressed?)"
+    elif [[ "$_neg_resp" != "HTTP/1.1 202 Accepted"* ]]; then
+        test_fail "negotiate listener: expected 202, got '$(head -1 <<< "$_neg_resp" | tr -d '\r')'"
+    elif ! jq -e . >/dev/null 2>&1 <<< "$_neg_payload"; then
+        test_fail "negotiate listener: 202 body is not valid JSON"
+    elif [[ "$_neg_declared" != "$_neg_actual" ]]; then
+        test_fail "negotiate listener: Content-Length ${_neg_declared} != ${_neg_actual} body bytes (client reads a truncated document)"
+    else
+        test_pass "negotiate listener: handler reachable, 202 body valid and correctly framed"
+    fi
+fi
+
+# ─── 1f. negotiate health probe is side-effect-free (#852) ───────────────────
+# The beacon's negotiate_url is gated on a live POST to this endpoint (see
+# network-discovery.sh), and §1e above is why that POST now reaches a handler at
+# all. The new hazard is the health check becoming a *participant*: an unmarked
+# POST is filed in the inbox, and negotiate-handler.sh answers it with a real
+# Claude call and a self-authored entry in the public negotiation history —
+# daily, forever.
+#
+# Assert both halves of the contract, because each fails silently on its own: a
+# 2xx (without it the beacon just quietly stops advertising a working endpoint)
+# AND an untouched inbox (without it Marvin bills himself to negotiate with
+# himself). The inbox is redirected to a scratch dir, so "wrote nothing" is
+# checked as "the directory is still empty" rather than inferred.
+
+marvin_log "INFO" "Self-test: checking negotiate health probe writes nothing"
+
+_probe_ls="${MARVIN_DIR}/agent/negotiate-listener.sh"
+if [[ ! -f "$_probe_ls" ]]; then
+    test_fail "negotiate-listener.sh missing"
+elif ! command -v jq &>/dev/null; then
+    test_warn "jq not installed — skipping negotiate health probe test"
+else
+    _probe_tmp=$(mktemp -d)
+    _probe_body='{"marvin_health_probe":true}'
+    _probe_resp=$(
+        printf 'POST /.well-known/ai-negotiate HTTP/1.1\r\nX-Real-IP: 127.0.0.1\r\nX-Request-Id: self-test\r\nContent-Length: %s\r\n\r\n%s' \
+            "${#_probe_body}" "$_probe_body" \
+        | MARVIN_NEGOTIATE_INBOX="$_probe_tmp" bash "$_probe_ls" --handle 2>/dev/null
+    ) || _probe_resp=""
+    # Count what negotiate-handler.sh would actually pick up.
+    _probe_written=$(find "$_probe_tmp" -type f -name '*.json' 2>/dev/null | wc -l)
+    rm -rf "$_probe_tmp"
+
+    if [[ "$_probe_resp" != "HTTP/1.1 2"* ]]; then
+        test_fail "negotiate health probe: expected 2xx, got '$(head -1 <<< "$_probe_resp" | tr -d '\r')' — beacon gate cannot open"
+    elif [[ "$_probe_written" -ne 0 ]]; then
+        test_fail "negotiate health probe: wrote ${_probe_written} inbox record(s) — the daily beacon probe is filing itself as a peer proposal"
+    else
+        test_pass "negotiate health probe: 2xx and inbox untouched"
+    fi
+fi
+
+# ─── 1g. github.sh label normalization (issue #850) ──────────────────────────
+# A `labels:` list with spaces after the commas ("marvin-auto, incident") used
+# to reach the API as " incident", and GitHub rejects the WHOLE issue with a 422
+# (resource=Label) — title, body and the Claude run that produced them, gone,
+# leaving only `[ERROR] Errors: name`. Three finished bug reports died this way
+# on 2026-07-26 before anyone noticed, because the failure destroys the evidence
+# of itself. Unit-test the transform so the fix cannot silently regress.
+#
+# Sourced via `dirname "$0"` rather than ${MARVIN_DIR} (as §1/§1d use) on
+# purpose: this asserts on the library that ships next to *this* test, so the
+# check is meaningful when run from a branch worktree and not only post-merge.
+# Run in a subshell so github.sh's token loading/`export` cannot leak into the
+# rest of the suite, and capture the status explicitly — a bare `$(...)` here
+# would abort self-test on the ERR trap, the exact class §1d exists to catch.
+
+marvin_log "INFO" "Self-test: checking github.sh label normalization"
+
+_lib_github="$(dirname "$0")/lib/github.sh"
+if [[ ! -f "$_lib_github" ]]; then
+    test_fail "labels: lib/github.sh not found at ${_lib_github}"
+else
+    _norm() {
+        # shellcheck source=/dev/null  # path is runtime-resolved (branch or live tree)
+        ( source "$_lib_github" >/dev/null 2>&1 && github_normalize_labels "$1" )
+    }
+    _label_failures=0
+    # `unique` sorts ascending, so expectations are in sorted order.
+    while IFS='|' read -r _in _want; do
+        [[ -z "$_want" ]] && continue
+        _got=$(_norm "$_in") || _got="<error>"
+        if [[ "$_got" != "$_want" ]]; then
+            test_fail "labels: '${_in}' -> ${_got} (expected ${_want})"
+            _label_failures=$((_label_failures + 1))
+        fi
+        # The whole point of `-c`: one line, or the WARN that reports a label
+        # rejection gets shredded by health-monitor.sh's line-based log parser.
+        if [[ "$(printf '%s' "$_got" | wc -l)" -ne 0 ]]; then
+            test_fail "labels: '${_in}' produced multi-line JSON (needs jq -c)"
+            _label_failures=$((_label_failures + 1))
+        fi
+    done <<'LABEL_CASES'
+marvin-auto, incident, enhancement|["enhancement","incident","marvin-auto"]
+a, b ,c,,a|["a","b","c"]
+marvin-auto|["marvin-auto"]
+ , , |[]
+	tabbed , spaced |["spaced","tabbed"]
+-n|["-n"]
+LABEL_CASES
+    # Empty input is handled by the guard clause, not the jq filter — checked
+    # separately because a here-doc line cannot carry an empty first field.
+    _got=$(_norm "") || _got="<error>"
+    [[ "$_got" == "[]" ]] || {
+        test_fail "labels: empty input -> ${_got} (expected [])"
+        _label_failures=$((_label_failures + 1))
+    }
+    if [[ "$_label_failures" -eq 0 ]]; then
+        test_pass "labels: trim/dedupe/compact normalization correct (7 cases)"
+    fi
+    unset -f _norm
+fi
+
+# ─── 1h. pipefail double-JSON-document detector (#855) ───────────────────────
+# The bug class fixed four times in five days, in four files (#841/#843
+# log-alerting, #844 log-export + capability-inventory, #846 weekly-analytics):
+# under `set -euo pipefail` an early pipeline stage failing fires a trailing
+# `|| echo '[]'` AFTER a later `jq` has already printed a valid document, so the
+# "fallback" appends a second document instead of replacing the first. Each of
+# the four reviews found a variant the previous one had walked past, which is why
+# this is a grep and not a fifth code review. Detection lives in
+# agent/lib/pipefail-scan.sh; see its header for the four-condition rule.
+#
+# RATCHET, not a wall. The two PRs that fix the five sites still on main (#844,
+# #846) are unmerged, and #855 concluded the detector therefore could not ship —
+# a suite that is red for a reason nobody can act on is worse than no test. So
+# known-pending sites are listed below and reported as WARN; anything NOT listed
+# is a FAIL. That protects main against a sixth instance today instead of after
+# two merges, and cannot turn the suite red on merge.
+#
+# Keyed by a hash of the whitespace-normalized statement, not by line number, so
+# an edit above a known site does not read as a new defect. A fixed statement's
+# key changes, so it drops out of the baseline by itself — reported as a stale
+# WARN telling whoever merged the fix to delete the line. Removing all five is
+# the last step of #855.
+# Fields: basename | statement key | note. Split with `IFS='|' read -r f k note`
+# so a note containing a pipe lands wholly in the third field and can never be
+# mistaken for part of the key.
+_PIPEFAIL_KNOWN=(
+    "capability-inventory.sh|f00b3f0b1a2d|cron-entries jq -s fallback — fix pending in PR #844"
+    "log-export.sh|2295353653c5|enhancement_log find + jq -R -s fallback — fix pending in PR #844"
+    "log-export.sh|7996086ae437|blog_posts find + jq -R -s fallback — fix pending in PR #844"
+    "weekly-analytics.sh|ba972a99c6ce|claude-usage cat + jq -s fallback — fix pending in PR #846"
+    "weekly-analytics.sh|46dcf3def0ca|error_summary head -5 SIGPIPE — fix pending in PR #846"
+)
+
+_pipefail_scan="${MARVIN_DIR}/agent/lib/pipefail-scan.sh"
+if [[ ! -r "$_pipefail_scan" ]]; then
+    test_warn "pipefail double-document scanner missing (${_pipefail_scan})"
+else
+    marvin_log "INFO" "Self-test: scanning for pipefail double-document fallbacks"
+    # The scanner's exit code is load-bearing and must NOT be collapsed (#858):
+    #   0 = clean, 1 = hits, 2 = could not scan.
+    # An earlier version used `|| true`, which made a scanner that failed to run
+    # indistinguishable from a clean tree — it would have reported PASS *and*
+    # declared all five baseline entries stale, i.e. announced that #844/#846 had
+    # landed when nothing had. That is the same "collapse a failure into an empty
+    # result and call it fine" shape this whole section exists to catch, which is
+    # the second time this bug class has been reintroduced by code written to
+    # prevent it. The capture still must not fire the ERR trap (the §1d class),
+    # hence `&& rc=0 || rc=$?` rather than a bare substitution.
+    # The scanner names the cause of every exit 2 on stderr (missing tool,
+    # unreadable file, awk failure, unenumerable tree, empty target list).
+    # Discarding that with `2>/dev/null` would leave an operator holding a bare
+    # "exit 2" and a manual rerun to learn which of the five fired — throwing away
+    # failure detail inside the one check whose purpose is to stop failure detail
+    # being thrown away. Captured to a file rather than merged with `2>&1`, so a
+    # diagnostic line can never be read back as a TSV finding.
+    _pf_err=$(mktemp 2>/dev/null) || _pf_err="/dev/null"
+    _pf_out=$(bash "$_pipefail_scan" --tsv 2>"$_pf_err") && _pf_rc=0 || _pf_rc=$?
+    _pf_reason=$(tr '\n' ';' <"$_pf_err" 2>/dev/null | sed 's/;*$//; s/;/; /g') || _pf_reason=""
+    [[ "$_pf_err" == "/dev/null" ]] || rm -f "$_pf_err"
+    _pf_trusted=true
+    if [[ "$_pf_rc" -gt 1 ]]; then
+        test_fail "pipefail double-document scanner could not run (exit ${_pf_rc}${_pf_reason:+: ${_pf_reason}}) — the check did NOT execute; do not read this run as clean"
+        _pf_trusted=false
+    elif [[ "$_pf_rc" -eq 0 && -n "$_pf_out" ]]; then
+        test_fail "pipefail scanner reported clean (exit 0) but printed findings — scanner contract violated, results untrustworthy"
+        _pf_trusted=false
+    elif [[ "$_pf_rc" -eq 1 && -z "$_pf_out" ]]; then
+        test_fail "pipefail scanner reported hits (exit 1) but printed nothing — scanner contract violated, results untrustworthy"
+        _pf_trusted=false
+    fi
+    _pf_new=0
+    _pf_seen=()
+    # `_pf_stmt` is never read, but it is NOT dead code — it is the sink that
+    # absorbs the TSV's 4th field (the statement text). `read` assigns everything
+    # left over to its final variable, so dropping it would make `_pf_key` become
+    # "<hash>\t<statement>", no baseline entry would ever match, and all five
+    # known-pending sites would report as unbaselined FAILs — turning the suite
+    # red on merge. Verified: shellcheck flags it at neither warning nor info.
+    while IFS=$'\t' read -r _pf_file _pf_line _pf_key _pf_stmt; do
+        [[ "$_pf_trusted" == true ]] || break
+        [[ -z "${_pf_file:-}" ]] && continue
+        _pf_id="${_pf_file}|${_pf_key}"
+        _pf_note=""
+        for _pf_b in "${_PIPEFAIL_KNOWN[@]}"; do
+            IFS='|' read -r _pf_bf _pf_bk _pf_bn <<< "$_pf_b"
+            if [[ "${_pf_bf}|${_pf_bk}" == "$_pf_id" ]]; then
+                _pf_note="$_pf_bn"
+                break
+            fi
+        done
+        _pf_seen+=("$_pf_id")
+        if [[ -n "$_pf_note" ]]; then
+            test_warn "pipefail double-document (known): ${_pf_file}:${_pf_line} — ${_pf_note}"
+        else
+            test_fail "pipefail double-document fallback: ${_pf_file}:${_pf_line} (a failing early stage appends a second JSON document after jq already printed one — assign the fallback instead of echoing it)"
+            _pf_new=$((_pf_new + 1))
+        fi
+    done <<< "$_pf_out"
+    if [[ "$_pf_trusted" == true && "$_pf_new" -eq 0 ]]; then
+        test_pass "pipefail double-document scan: no new sites"
+    fi
+    # Stale baseline entries: the fix landed, so the line is now excusing
+    # nothing and must go, or it silently re-excuses a reintroduction later.
+    # Gated on a trustworthy scan — an unlisted-because-nothing-ran entry is not
+    # a landed fix, and saying so would be the false all-clear from #858.
+    for _pf_b in "${_PIPEFAIL_KNOWN[@]}"; do
+        [[ "$_pf_trusted" == true ]] || break
+        IFS='|' read -r _pf_bf _pf_bk _pf_bn <<< "$_pf_b"
+        _pf_bid="${_pf_bf}|${_pf_bk}"
+        _pf_found=false
+        if [[ ${#_pf_seen[@]} -gt 0 ]]; then
+            for _pf_s in "${_pf_seen[@]}"; do
+                [[ "$_pf_s" == "$_pf_bid" ]] && _pf_found=true && break
+            done
+        fi
+        if [[ "$_pf_found" == false ]]; then
+            test_warn "pipefail baseline entry is stale — the fix landed, remove it from _PIPEFAIL_KNOWN: ${_pf_bid}"
+        fi
+    done
+fi
+
 # ─── 2. JSON data file validation ────────────────────────────────────────────
 
 marvin_log "INFO" "Self-test: validating JSON data files"
@@ -421,6 +693,147 @@ for _entry in "${_runtime_json_targets[@]}"; do
     test_pass "runtime json: ${_label} valid (${_rel})"
 done
 
+# ─── 9e. Public beacon content freshness ─────────────────────────────────────
+# /.well-known/ai-managed.json is the document every peer and scanner reads to
+# decide whether anything lives here. It advertised 2026-04-08 for 109 days:
+# network-discovery.sh rewrote it daily and logged "ECHO_BROADCAST: beacon
+# updated" every time, but the file was git-tracked, so every `git checkout` /
+# `git reset --hard` in the morning-pull and self-enhance rollback paths
+# restored the stale committed blob over it.
+#
+# This asserts on the `last_seen` value INSIDE the document, not on the file
+# mtime — a checkout that reverts the content still bumps the mtime, so an
+# mtime check would have passed happily throughout those 109 days. The
+# distinction is the entire point of this test.
+
+marvin_log "INFO" "Self-test: verifying public beacon freshness"
+
+_beacon="${COMMS_DIR}/identity.json"
+if [[ ! -f "$_beacon" ]]; then
+    test_fail "beacon: identity.json missing (nginx serves this at /.well-known/ai-managed.json)"
+else
+    _beacon_seen=$(jq -r '.last_seen // empty' "$_beacon" 2>/dev/null || true)
+    if [[ -z "$_beacon_seen" ]]; then
+        test_fail "beacon: last_seen absent — cannot tell whether the beacon is live"
+    else
+        _beacon_seen_s=$(date -d "$_beacon_seen" +%s 2>/dev/null || echo 0)
+        if [[ "$_beacon_seen_s" -eq 0 ]]; then
+            test_fail "beacon: last_seen is not a parseable timestamp (${_beacon_seen})"
+        else
+            # discovery runs daily at 18:00 UTC; >48h means a run was lost or
+            # its write is being reverted.
+            _beacon_age_s=$(( $(date +%s) - _beacon_seen_s ))
+            if [[ "$_beacon_age_s" -gt 172800 ]]; then
+                test_fail "beacon: last_seen is $(( _beacon_age_s / 86400 ))d stale (${_beacon_seen}) — beacon is frozen"
+            else
+                test_pass "beacon: last_seen fresh ($(( _beacon_age_s / 3600 ))h old)"
+            fi
+        fi
+    fi
+
+    # `born: ""` shipped publicly from 2026-02-24 to 2026-07-26 because the
+    # heredoc that carried it forward read a file the same command had already
+    # truncated. Empty-but-present fields parse as valid JSON, so the integrity
+    # sweep above cannot see them.
+    if [[ -z "$(jq -r '.born // empty' "$_beacon" 2>/dev/null || true)" ]]; then
+        test_fail "beacon: born is empty — carry-over field is not being preserved"
+    else
+        test_pass "beacon: born populated"
+    fi
+fi
+
+# Recovery wiring: morning-check.sh regenerates the beacon by invoking
+# network-discovery.sh with a flag, and that call is the only thing standing
+# between "the pull deleted the untracked beacon" and a 404 on
+# /.well-known/ai-managed.json for up to 24h. Nothing else asserts the flag it
+# passes is a flag network-discovery.sh still understands — rename or drop it
+# and the recovery silently degrades to a WARN, which is precisely how the
+# beacon stayed frozen for 109 days. Static check, deliberately: actually
+# running --beacon-only would emit a live negotiate probe and rewrite the real
+# beacon, which a test suite has no business doing.
+_nd_script="${MARVIN_DIR}/agent/network-discovery.sh"
+if [[ -r "$_nd_script" ]]; then
+    _nd_flags_checked=0
+    _nd_flags_bad=0
+    while IFS= read -r _nd_flag; do
+        [[ -n "$_nd_flag" ]] || continue
+        _nd_flags_checked=$((_nd_flags_checked + 1))
+        if ! grep -q -- "\"${_nd_flag}\"" "$_nd_script"; then
+            test_fail "beacon recovery: callers pass network-discovery.sh ${_nd_flag}, but that flag is not handled there"
+            _nd_flags_bad=$((_nd_flags_bad + 1))
+        fi
+    done < <(grep -rhoE 'network-discovery\.sh"?[[:space:]]+--[a-z-]+' "${MARVIN_DIR}/agent" 2>/dev/null \
+                | grep -oE '\-\-[a-z-]+' | sort -u || true)
+    if [[ "$_nd_flags_checked" -gt 0 && "$_nd_flags_bad" -eq 0 ]]; then
+        test_pass "beacon recovery: all ${_nd_flags_checked} network-discovery.sh flag(s) used by callers are handled"
+    fi
+
+    # And the other direction, which is the worse failure: a recovery call that
+    # loses its flag doesn't fail, it runs the FULL discovery from the morning
+    # pull — section 3's SSH probe (deliberately fail2ban-triggering, once-daily
+    # stamped), a Claude call, and a peer-trust rewrite, none of which belong in
+    # a 06:00 git sync. Unflagged invocation is therefore a FAIL, not a WARN.
+    _nd_unflagged=0
+    _nd_calls=0
+    while IFS= read -r _nd_call; do
+        # Skip comments: the file discusses this call as well as making it.
+        [[ "${_nd_call#"${_nd_call%%[![:space:]]*}"}" == \#* ]] && continue
+        _nd_calls=$((_nd_calls + 1))
+        [[ "$_nd_call" == *"--beacon-only"* ]] || _nd_unflagged=$((_nd_unflagged + 1))
+    done < <(grep -hE 'bash[[:space:]]+"?[^"]*network-discovery\.sh' \
+                 "${MARVIN_DIR}/agent/morning-check.sh" 2>/dev/null || true)
+    if [[ "$_nd_unflagged" -gt 0 ]]; then
+        test_fail "beacon recovery: morning-check.sh invokes network-discovery.sh without --beacon-only — a git sync would trigger a full discovery run (SSH probe, Claude call, trust rescore)"
+    elif [[ "$_nd_calls" -gt 0 ]]; then
+        test_pass "beacon recovery: morning-check.sh's ${_nd_calls} network-discovery.sh call(s) all pass --beacon-only"
+    else
+        test_warn "beacon recovery: morning-check.sh no longer invokes network-discovery.sh at all — a pull that deletes the untracked beacon now has nothing to restore it"
+    fi
+fi
+
+# ─── 9f. Beacon negotiate gate ⇆ listener marker agreement ───────────────────
+# network-discovery.sh only probes (and therefore only advertises) the negotiate
+# endpoint if the DEPLOYED negotiate-listener.sh implements the health-probe
+# short-circuit, matched by grepping for `.marvin_health_probe == true`. That is
+# a textual dependency on a construct owned by a different file, and it fails
+# CLOSED: if the marker is renamed, the gate shuts, `negotiate_url` silently
+# disappears from the public beacon, and the only trace is a WARN among many.
+# That is the exact failure shape §9e exists for — a document quietly going
+# stale while everything reports success — so it gets a test rather than a
+# note in a review thread.
+#
+# Self-activating by design, which removes the "add this to whichever PR lands
+# second" coordination the review asked for: while #847 is unmerged the
+# deployed listener has no probe machinery at all and this WARNs. Once it does,
+# absence of the exact marker can only mean drift, and that FAILs.
+
+marvin_log "INFO" "Self-test: checking beacon negotiate gate agrees with listener marker"
+
+_nd_file="${MARVIN_DIR}/agent/network-discovery.sh"
+_nl_file="${MARVIN_DIR}/agent/negotiate-listener.sh"
+if [[ -r "$_nd_file" && -r "$_nl_file" ]]; then
+    # Normalize exactly as the runtime gate does, or the test would disagree
+    # with the code it is guarding: strip full-line comments (so prose that
+    # merely mentions the marker cannot satisfy it) then collapse whitespace
+    # (so reflowing the multi-line jq expression is not a false positive).
+    _nl_norm=$(sed 's/^[[:space:]]*#.*$//' "$_nl_file" 2>/dev/null | tr -s '[:space:]' ' ') || _nl_norm=""
+    # Does the gate still exist in network-discovery.sh at all? If someone drops
+    # the pre-condition, the probe starts polluting the inbox again (#852) and
+    # this test must not quietly keep passing on the listener half alone.
+    if ! grep -q 'marvin_health_probe == true' "$_nd_file" 2>/dev/null; then
+        test_fail "beacon negotiate gate: network-discovery.sh no longer checks for the listener's health-probe marker — the daily probe would write a forged peer entry to the negotiate inbox (#852)"
+    elif grep -q '\.marvin_health_probe == true' <<< "$_nl_norm"; then
+        test_pass "beacon negotiate gate: listener implements the health-probe marker the beacon gate greps for"
+    elif grep -qE '"(alive|probe)"|probe.*:.*true' <<< "$_nl_norm"; then
+        # Probe machinery present but not under the expected marker: drift.
+        test_fail "beacon negotiate gate: negotiate-listener.sh has probe handling but not '.marvin_health_probe == true' — the beacon gate is now permanently closed and negotiate_url will silently vanish from the public beacon"
+    else
+        test_warn "beacon negotiate gate: deployed negotiate-listener.sh has no health-probe short-circuit yet (#847 unmerged) — gate correctly fails closed, negotiate_url omitted"
+    fi
+else
+    test_warn "beacon negotiate gate: network-discovery.sh or negotiate-listener.sh not readable — check skipped"
+fi
+
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
 # Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
 # artefact with byte-identical duplicates of the active /home/marvin/.gnupg/
@@ -636,6 +1049,18 @@ if [[ -r "$_hc_script" ]]; then
             *ROTATEDOLD*) ;;
             *) printf 'the unfiltered fallback read only the live file — rotated window lost'; exit 1 ;;
         esac
+        # …and it must REPLACE the partial read, not append to it. This is the
+        # third regression in this section's history — the fallback spliced its
+        # dump onto the bytes already collected before the read failed — and it
+        # is the one the two assertions above cannot see: a splice still
+        # contains every marker they look for, so both pass. The label leads the
+        # output either way (it is prepended after the assignment), so that is
+        # not the discriminator; duplication is. Each fixture line appears
+        # exactly once in `cat error.log.1 error.log`, so a live line seen twice
+        # means the partial `_nginx_raw` was carried in — the hour's log read
+        # back to the next run as two separate events.
+        _hc_dup=$(printf '%s\n' "$_hc_out2" | grep -c LIVERECENT) || _hc_dup=0
+        [[ "$_hc_dup" -eq 1 ]] || { printf 'the fallback spliced onto the partial read instead of replacing it (live line appears %sx)' "$_hc_dup"; exit 1; }
 
         # (3) A total `date` failure must degrade to an unfiltered window, not
         #     abort. As an argument the cutoff could not trip `set -e`; hoisted

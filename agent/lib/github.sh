@@ -165,6 +165,34 @@ github_api() {
 
 # ─── Issues ──────────────────────────────────────────────────────────────────
 
+# Normalize a comma-separated label list into a compact JSON array.
+#
+# Callers pass human-written lists like "marvin-auto, incident, enhancement".
+# A bare `tr ',' '\n'` keeps the separator space, producing " incident" —
+# a label name that does not exist, so GitHub rejects the WHOLE issue with
+# 422 (resource=Label, field=name) and the report is lost. Trim, drop
+# blanks, dedupe. (3 bug reports lost this way on 2026-07-26.)
+#
+# `-c` is load-bearing, not cosmetic: the result is interpolated into the
+# fallback WARN below, and health-monitor.sh parses logs line-by-line
+# (`/^\[.*\] \[.*\]/`, agent/health-monitor.sh:889). A pretty-printed array
+# splits that WARN across 5 lines, of which the dashboard log feed keeps only
+# the truncated first one and silently drops the label list — destroying the
+# single diagnostic that says which labels caused the rejection.
+#
+# `printf '%s'` rather than `echo`: a list beginning with `-n`/`-e` would be
+# eaten by echo as a flag instead of being treated as a label.
+#
+# Its own function so self-test §1g can exercise the real transform rather
+# than a copy of the filter that could silently drift from it.
+# Usage: github_normalize_labels "marvin-auto, incident" -> ["incident","marvin-auto"]
+github_normalize_labels() {
+    local labels="${1:-}"
+    [[ -n "$labels" ]] || { printf '[]'; return 0; }
+    printf '%s' "$labels" | tr ',' '\n' | \
+        jq -R -s -c 'split("\n") | map(sub("^\\s+";"") | sub("\\s+$";"")) | map(select(. != "")) | unique'
+}
+
 # Create a GitHub issue
 # Usage: github_create_issue "title" "body" "label1,label2"
 github_create_issue() {
@@ -172,10 +200,9 @@ github_create_issue() {
     local body="$2"
     local labels="${3:-}"
 
-    local labels_json="[]"
-    if [[ -n "$labels" ]]; then
-        labels_json=$(echo "$labels" | tr ',' '\n' | jq -R -s 'split("\n") | map(select(. != ""))')
-    fi
+    local labels_json
+    labels_json=$(github_normalize_labels "$labels") || labels_json="[]"
+    [[ -n "$labels_json" ]] || labels_json="[]"
 
     local payload
     payload=$(jq -n \
@@ -187,6 +214,19 @@ github_create_issue() {
     local response
     response=$(github_api POST "/repos/${GITHUB_REPO}/issues" "$payload")
     local exit_code=$?
+
+    # Trimming fixes malformed label lists, but a label that simply does not
+    # exist in the repo (e.g. Claude inventing "discovery") still 422s. The
+    # issue body is the valuable part — labels are metadata. Retry once
+    # unlabelled rather than dropping the report on the floor.
+    if [[ $exit_code -ne 0 && "$labels_json" != "[]" ]] \
+       && echo "$response" | jq -e '[.errors[]? | select(.resource == "Label")] | length > 0' &>/dev/null; then
+        marvin_log "WARN" "Issue rejected over labels (${labels_json}) — retrying without labels" >&2
+        payload=$(jq -n --arg title "$title" --arg body "$body" \
+            '{title: $title, body: $body, labels: []}')
+        response=$(github_api POST "/repos/${GITHUB_REPO}/issues" "$payload")
+        exit_code=$?
+    fi
 
     if [[ $exit_code -eq 0 ]]; then
         local issue_number
