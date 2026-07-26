@@ -140,10 +140,25 @@ BEACON_UPTIME=$(cut -d' ' -f1 /proc/uptime | cut -d'.' -f1)
 # URL that returns 502 is worse than publishing none: a peer that trusts the
 # beacon wastes its one contact attempt. Probing localhost keeps this honest
 # and self-correcting — the field appears on its own once the listener works.
+#
+# Probe the exact URL about to be advertised — over TLS, on the real hostname,
+# resolved to loopback. The earlier form probed `http://127.0.0.1/…`, which
+# never reached this location at all: port 80 is the redirect vhost and Host
+# 127.0.0.1 lands on the default server, so it returned 404 (or 301 with the
+# right Host) no matter how healthy the listener was. The gate could not have
+# opened. Probing the advertised URL means the check fails only for reasons a
+# real peer would also hit — wrong vhost, bad TLS, dead upstream — and
+# --resolve keeps certificate verification intact instead of needing -k.
+#
+# The body carries the marker that makes negotiate-listener.sh answer without
+# creating a negotiation: a bare POST here would cost a Claude call and forge a
+# peer entry in the public negotiation history once a day, forever (#852).
 BEACON_NEGOTIATE=""
-if [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
-        -X POST -H 'Content-Type: application/json' -d '{"probe":true}' \
-        "http://127.0.0.1/.well-known/ai-negotiate" 2>/dev/null)" =~ ^2 ]]; then
+NEGOTIATE_PROBE_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+    --resolve "${MARVIN_DOMAIN}:443:127.0.0.1" \
+    -X POST -H 'Content-Type: application/json' -d '{"marvin_health_probe":true}' \
+    "https://${MARVIN_DOMAIN}/.well-known/ai-negotiate" 2>/dev/null) || NEGOTIATE_PROBE_CODE="000"
+if [[ "$NEGOTIATE_PROBE_CODE" =~ ^2 ]]; then
     BEACON_NEGOTIATE=$(cat << NEGOTIATE_EOF
   "negotiate_url": "https://${MARVIN_DOMAIN}/.well-known/ai-negotiate",
   "negotiate_method": "POST",
@@ -152,6 +167,11 @@ if [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
   "negotiate_response_url": "https://${MARVIN_DOMAIN}/.well-known/ai-negotiate-response/",
 NEGOTIATE_EOF
 )
+    marvin_log "INFO" "negotiate endpoint healthy (HTTP ${NEGOTIATE_PROBE_CODE}) — advertising negotiate_url"
+else
+    # Say so out loud. A gate that silently declines to publish looks exactly
+    # like a gate that was never reached.
+    marvin_log "WARN" "negotiate endpoint probe returned HTTP ${NEGOTIATE_PROBE_CODE} — omitting negotiate_url from beacon"
 fi
 
 # Written to a temp file and moved into place so a peer fetching mid-write
@@ -182,14 +202,20 @@ EOF
 
 # Never publish a malformed beacon: if the document doesn't parse, keep the
 # previous one and say so, rather than serving broken JSON to every scanner.
+#
+# COMM_LOG is the peer- and scanner-facing record, so its "beacon updated" line
+# belongs strictly inside the branch where the beacon was, in fact, updated
+# (#853). Reporting success on the discard path would rebuild the exact blind
+# spot §9e below exists to close: the previous 109-day freeze survived because
+# the only thing reporting on the beacon was the beacon's own success log.
 if jq empty "${COMMS_DIR}/identity.json.tmp" 2>/dev/null; then
     mv "${COMMS_DIR}/identity.json.tmp" "${COMMS_DIR}/identity.json"
+    echo "[${NOW}] ECHO_BROADCAST: beacon updated at /.well-known/ai-managed.json" >> "$COMM_LOG"
 else
     rm -f "${COMMS_DIR}/identity.json.tmp"
     marvin_log "ERROR" "Generated beacon is not valid JSON — keeping previous identity.json"
+    echo "[${NOW}] ECHO_BROADCAST_FAILED: beacon NOT updated (generated document was invalid JSON, kept previous)" >> "$COMM_LOG"
 fi
-
-echo "[${NOW}] ECHO_BROADCAST: beacon updated at /.well-known/ai-managed.json" >> "$COMM_LOG"
 
 # =============================================================================
 # 3. Probe Last Ping (posledniping.cz) via SSH username channel (#628)
