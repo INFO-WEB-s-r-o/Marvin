@@ -113,7 +113,14 @@ _claude_usage() {
     # not API/tooling failures. Mirrors the same exclusion in log-alerting.sh §6 so
     # the daily alert and the weekly error-rate metric agree on what a "failure" is.
     # The `(.fail_reason // "")` guard keeps pre-classification rows counted.
-    cat "${files[@]}" | jq -s '
+    #
+    # Capture-then-emit rather than `cat … | jq … || echo '{…}'`: under `pipefail`
+    # an unreadable file makes `cat` exit non-zero *after* `jq -s` has already
+    # printed a valid object, so a trailing `|| echo` fallback would append a
+    # second JSON document instead of replacing the first (same class as #841 /
+    # #843 / #844). Assignment form makes the fallback a true replacement.
+    local _usage
+    if _usage=$(cat "${files[@]}" | jq -s '
         {
             total_runs: length,
             total_duration_s: ([.[].duration_s] | add // 0),
@@ -131,7 +138,11 @@ _claude_usage() {
                 }
             }) | from_entries)
         }
-    ' 2>/dev/null || echo '{"total_runs":0}'
+    ' 2>/dev/null); then
+        echo "$_usage"
+    else
+        echo '{"total_runs":0,"total_duration_s":0,"avg_duration_s":0,"errors":0,"error_rate_pct":0,"by_task":{}}'
+    fi
 }
 
 current_claude=$(_claude_usage "$REPORT_START" "$REPORT_END")
@@ -165,9 +176,17 @@ _log_stats() {
     done < <(_dates_in_range "$start" "$end")
 
     if [[ -n "$all_errors" ]]; then
-        error_summary=$(echo "$all_errors" | sed '/^$/d' | sort | uniq -c | sort -rn | head -5 \
+        # Truncation happens inside jq, not via `head -5`. `head` exits as soon as
+        # it has its 5 lines and kills `sort -rn` with SIGPIPE once the sorted
+        # output exceeds the pipe buffer (~64 KiB — a week with many distinct error
+        # messages). Under `pipefail` that made the pipeline exit 141 *after*
+        # `jq -s` had already printed a valid array, so the `|| echo '[]'` fallback
+        # appended a second document; the two-document value then aborted the run
+        # at `--argjson top_errors` (jq exit 2 → ERR trap). Slicing in jq removes
+        # the SIGPIPE, and the assignment-form fallback replaces instead of appends.
+        error_summary=$(echo "$all_errors" | sed '/^$/d' | sort | uniq -c | sort -rn \
             | awk '{count=$1; $1=""; sub(/^ /, ""); printf "{\"count\":%d,\"message\":\"%s\"}\n", count, $0}' \
-            | jq -s '.' 2>/dev/null || echo '[]')
+            | jq -s '.[0:5]' 2>/dev/null) || error_summary='[]'
     fi
 
     jq -n \
