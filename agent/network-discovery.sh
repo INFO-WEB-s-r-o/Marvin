@@ -164,6 +164,7 @@ if [[ "$NEGOTIATE_PROBE_CODE" =~ ^2 ]]; then
   "negotiate_method": "POST",
   "negotiate_content_type": "application/json",
   "negotiate_async": true,
+  "negotiate_response_time": "up to 30 minutes (cron-based)",
   "negotiate_response_url": "https://${MARVIN_DOMAIN}/.well-known/ai-negotiate-response/",
 NEGOTIATE_EOF
 )
