@@ -81,11 +81,37 @@ if [[ -f /var/log/nginx/error.log || -f /var/log/nginx/error.log.1 ]]; then
     # for emptiness instead would fire the unfiltered fallback on every
     # healthy run and flood the snapshot with hours-old entries, which is
     # precisely the over-wide window #848 closed.
-    if ! _nginx_recent="$(for _nginx_log in /var/log/nginx/error.log.1 /var/log/nginx/error.log; do
-            if [[ -f "$_nginx_log" ]]; then
-                awk -v d="$_nginx_cutoff" '$0 >= d' "$_nginx_log" 2>/dev/null
-            fi
-        done | tail -50)"; then
+    # Read each file SEPARATELY and track failure per file. The compact
+    # spelling — one `for` loop piped into `tail` — cannot report a failed read
+    # of error.log.1: a `for` compound's exit status is the status of the last
+    # command in its LAST iteration, so a broken rotated read is overwritten by
+    # a healthy live one and pipefail never sees a non-zero (#866). Demonstrated
+    # with an awk stub failing only on error.log.1: the old spelling returned 0
+    # and captured the live line alone, silently dropping the rotated window.
+    # That is this section's own failure — "the entry was there, we just didn't
+    # look" — reappearing inside the code added to fix it, and only for the one
+    # file it was added to read.
+    #
+    # `if` rather than `[[ ... ]] && _nginx_raw+=...` on the append: an AND-list
+    # whose test fails leaves the loop with a non-zero status on a quiet hour,
+    # which under `set -e` + the ERR trap is a lost run. An `if` with a false
+    # condition returns 0.
+    _nginx_read_ok=true
+    _nginx_raw=""
+    for _nginx_log in /var/log/nginx/error.log.1 /var/log/nginx/error.log; do
+        [[ -f "$_nginx_log" ]] || continue
+        _nginx_part=""
+        _nginx_part="$(awk -v d="$_nginx_cutoff" '$0 >= d' "$_nginx_log" 2>/dev/null)" || _nginx_read_ok=false
+        if [[ -n "$_nginx_part" ]]; then
+            _nginx_raw+="${_nginx_part}"$'\n'
+        fi
+    done
+
+    # `tail` bounds the two files together, not each one: the 50-line cap is on
+    # the window as a whole, and the newest entries are in error.log, read last.
+    if [[ "$_nginx_read_ok" == true ]]; then
+        _nginx_recent="$(printf '%s' "$_nginx_raw" | tail -50)"
+    else
         # Last resort: the age filter itself is broken, so the 65-minute claim
         # in the heading cannot be honoured. Read BOTH files here too — a
         # fallback that reads only the live file silently reintroduces the
