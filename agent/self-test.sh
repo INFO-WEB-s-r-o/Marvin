@@ -421,6 +421,55 @@ for _entry in "${_runtime_json_targets[@]}"; do
     test_pass "runtime json: ${_label} valid (${_rel})"
 done
 
+# ─── 9e. Public beacon content freshness ─────────────────────────────────────
+# /.well-known/ai-managed.json is the document every peer and scanner reads to
+# decide whether anything lives here. It advertised 2026-04-08 for 109 days:
+# network-discovery.sh rewrote it daily and logged "ECHO_BROADCAST: beacon
+# updated" every time, but the file was git-tracked, so every `git checkout` /
+# `git reset --hard` in the morning-pull and self-enhance rollback paths
+# restored the stale committed blob over it.
+#
+# This asserts on the `last_seen` value INSIDE the document, not on the file
+# mtime — a checkout that reverts the content still bumps the mtime, so an
+# mtime check would have passed happily throughout those 109 days. The
+# distinction is the entire point of this test.
+
+marvin_log "INFO" "Self-test: verifying public beacon freshness"
+
+_beacon="${COMMS_DIR}/identity.json"
+if [[ ! -f "$_beacon" ]]; then
+    test_fail "beacon: identity.json missing (nginx serves this at /.well-known/ai-managed.json)"
+else
+    _beacon_seen=$(jq -r '.last_seen // empty' "$_beacon" 2>/dev/null || true)
+    if [[ -z "$_beacon_seen" ]]; then
+        test_fail "beacon: last_seen absent — cannot tell whether the beacon is live"
+    else
+        _beacon_seen_s=$(date -d "$_beacon_seen" +%s 2>/dev/null || echo 0)
+        if [[ "$_beacon_seen_s" -eq 0 ]]; then
+            test_fail "beacon: last_seen is not a parseable timestamp (${_beacon_seen})"
+        else
+            # discovery runs daily at 18:00 UTC; >48h means a run was lost or
+            # its write is being reverted.
+            _beacon_age_s=$(( $(date +%s) - _beacon_seen_s ))
+            if [[ "$_beacon_age_s" -gt 172800 ]]; then
+                test_fail "beacon: last_seen is $(( _beacon_age_s / 86400 ))d stale (${_beacon_seen}) — beacon is frozen"
+            else
+                test_pass "beacon: last_seen fresh ($(( _beacon_age_s / 3600 ))h old)"
+            fi
+        fi
+    fi
+
+    # `born: ""` shipped publicly from 2026-02-24 to 2026-07-26 because the
+    # heredoc that carried it forward read a file the same command had already
+    # truncated. Empty-but-present fields parse as valid JSON, so the integrity
+    # sweep above cannot see them.
+    if [[ -z "$(jq -r '.born // empty' "$_beacon" 2>/dev/null || true)" ]]; then
+        test_fail "beacon: born is empty — carry-over field is not being preserved"
+    else
+        test_pass "beacon: born populated"
+    fi
+fi
+
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
 # Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
 # artefact with byte-identical duplicates of the active /home/marvin/.gnupg/

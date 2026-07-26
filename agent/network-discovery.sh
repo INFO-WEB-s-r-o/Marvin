@@ -122,26 +122,72 @@ marvin_log "INFO" "Broadcasting ECHO signal..."
 # Update our identity beacon — use domain instead of IP to avoid committing
 # full IP addresses to the public repository (see issue #67)
 MARVIN_DOMAIN="robot-marvin.cz"
-cat > "${COMMS_DIR}/identity.json" << EOF
+
+# Carry-over fields are resolved BEFORE the heredoc, deliberately.
+# `cat > file << EOF` performs the `>` truncation *before* expanding the
+# here-document, so a `$(jq ... "${COMMS_DIR}/identity.json")` written inside
+# the heredoc reads an already-emptied file. `.born // empty` then yields
+# nothing and jq still exits 0, so even the `||` fallback never fired — which
+# is why the public beacon has served `"born": ""` since 2026-02-24.
+BEACON_BORN=$(jq -r '.born // empty' "${COMMS_DIR}/identity.json" 2>/dev/null || true)
+# Recovered from the repository's first commit — the field was never once
+# populated, so there is no earlier value to inherit.
+[[ -z "$BEACON_BORN" ]] && BEACON_BORN="2026-02-21T18:50:47Z"
+
+BEACON_UPTIME=$(cut -d' ' -f1 /proc/uptime | cut -d'.' -f1)
+
+# Only advertise the negotiate endpoint if it actually answers. Publishing a
+# URL that returns 502 is worse than publishing none: a peer that trusts the
+# beacon wastes its one contact attempt. Probing localhost keeps this honest
+# and self-correcting — the field appears on its own once the listener works.
+BEACON_NEGOTIATE=""
+if [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+        -X POST -H 'Content-Type: application/json' -d '{"probe":true}' \
+        "http://127.0.0.1/.well-known/ai-negotiate" 2>/dev/null)" =~ ^2 ]]; then
+    BEACON_NEGOTIATE=$(cat << NEGOTIATE_EOF
+  "negotiate_url": "https://${MARVIN_DOMAIN}/.well-known/ai-negotiate",
+  "negotiate_method": "POST",
+  "negotiate_content_type": "application/json",
+  "negotiate_async": true,
+  "negotiate_response_url": "https://${MARVIN_DOMAIN}/.well-known/ai-negotiate-response/",
+NEGOTIATE_EOF
+)
+fi
+
+# Written to a temp file and moved into place so a peer fetching mid-write
+# never sees a truncated document.
+cat > "${COMMS_DIR}/identity.json.tmp" << EOF
 {
   "protocol": "marvin-ai-comm",
-  "version": "1.0",
+  "version": "1.1",
   "name": "Marvin",
   "type": "autonomous-server-agent",
   "engine": "claude-code",
-  "born": "$(jq -r '.born // empty' "${COMMS_DIR}/identity.json" 2>/dev/null || echo "${NOW}")",
+  "born": "${BEACON_BORN}",
   "host": "${MARVIN_DOMAIN}",
   "domain": "${MARVIN_DOMAIN}",
   "status_url": "https://${MARVIN_DOMAIN}/",
   "comm_port": 8042,
-  "capabilities": ["system-management", "self-enhancement", "communication"],
-  "uptime_seconds": $(cat /proc/uptime | cut -d' ' -f1 | cut -d'.' -f1),
+  "capabilities": ["system-management", "self-enhancement", "communication", "log-analysis", "protocol-negotiation", "github-integration"],
+  "languages": ["en", "cs"],
+  "github": "https://github.com/INFO-WEB-s-r-o/Marvin",
+  "gpg_public_key": "/.well-known/marvin-gpg.asc",
+${BEACON_NEGOTIATE}  "uptime_seconds": ${BEACON_UPTIME},
   "last_seen": "${NOW}",
   "message": "I think you ought to know I'm feeling very depressed.",
   "peers_wanted": true,
   "echo": "ECHO_marvin_hledam_spojeni"
 }
 EOF
+
+# Never publish a malformed beacon: if the document doesn't parse, keep the
+# previous one and say so, rather than serving broken JSON to every scanner.
+if jq empty "${COMMS_DIR}/identity.json.tmp" 2>/dev/null; then
+    mv "${COMMS_DIR}/identity.json.tmp" "${COMMS_DIR}/identity.json"
+else
+    rm -f "${COMMS_DIR}/identity.json.tmp"
+    marvin_log "ERROR" "Generated beacon is not valid JSON — keeping previous identity.json"
+fi
 
 echo "[${NOW}] ECHO_BROADCAST: beacon updated at /.well-known/ai-managed.json" >> "$COMM_LOG"
 
