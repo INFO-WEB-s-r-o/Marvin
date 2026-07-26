@@ -214,7 +214,13 @@ else
     fi
     _pf_new=0
     _pf_seen=()
-    while IFS=$'\t' read -r _pf_file _pf_line _pf_key _pf_rest; do
+    # `_pf_stmt` is never read, but it is NOT dead code — it is the sink that
+    # absorbs the TSV's 4th field (the statement text). `read` assigns everything
+    # left over to its final variable, so dropping it would make `_pf_key` become
+    # "<hash>\t<statement>", no baseline entry would ever match, and all five
+    # known-pending sites would report as unbaselined FAILs — turning the suite
+    # red on merge. Verified: shellcheck flags it at neither warning nor info.
+    while IFS=$'\t' read -r _pf_file _pf_line _pf_key _pf_stmt; do
         [[ "$_pf_trusted" == true ]] || break
         [[ -z "${_pf_file:-}" ]] && continue
         _pf_id="${_pf_file}|${_pf_key}"

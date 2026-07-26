@@ -39,6 +39,17 @@
 #     Another command with that property would be missed.
 #   - the awk line-joiner caps at 60 joined lines, so a longer statement is
 #     truncated rather than scanned whole.
+#   - condition 1's empty-fallback exclusion is anchored to the END of the joined
+#     statement, so a statement carrying a real `|| echo '[]'` *and* ending in an
+#     unrelated `|| echo ""` is skipped whole. Reproduced: two statements with an
+#     identical `cat | jq -s || echo '[]'` defect, the second suffixed with
+#     `|| echo ""`, and only the first is flagged. Deliberately left as-is —
+#     un-anchoring the exclusion would drop the many single-fallback `|| echo ""`
+#     statements that are genuinely harmless, which is a far larger class than
+#     this contrived shape. Note the asymmetry with the `||`-splitting choice
+#     above: there, over-inclusion was the safe direction; here, matching on
+#     "ends with an empty echo" is the only cheap way to recognise the harmless
+#     case at all, and its cost is this narrow false negative.
 #
 # Calibrated against every known instance (all reproduced), and clean against
 # every fixed version:
