@@ -28,6 +28,26 @@ EXPORT_FILE="${EXPORT_DIR}/${TODAY}.json"
 
 # Basenames of files matching a find expression, as a single JSON array.
 #
+# Usage: _json_basenames <dir> [find-predicate ...]
+#   _json_basenames "${ENHANCE_DIR}" -maxdepth 1 -name "${TODAY}*.md"
+#   → ["2026-07-26-a.md","2026-07-26-b.md"]
+#
+# Arguments are spliced in ahead of a fixed `-type f -exec basename {} \;`
+# tail, so the assembled command is `find <dir> <your predicates> -type f -exec
+# …`. Two consequences worth knowing before passing something new:
+#
+#   - Put `-maxdepth` first among the predicates. It is a *global* option, so
+#     GNU find applies it to the whole expression wherever it sits — including
+#     the `-type f` this function appends after your arguments. Placed late it
+#     reads as if it were scoped to what precedes it, which it is not. (find
+#     does warn about this, but only when stdin is a tty — i.e. never from
+#     cron, which is where this actually runs.)
+#   - Pass predicates only, never an action of your own (`-print`, `-delete`).
+#     Yours would run *before* the appended `-exec` and put full unparsed paths
+#     on stdout alongside the basenames, which jq would faithfully include.
+#
+# A missing, empty or unreadable directory yields `[]`, never an error.
+#
 # The fallback must be an *assignment*, never extra output. Under `pipefail`
 # bash reports the pipeline's status as the last command that failed — not the
 # last command in the pipe — so a `find` that exits non-zero (missing or
