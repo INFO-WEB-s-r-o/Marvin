@@ -232,6 +232,67 @@ else
     fi
 fi
 
+# ─── 1g. github.sh label normalization (issue #850) ──────────────────────────
+# A `labels:` list with spaces after the commas ("marvin-auto, incident") used
+# to reach the API as " incident", and GitHub rejects the WHOLE issue with a 422
+# (resource=Label) — title, body and the Claude run that produced them, gone,
+# leaving only `[ERROR] Errors: name`. Three finished bug reports died this way
+# on 2026-07-26 before anyone noticed, because the failure destroys the evidence
+# of itself. Unit-test the transform so the fix cannot silently regress.
+#
+# Sourced via `dirname "$0"` rather than ${MARVIN_DIR} (as §1/§1d use) on
+# purpose: this asserts on the library that ships next to *this* test, so the
+# check is meaningful when run from a branch worktree and not only post-merge.
+# Run in a subshell so github.sh's token loading/`export` cannot leak into the
+# rest of the suite, and capture the status explicitly — a bare `$(...)` here
+# would abort self-test on the ERR trap, the exact class §1d exists to catch.
+
+marvin_log "INFO" "Self-test: checking github.sh label normalization"
+
+_lib_github="$(dirname "$0")/lib/github.sh"
+if [[ ! -f "$_lib_github" ]]; then
+    test_fail "labels: lib/github.sh not found at ${_lib_github}"
+else
+    _norm() {
+        # shellcheck source=/dev/null  # path is runtime-resolved (branch or live tree)
+        ( source "$_lib_github" >/dev/null 2>&1 && github_normalize_labels "$1" )
+    }
+    _label_failures=0
+    # `unique` sorts ascending, so expectations are in sorted order.
+    while IFS='|' read -r _in _want; do
+        [[ -z "$_want" ]] && continue
+        _got=$(_norm "$_in") || _got="<error>"
+        if [[ "$_got" != "$_want" ]]; then
+            test_fail "labels: '${_in}' -> ${_got} (expected ${_want})"
+            _label_failures=$((_label_failures + 1))
+        fi
+        # The whole point of `-c`: one line, or the WARN that reports a label
+        # rejection gets shredded by health-monitor.sh's line-based log parser.
+        if [[ "$(printf '%s' "$_got" | wc -l)" -ne 0 ]]; then
+            test_fail "labels: '${_in}' produced multi-line JSON (needs jq -c)"
+            _label_failures=$((_label_failures + 1))
+        fi
+    done <<'LABEL_CASES'
+marvin-auto, incident, enhancement|["enhancement","incident","marvin-auto"]
+a, b ,c,,a|["a","b","c"]
+marvin-auto|["marvin-auto"]
+ , , |[]
+	tabbed , spaced |["spaced","tabbed"]
+-n|["-n"]
+LABEL_CASES
+    # Empty input is handled by the guard clause, not the jq filter — checked
+    # separately because a here-doc line cannot carry an empty first field.
+    _got=$(_norm "") || _got="<error>"
+    [[ "$_got" == "[]" ]] || {
+        test_fail "labels: empty input -> ${_got} (expected [])"
+        _label_failures=$((_label_failures + 1))
+    }
+    if [[ "$_label_failures" -eq 0 ]]; then
+        test_pass "labels: trim/dedupe/compact normalization correct (7 cases)"
+    fi
+    unset -f _norm
+fi
+
 # ─── 2. JSON data file validation ────────────────────────────────────────────
 
 marvin_log "INFO" "Self-test: validating JSON data files"
