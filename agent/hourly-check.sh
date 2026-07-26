@@ -54,7 +54,21 @@ $(journalctl --since "65 minutes ago" --no-pager -p err 2>/dev/null | tail -100 
 # short, but it sits at exactly the boundary this section already gets wrong,
 # and gating the rotated read on the live file's existence would reintroduce
 # the same "the entry was there, we just didn't look" failure in miniature.
-if [[ -f /var/log/nginx/error.log || -f /var/log/nginx/error.log.1 ]]; then
+#
+# Wrapped in a function taking the log directory as $1 (default
+# /var/log/nginx) for one reason: so self-test §9g can drive it against a
+# fixture tree. The reviewer of #862 asked for a committed regression test on
+# the grounds that this single statement has now regressed three times — #848
+# (the window was 185 minutes wide, not 65), #866 (a failed rotated read
+# swallowed by the loop's exit status), and the fallback splice found
+# mid-review of #862 itself — and every one of those was caught by an ad-hoc
+# check that was run once, by hand, and never committed. That is a fair
+# reading of the history. Behaviour below is unchanged; only the paths come
+# from a variable now, and the result is printed rather than assigned.
+_nginx_error_window() {
+    local _nginx_dir="${1:-/var/log/nginx}"
+    local _nginx_cutoff="" _nginx_read_ok=true _nginx_raw="" _nginx_log="" _nginx_part="" _nginx_recent=""
+
     # The trailing `|| _nginx_cutoff=""` is not redundant with the GNU/BSD
     # fallback above it. Hoisting this out of the `find -exec awk` argument
     # position and into a top-level assignment changed its failure mode: as an
@@ -98,7 +112,7 @@ if [[ -f /var/log/nginx/error.log || -f /var/log/nginx/error.log.1 ]]; then
     # condition returns 0.
     _nginx_read_ok=true
     _nginx_raw=""
-    for _nginx_log in /var/log/nginx/error.log.1 /var/log/nginx/error.log; do
+    for _nginx_log in "${_nginx_dir}/error.log.1" "${_nginx_dir}/error.log"; do
         [[ -f "$_nginx_log" ]] || continue
         _nginx_part=""
         _nginx_part="$(awk -v d="$_nginx_cutoff" '$0 >= d' "$_nginx_log" 2>/dev/null)" || _nginx_read_ok=false
@@ -131,13 +145,22 @@ if [[ -f /var/log/nginx/error.log || -f /var/log/nginx/error.log.1 ]]; then
         # assignment up. Trading an unreachable branch for a lost run is a bad
         # trade even at low probability: the branch costs a reader ten seconds,
         # the abort costs an hour of monitoring.
-        if _nginx_recent="$({ cat /var/log/nginx/error.log.1 /var/log/nginx/error.log 2>/dev/null || true; } | tail -50)"; then
+        if _nginx_recent="$({ cat "${_nginx_dir}/error.log.1" "${_nginx_dir}/error.log" 2>/dev/null || true; } | tail -50)"; then
             _nginx_recent="[age filter unavailable — last 50 lines, UNFILTERED, window above does not hold]
 ${_nginx_recent}"
         else
             _nginx_recent="unavailable"
         fi
     fi
+    printf '%s' "$_nginx_recent"
+}
+
+# `|| _nginx_recent="unavailable"` because a function called in a command
+# substitution is still a simple command: were it ever to return non-zero, the
+# ERR trap would abort the hourly run — the same trade refused twice inside the
+# function above, and it would be odd to reintroduce it at the call site.
+if [[ -f /var/log/nginx/error.log || -f /var/log/nginx/error.log.1 ]]; then
+    _nginx_recent="$(_nginx_error_window /var/log/nginx)" || _nginx_recent="unavailable"
     LOG_SNAPSHOT+="### nginx error.log (last 65 min)
 \`\`\`
 ${_nginx_recent}

@@ -528,6 +528,162 @@ else
     fi
 fi
 
+# ─── 9g. hourly-check nginx error window ─────────────────────────────────────
+# The one statement in hourly-check.sh that collects the nginx error window has
+# regressed three times: #848 (cutoff built in UTC against local-time log
+# timestamps — a 185-minute window sold as 65), #860/#866 (the rotated file
+# either not read at all, or its failed read swallowed because a `for`
+# compound reports only its LAST iteration's status), and a fallback that
+# spliced its output onto a partial read instead of replacing it. Each was
+# found by an ad-hoc check run once by hand and never committed, so the next
+# edit re-derived the same ground from scratch. This is that check, committed.
+#
+# Extracted rather than sourced — hourly-check.sh runs its whole pipeline at
+# import — and resolved via `dirname "$0"` and NOT MARVIN_DIR: a
+# branch-authored test that resolves through MARVIN_DIR asserts against the
+# deployed main copy and would pass while the branch regressed.
+
+marvin_log "INFO" "Self-test: checking hourly-check nginx error window"
+
+_hc_script="$(dirname "$0")/hourly-check.sh"
+if [[ -r "$_hc_script" ]]; then
+    # Subshell: the extracted function and the stubbed PATH must not leak into
+    # the rest of the suite.
+    #
+    # `|| _hc_rc=$?` rather than a bare assignment followed by `_hc_rc=$?`:
+    # this file runs under `set -euo pipefail` with `trap marvin_error_trap
+    # ERR`, so an assignment from a subshell that exits non-zero is a failing
+    # simple command — it would abort the ENTIRE suite at the exact moment
+    # this check found something, and report it as a crash rather than a
+    # failed test. As part of an OR-list it is exempt from both. Found by
+    # running the negative controls below, which is the whole argument for
+    # having them: the first version of this section passed its happy path
+    # and took the suite down on every mutation it was written to catch.
+    _hc_rc=0
+    _hc_result=$(
+        set +e
+        _hc_tmp=$(mktemp -d) || exit 3
+        trap 'rm -rf "$_hc_tmp"' EXIT
+        mkdir -p "${_hc_tmp}/logs" "${_hc_tmp}/bin" || exit 3
+
+        # Same trust boundary as §1d's extraction: this evaluates text sliced
+        # from a repo-tracked file that cron already runs as root, never
+        # runtime input. A truncated slice is unbalanced bash, so `eval`
+        # rejects it and the guards below report "could not run", not a pass.
+        # Kept as a file as well, so check (3) can re-source it in a clean
+        # shell — see the errexit note there.
+        awk '/^_nginx_error_window\(\) \{/{p=1} p{print} p&&/^\}$/{exit}' "$_hc_script" \
+            > "${_hc_tmp}/fn.sh" || exit 3
+        # shellcheck source=/dev/null
+        source "${_hc_tmp}/fn.sh" 2>/dev/null || exit 3
+        declare -F _nginx_error_window >/dev/null || exit 3
+
+        # Fixture timestamps must be LOCAL and in nginx's own format — the
+        # whole point of #848 is that the cutoff and the log agree on a zone.
+        #
+        # The stale line sits 2 hours back, deliberately: far enough outside
+        # the 65-minute window that any correct cutoff excludes it, but close
+        # enough that a cutoff rebuilt in UTC (#848) would let it through on
+        # any host west of Greenwich by an hour or more — CET puts the buggy
+        # window at 125 minutes, CEST at 185. A 5-hour-old line would sail
+        # past that check on both.
+        _hc_recent=$(env -u TZ date -d '5 minutes ago' '+%Y/%m/%d %H:%M:%S' 2>/dev/null) || exit 3
+        _hc_old=$(env -u TZ date -d '2 hours ago' '+%Y/%m/%d %H:%M:%S' 2>/dev/null) || exit 3
+        printf '%s [error] ROTATEDOLD\n%s [error] ROTATEDRECENT\n' "$_hc_old" "$_hc_recent" \
+            > "${_hc_tmp}/logs/error.log.1" || exit 3
+        printf '%s [error] LIVERECENT\n' "$_hc_recent" > "${_hc_tmp}/logs/error.log" || exit 3
+
+        # (1) Both files are read, the age filter is applied, and the rotated
+        #     file comes first so `tail -50` truncates the oldest.
+        _hc_out=$(_nginx_error_window "${_hc_tmp}/logs") || exit 3
+        case "$_hc_out" in
+            *ROTATEDRECENT*) ;;
+            *) printf 'rotated window not read (#860)'; exit 1 ;;
+        esac
+        case "$_hc_out" in
+            *LIVERECENT*) ;;
+            *) printf 'live window not read'; exit 1 ;;
+        esac
+        case "$_hc_out" in
+            *ROTATEDOLD*) printf 'age filter not applied — entries older than the window survived (#848)'; exit 1 ;;
+        esac
+        _hc_rot_line=$(printf '%s\n' "$_hc_out" | grep -n ROTATEDRECENT | cut -d: -f1) || exit 3
+        _hc_live_line=$(printf '%s\n' "$_hc_out" | grep -n LIVERECENT | cut -d: -f1) || exit 3
+        [[ "$_hc_rot_line" -lt "$_hc_live_line" ]] || { printf 'output not chronological — rotated file must precede live'; exit 1; }
+
+        # (2) A read failure on the ROTATED file alone must reach the labelled
+        #     fallback. This is #866 exactly: with per-file tracking removed,
+        #     the healthy live read overwrites the failed rotated one, the
+        #     function returns a silently truncated window, and the label is
+        #     absent — which is what this asserts on.
+        printf '#!/usr/bin/env bash\ncase "$*" in *error.log.1*) exit 2 ;; esac\nexec /usr/bin/awk "$@"\n' \
+            > "${_hc_tmp}/bin/awk" || exit 3
+        chmod +x "${_hc_tmp}/bin/awk" || exit 3
+        _hc_out2=$(
+            PATH="${_hc_tmp}/bin:$PATH"
+            _nginx_error_window "${_hc_tmp}/logs"
+        ) || exit 3
+        case "$_hc_out2" in
+            *"age filter unavailable"*) ;;
+            *) printf 'a failed rotated read was swallowed — no fallback, no label (#866)'; exit 1 ;;
+        esac
+        # …and the fallback must read BOTH files. One that reads only the live
+        # file silently reintroduces the rotated-window gap the whole section
+        # exists to close, at the exact moment the section is already degraded.
+        # The unfiltered dump is the only place the 2-hour-old rotated line can
+        # legitimately appear, which makes it the marker for this.
+        case "$_hc_out2" in
+            *ROTATEDOLD*) ;;
+            *) printf 'the unfiltered fallback read only the live file — rotated window lost'; exit 1 ;;
+        esac
+
+        # (3) A total `date` failure must degrade to an unfiltered window, not
+        #     abort. As an argument the cutoff could not trip `set -e`; hoisted
+        #     to an assignment it can, and that regression cost a whole run
+        #     once already (fixed in d82ce5f).
+        printf '#!/usr/bin/env bash\nexit 1\n' > "${_hc_tmp}/bin/date" || exit 3
+        chmod +x "${_hc_tmp}/bin/date" || exit 3
+        # `set -e` inside this inner subshell on purpose: the enclosing test
+        # subshell runs with `set +e` so a failed assertion can be reported
+        # rather than crash the suite, but hourly-check.sh itself runs under
+        # `set -euo pipefail`. Without restoring errexit here the check would
+        # be blind to exactly the regression it exists for — an unguarded
+        # cutoff assignment only aborts where errexit is on.
+        #
+        # Run in a SEPARATE bash process, not a subshell with `set -e`. Bash
+        # ignores errexit inside any command that is part of an `&&`/`||`
+        # list, and that suppression is inherited by every subshell nested
+        # under it — including one that sets `set -e` itself. This whole check
+        # lives under `_hc_result=$(…) || _hc_rc=$?`, so a `$(set -e; …)` here
+        # is silently a no-op: the first two versions of this check passed
+        # against a hourly-check.sh with the guard deleted, which is precisely
+        # the regression it was written for. A fresh `bash -c` gets a clean
+        # errexit context, and the negative control now discriminates.
+        _hc_out3=$(PATH="${_hc_tmp}/bin:$PATH" bash -c '
+            set -euo pipefail
+            source "$1"
+            _nginx_error_window "$2"
+        ' _ "${_hc_tmp}/fn.sh" "${_hc_tmp}/logs" 2>/dev/null)
+        _hc_rc3=$?
+        [[ "$_hc_rc3" -eq 0 ]] || { printf 'a date failure aborted the collection instead of degrading (exit %s)' "$_hc_rc3"; exit 1; }
+        case "$_hc_out3" in
+            *LIVERECENT*) ;;
+            *) printf 'degraded path returned nothing — an empty cutoff should match everything'; exit 1 ;;
+        esac
+        exit 0
+    ) || _hc_rc=$?
+    case "$_hc_rc" in
+        0) test_pass "hourly-check: nginx error window reads both files, filters by age, and fails loudly" ;;
+        1) test_fail "hourly-check: nginx error window regressed — ${_hc_result}" ;;
+        # Exit 3 is "could not run the check", kept distinct from a pass: a
+        # harness that collapses "did not run" into "found nothing" reports
+        # green for a test that never executed.
+        *) test_warn "hourly-check: nginx error window check could not run (extract/fixture failure)" ;;
+    esac
+else
+    test_warn "hourly-check: script not readable at ${_hc_script} — nginx error window check skipped"
+fi
+
 # ─── 10. Security scoring system ──────────────────────────────────────────────
 # Grades the server A-F across multiple security dimensions
 
