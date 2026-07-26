@@ -149,9 +149,20 @@ MARVIN_DOMAIN="robot-marvin.cz"
 # nothing and jq still exits 0, so even the `||` fallback never fired — which
 # is why the public beacon has served `"born": ""` since 2026-02-24.
 BEACON_BORN=$(jq -r '.born // empty' "${COMMS_DIR}/identity.json" 2>/dev/null || true)
-# Recovered from the repository's first commit — the field was never once
-# populated, so there is no earlier value to inherit.
-[[ -z "$BEACON_BORN" ]] && BEACON_BORN="2026-02-21T18:50:47Z"
+# The constant below is INSTANCE-SPECIFIC: it is *this* deployment's first
+# boot, recovered from the repository's first commit because the field was
+# never once populated and there is no earlier value to inherit. It must not
+# leak into any other deployment — this file is public and anyone cloning it
+# would otherwise have their beacon claim Marvin's birthday, and with it the
+# longevity component of every peer's trust score. A fresh instance is born
+# when it first writes a beacon, so ${NOW} is the honest answer there.
+if [[ -z "$BEACON_BORN" ]]; then
+    if [[ "$(hostname -f 2>/dev/null || hostname)" == "${MARVIN_DOMAIN}" ]]; then
+        BEACON_BORN="2026-02-21T18:50:47Z"
+    else
+        BEACON_BORN="${NOW}"
+    fi
+fi
 
 BEACON_UPTIME=$(cut -d' ' -f1 /proc/uptime | cut -d'.' -f1)
 
@@ -249,6 +260,19 @@ fi
 
 # Written to a temp file and moved into place so a peer fetching mid-write
 # never sees a truncated document.
+#
+# The EXIT trap makes cleanup unconditional: between the write below and the
+# validation further down, the ERR trap can take the script out (a failing
+# command substitution inside the heredoc, a signal) and leave the .tmp behind.
+# Harmless in itself, but a stale .tmp is the kind of debris that later reads
+# as a half-finished write to whoever finds it. `mv` consumes the file on the
+# success path, so the trap is a no-op there.
+#
+# Released again immediately after the validation block: bash keeps exactly one
+# EXIT trap, and section 4's Claude call installs its own (lock cleanup,
+# common.sh:343). Leaving this one armed across that boundary means whichever
+# was set last silently wins — so it stays scoped to the lines it protects.
+trap 'rm -f "${COMMS_DIR}/identity.json.tmp"' EXIT
 cat > "${COMMS_DIR}/identity.json.tmp" << EOF
 {
   "protocol": "marvin-ai-comm",
@@ -289,6 +313,7 @@ else
     marvin_log "ERROR" "Generated beacon is not valid JSON — keeping previous identity.json"
     echo "[${NOW}] ECHO_BROADCAST_FAILED: beacon NOT updated (generated document was invalid JSON, kept previous)" >> "$COMM_LOG"
 fi
+trap - EXIT
 
 # --beacon-only stops here: the beacon is republished and nothing below it is
 # safe to run off-schedule. Section 3 sends an SSH probe that gets us fail2banned
