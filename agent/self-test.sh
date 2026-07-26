@@ -462,6 +462,13 @@ _PROCSUB_BASELINE=26
 # Walks each `done < <(` site to its matching close paren so multi-line
 # producers are classified on their whole text — the §1d site above pipes on a
 # continuation line, which a line-based grep scores safe and misses.
+# Algorithm, in three lines, because the per-branch rationale below is long and
+# a maintainer should not have to reconstruct the shape from it (review of #874):
+#   state machine over all agent/*.sh at once. On `done < <(`, start collecting
+#   and track paren depth; append each following line until depth hits 0, or the
+#   8-line runaway cap trips, or the file ends — flush and reset at every exit.
+# Every exit path PRINTS. A block that leaves without printing is a site the
+# scan silently lost, which is the one outcome this section must never produce.
 _ps_awk='
 function pcount(s,   i, c, d) {
     d = 0

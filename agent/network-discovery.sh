@@ -190,7 +190,30 @@ if [[ -f "$PEERS_FILE" && "$BEACON_ONLY" != true ]]; then
     if [[ "$PEERS_READABLE" -eq 0 ]]; then
         : # already reported above — do not double-log
     elif [[ "$PEER_COUNT" -gt 0 && "$_yielded_peers" -eq 0 ]]; then
-        marvin_log "ERROR" "Peer schema drift: ${PEER_COUNT} peers in ${PEERS_FILE}, none yielded a pingable URL — liveness checks did not run"
+        # "Nothing yielded" still covers two causes, and the review was right
+        # that collapsing them rebuilds #876 one notch further along: today 3 of
+        # 16 peers carry an address and 13 are scanner/observer records with a
+        # null domain BY DESIGN. If those 3 were ever removed deliberately, a
+        # bare "schema drift" would send someone to audit a jq filter that is
+        # working perfectly — the exact wrong-root-cause failure this guard set
+        # out to fix. Split on key *presence*, which is the thing that actually
+        # differs: peers that carry a url/domain key but produced no URL means
+        # the producer is broken; no peer carrying either key means there is
+        # nothing to ping, or the schema moved again — and the message says both
+        # rather than picking one.
+        #
+        # Non-null value, not `has()`. The live file's 13 observer records omit
+        # the key entirely, so `has()` would have worked today — but an explicit
+        # `"domain": null` is a shape the producer deliberately skips, and
+        # counting it as "carries an address" would report drift for a peer that
+        # is behaving exactly as designed. Checked against the real file rather
+        # than assumed: 3 peers with a non-null domain, 13 with no key at all.
+        _peers_with_addr=$(jq '[.peers[] | select((.url // .domain) != null)] | length' "$PEERS_FILE" 2>/dev/null || echo "0")
+        if [[ "$_peers_with_addr" -gt 0 ]]; then
+            marvin_log "ERROR" "Peer schema drift: ${_peers_with_addr} of ${PEER_COUNT} peers in ${PEERS_FILE} carry a url/domain value but none yielded a pingable URL — the producer matched nothing; liveness checks did not run"
+        else
+            marvin_log "WARN" "Peer liveness: none of the ${PEER_COUNT} peers in ${PEERS_FILE} carry a url or domain value — either every entry is a scanner/observer record with no reachable address, or the schema moved again"
+        fi
     elif [[ "$_yielded_peers" -gt 0 && "$_pinged_peers" -eq 0 ]]; then
         # Producer fine, filters rejected everything. A different root cause than
         # drift and it must not borrow drift's message (#876) — a future debugging
