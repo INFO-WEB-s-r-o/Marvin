@@ -941,7 +941,7 @@ else
     fi
 fi
 
-# ─── 9g. nginx must not retain raw request bodies in the negotiate inbox ──────
+# ─── 9h. nginx must not retain raw request bodies in the negotiate inbox ──────
 # Issue #854. `client_body_in_file_only on` in the /.well-known/ai-negotiate
 # location made nginx keep every request body forever, as a raw
 # attacker-controlled file inside the very directory negotiate-handler.sh globs
