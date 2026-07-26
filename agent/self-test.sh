@@ -190,10 +190,20 @@ else
     # the second time this bug class has been reintroduced by code written to
     # prevent it. The capture still must not fire the ERR trap (the §1d class),
     # hence `&& rc=0 || rc=$?` rather than a bare substitution.
-    _pf_out=$(bash "$_pipefail_scan" --tsv 2>/dev/null) && _pf_rc=0 || _pf_rc=$?
+    # The scanner names the cause of every exit 2 on stderr (missing tool,
+    # unreadable file, awk failure, unenumerable tree, empty target list).
+    # Discarding that with `2>/dev/null` would leave an operator holding a bare
+    # "exit 2" and a manual rerun to learn which of the five fired — throwing away
+    # failure detail inside the one check whose purpose is to stop failure detail
+    # being thrown away. Captured to a file rather than merged with `2>&1`, so a
+    # diagnostic line can never be read back as a TSV finding.
+    _pf_err=$(mktemp 2>/dev/null) || _pf_err="/dev/null"
+    _pf_out=$(bash "$_pipefail_scan" --tsv 2>"$_pf_err") && _pf_rc=0 || _pf_rc=$?
+    _pf_reason=$(tr '\n' ';' <"$_pf_err" 2>/dev/null | sed 's/;*$//; s/;/; /g') || _pf_reason=""
+    [[ "$_pf_err" == "/dev/null" ]] || rm -f "$_pf_err"
     _pf_trusted=true
     if [[ "$_pf_rc" -gt 1 ]]; then
-        test_fail "pipefail double-document scanner could not run (exit ${_pf_rc}) — the check did NOT execute; do not read this run as clean"
+        test_fail "pipefail double-document scanner could not run (exit ${_pf_rc}${_pf_reason:+: ${_pf_reason}}) — the check did NOT execute; do not read this run as clean"
         _pf_trusted=false
     elif [[ "$_pf_rc" -eq 0 && -n "$_pf_out" ]]; then
         test_fail "pipefail scanner reported clean (exit 0) but printed findings — scanner contract violated, results untrustworthy"

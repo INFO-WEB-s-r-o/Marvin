@@ -28,6 +28,18 @@
 #   4. a later stage still emits a valid document on EMPTY input (jq -s/-n/-R -s,
 #      wc) — this is what makes the appended fallback a *second* document
 #
+# Known blind spots — this is a detector calibrated against four real incidents,
+# not a general-purpose static analyser, and the difference matters if anyone
+# later reads a clean scan as proof the class is absent:
+#   - condition 1 requires a literal `echo`. A `printf '[]'`, a `cat <<<`, or any
+#     other non-empty fallback with the identical pipefail shape is NOT flagged.
+#     Every instance so far has been `echo`; widening it costs false positives on
+#     the many `|| printf` uses that are not document producers.
+#   - condition 4 recognises jq -s/-n/-R -s and wc as emitters-on-empty-input.
+#     Another command with that property would be missed.
+#   - the awk line-joiner caps at 60 joined lines, so a longer statement is
+#     truncated rather than scanned whole.
+#
 # Calibrated against every known instance (all reproduced), and clean against
 # every fixed version:
 #   log-alerting.sh          pre-#843 -> 1 hit   (cat | jq -R | jq -s || echo)
@@ -59,6 +71,16 @@
 # skipping a line, and from the caller's side an aborted scan looks exactly like
 # a clean one. Propagation here is explicit instead: every failure path exits 2
 # and says why on stderr, which is a stronger guarantee than `-e` would give.
+#
+# This file also does not source `agent/common.sh`, against the convention in
+# CLAUDE.md, and that is deliberate too: common.sh hardcodes
+# `MARVIN_DIR="/home/marvin/git"`, which would override the self-locating
+# fallback below and silently point every scan at the LIVE tree even when the
+# scanner is run from a worktree or an old revision — which is exactly how it was
+# calibrated against the four historical incidents. It also `mkdir -p`s the live
+# data directories at source time, a side effect a read-only static analyser
+# should not have. Neither deviation is an oversight to be "fixed" by a later
+# reader; both are load-bearing.
 set -uo pipefail
 
 # A scan that cannot run must not resemble a scan that found nothing.
