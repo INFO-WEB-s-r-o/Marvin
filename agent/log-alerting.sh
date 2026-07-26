@@ -190,6 +190,18 @@ usage_file="${METRICS_DIR}/claude-usage-${TODAY}.jsonl"
 # re-fired — a false recovery every night of an outage that never paused (#842).
 # Two files is enough: a full day is ~100 runs, so the newest two always cover a
 # 10-run window no matter where in the day the rotation falls.
+#
+# RECENT_WINDOW is load-bearing in two places that must agree: it is both the
+# size of the tail slice below and the minimum sample the near-total-outage
+# branch demands before it will divide. Naming it once keeps them from drifting.
+# It also encodes an assumption about cron cadence — at today's ~100 runs/day the
+# window fills in well under an hour. If the schedule is ever thinned far enough
+# that two files hold fewer than RECENT_WINDOW runs, the percentage branch stops
+# being reachable and total-outage detection falls back to the auth branch (which
+# has no sample floor) plus the day-scoped warning. Lower this if the cadence
+# drops; do not raise it without checking how long the window now takes to fill.
+RECENT_WINDOW=10
+
 recent_files=()
 while IFS= read -r f; do
     [[ -n "$f" ]] && recent_files+=("$f")
@@ -219,7 +231,8 @@ _slurp_usage() {
 }
 
 recent_json=$(_slurp_usage "${recent_files[@]+"${recent_files[@]}"}" \
-    | jq 'map(select(.timestamp != null)) | sort_by(.timestamp) | .[-10:]' 2>/dev/null) || recent_json=""
+    | jq --argjson n "$RECENT_WINDOW" \
+        'map(select(.timestamp != null)) | sort_by(.timestamp) | .[-$n:]' 2>/dev/null) || recent_json=""
 [[ -n "$recent_json" ]] || recent_json='[]'
 
 # Exclude session/usage-limit throttles: a "You've hit your session limit"
@@ -287,7 +300,7 @@ if [[ "${recent_auth:-0}" -gt 0 ]]; then
     severity="critical"
     title="Claude auth expired — pipeline halted (${recent_failed}/${recent_total} recent runs failed)"
     detail="${recent_auth} of the last ${recent_total} run(s) failed with expired OAuth credentials. Requires interactive re-auth on the host (run \`claude\` and log in); no automated task can recover this. Last failed task: ${last_fail}"
-elif [[ "${recent_total:-0}" -ge 10 && $((recent_failed * 100 / recent_total)) -ge 90 ]]; then
+elif [[ "${recent_total:-0}" -ge "$RECENT_WINDOW" && $((recent_failed * 100 / recent_total)) -ge 90 ]]; then
     severity="critical"
     title="Claude pipeline outage (${recent_failed}/${recent_total} recent runs failed)"
     detail="Near-total failure rate over the last ${recent_total} runs — every scheduled task is dying. Last failed task: ${last_fail}"
