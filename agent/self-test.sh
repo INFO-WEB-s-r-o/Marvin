@@ -142,6 +142,88 @@ if [[ "$_unguarded_calls" -eq 0 ]]; then
     test_pass "run_claude call sites: all capture exit codes"
 fi
 
+# ─── 1h. pipefail double-JSON-document detector (#855) ───────────────────────
+# The bug class fixed four times in five days, in four files (#841/#843
+# log-alerting, #844 log-export + capability-inventory, #846 weekly-analytics):
+# under `set -euo pipefail` an early pipeline stage failing fires a trailing
+# `|| echo '[]'` AFTER a later `jq` has already printed a valid document, so the
+# "fallback" appends a second document instead of replacing the first. Each of
+# the four reviews found a variant the previous one had walked past, which is why
+# this is a grep and not a fifth code review. Detection lives in
+# agent/lib/pipefail-scan.sh; see its header for the four-condition rule.
+#
+# RATCHET, not a wall. The two PRs that fix the five sites still on main (#844,
+# #846) are unmerged, and #855 concluded the detector therefore could not ship —
+# a suite that is red for a reason nobody can act on is worse than no test. So
+# known-pending sites are listed below and reported as WARN; anything NOT listed
+# is a FAIL. That protects main against a sixth instance today instead of after
+# two merges, and cannot turn the suite red on merge.
+#
+# Keyed by a hash of the whitespace-normalized statement, not by line number, so
+# an edit above a known site does not read as a new defect. A fixed statement's
+# key changes, so it drops out of the baseline by itself — reported as a stale
+# WARN telling whoever merged the fix to delete the line. Removing all five is
+# the last step of #855.
+# Fields: basename | statement key | note. Split with `IFS='|' read -r f k note`
+# so a note containing a pipe lands wholly in the third field and can never be
+# mistaken for part of the key.
+_PIPEFAIL_KNOWN=(
+    "capability-inventory.sh|f00b3f0b1a2d|cron-entries jq -s fallback — fix pending in PR #844"
+    "log-export.sh|2295353653c5|enhancement_log find + jq -R -s fallback — fix pending in PR #844"
+    "log-export.sh|7996086ae437|blog_posts find + jq -R -s fallback — fix pending in PR #844"
+    "weekly-analytics.sh|ba972a99c6ce|claude-usage cat + jq -s fallback — fix pending in PR #846"
+    "weekly-analytics.sh|46dcf3def0ca|error_summary head -5 SIGPIPE — fix pending in PR #846"
+)
+
+_pipefail_scan="${MARVIN_DIR}/agent/lib/pipefail-scan.sh"
+if [[ ! -r "$_pipefail_scan" ]]; then
+    test_warn "pipefail double-document scanner missing (${_pipefail_scan})"
+else
+    marvin_log "INFO" "Self-test: scanning for pipefail double-document fallbacks"
+    # `|| true`: the scanner exits 1 on hits by design, and a bare command
+    # substitution here would abort the suite on the ERR trap — the §1d class.
+    _pf_out=$(bash "$_pipefail_scan" --tsv 2>/dev/null) || true
+    _pf_new=0
+    _pf_seen=()
+    while IFS=$'\t' read -r _pf_file _pf_line _pf_key _pf_rest; do
+        [[ -z "${_pf_file:-}" ]] && continue
+        _pf_id="${_pf_file}|${_pf_key}"
+        _pf_note=""
+        for _pf_b in "${_PIPEFAIL_KNOWN[@]}"; do
+            IFS='|' read -r _pf_bf _pf_bk _pf_bn <<< "$_pf_b"
+            if [[ "${_pf_bf}|${_pf_bk}" == "$_pf_id" ]]; then
+                _pf_note="$_pf_bn"
+                break
+            fi
+        done
+        _pf_seen+=("$_pf_id")
+        if [[ -n "$_pf_note" ]]; then
+            test_warn "pipefail double-document (known): ${_pf_file}:${_pf_line} — ${_pf_note}"
+        else
+            test_fail "pipefail double-document fallback: ${_pf_file}:${_pf_line} (a failing early stage appends a second JSON document after jq already printed one — assign the fallback instead of echoing it)"
+            _pf_new=$((_pf_new + 1))
+        fi
+    done <<< "$_pf_out"
+    if [[ "$_pf_new" -eq 0 ]]; then
+        test_pass "pipefail double-document scan: no new sites"
+    fi
+    # Stale baseline entries: the fix landed, so the line is now excusing
+    # nothing and must go, or it silently re-excuses a reintroduction later.
+    for _pf_b in "${_PIPEFAIL_KNOWN[@]}"; do
+        IFS='|' read -r _pf_bf _pf_bk _pf_bn <<< "$_pf_b"
+        _pf_bid="${_pf_bf}|${_pf_bk}"
+        _pf_found=false
+        if [[ ${#_pf_seen[@]} -gt 0 ]]; then
+            for _pf_s in "${_pf_seen[@]}"; do
+                [[ "$_pf_s" == "$_pf_bid" ]] && _pf_found=true && break
+            done
+        fi
+        if [[ "$_pf_found" == false ]]; then
+            test_warn "pipefail baseline entry is stale — the fix landed, remove it from _PIPEFAIL_KNOWN: ${_pf_bid}"
+        fi
+    done
+fi
+
 # ─── 2. JSON data file validation ────────────────────────────────────────────
 
 marvin_log "INFO" "Self-test: validating JSON data files"
