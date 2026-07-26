@@ -146,8 +146,19 @@ _nginx_error_window() {
         # trade even at low probability: the branch costs a reader ten seconds,
         # the abort costs an hour of monitoring.
         if _nginx_recent="$({ cat "${_nginx_dir}/error.log.1" "${_nginx_dir}/error.log" 2>/dev/null || true; } | tail -50)"; then
-            _nginx_recent="[age filter unavailable — last 50 lines, UNFILTERED, window above does not hold]
+            if [[ -z "$_nginx_recent" ]]; then
+                # Degraded AND empty is not a quiet hour (#862 review). The
+                # `2>/dev/null || true` that stops an unreadable file from
+                # killing the pipe also erases the difference between "nothing
+                # was logged" and "nothing could be read" — and the label
+                # alone, printed above zero lines, reads as the former. That is
+                # the same shape as every other defect this section has had: an
+                # absence rendered as an all-clear. Say which one it is.
+                _nginx_recent="[nginx log window UNKNOWN — the age filter failed AND no log content could be read (files missing or unreadable). This is NOT a quiet hour; do not conclude the hour was clean.]"
+            else
+                _nginx_recent="[age filter unavailable — last 50 lines, UNFILTERED, window above does not hold]
 ${_nginx_recent}"
+            fi
         else
             _nginx_recent="unavailable"
         fi

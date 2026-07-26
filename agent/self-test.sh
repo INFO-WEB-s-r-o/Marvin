@@ -1062,6 +1062,31 @@ if [[ -r "$_hc_script" ]]; then
         _hc_dup=$(printf '%s\n' "$_hc_out2" | grep -c LIVERECENT) || _hc_dup=0
         [[ "$_hc_dup" -eq 1 ]] || { printf 'the fallback spliced onto the partial read instead of replacing it (live line appears %sx)' "$_hc_dup"; exit 1; }
 
+        # (2b) Degraded AND unreadable must not render as a quiet hour (#862
+        #      review). Same degraded path, but the fallback's own read yields
+        #      nothing too. The old behaviour printed the "age filter
+        #      unavailable" label above zero lines, which reads exactly like an
+        #      hour with no nginx errors — an absence reported as an all-clear,
+        #      the shape this section keeps regressing into.
+        #
+        #      Stubbing `cat` rather than `chmod 000` on the fixtures: this
+        #      suite runs as root from cron, and root bypasses the permission
+        #      bits, so a chmod-based version would quietly SKIP here and
+        #      report a pass it never earned — the same "could not run read as
+        #      clean" defect one level up. The stub reproduces the condition
+        #      for any uid.
+        printf '#!/usr/bin/env bash\nexit 1\n' > "${_hc_tmp}/bin/cat" || exit 3
+        chmod +x "${_hc_tmp}/bin/cat" || exit 3
+        _hc_out2b=$(
+            PATH="${_hc_tmp}/bin:$PATH"
+            _nginx_error_window "${_hc_tmp}/logs"
+        ) || exit 3
+        rm -f "${_hc_tmp}/bin/cat" || exit 3
+        case "$_hc_out2b" in
+            *UNKNOWN*) ;;
+            *) printf 'an unreadable log rendered as a quiet hour — degraded-and-empty must say UNKNOWN, not print a label above zero lines'; exit 1 ;;
+        esac
+
         # (3) A total `date` failure must degrade to an unfiltered window, not
         #     abort. As an argument the cutoff could not trip `set -e`; hoisted
         #     to an assignment it can, and that regression cost a whole run
