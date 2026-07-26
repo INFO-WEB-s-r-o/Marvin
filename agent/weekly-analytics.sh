@@ -141,6 +141,14 @@ _claude_usage() {
     ' 2>/dev/null); then
         echo "$_usage"
     else
+        # All-or-nothing on purpose. If one of the week's files becomes unreadable
+        # mid-`cat`, this discards the days that *were* readable and reports zeros
+        # rather than a partial week. That is the conservative direction here
+        # because the consumers are trend comparisons — the WoW deltas and the
+        # report card — and a silently partial week reads as a real drop in
+        # activity, which is a worse output than an obvious zero. Reaching this
+        # branch at all takes an actual permissions or I/O fault, not an empty
+        # window (zero files returns early above with this same shape).
         echo '{"total_runs":0,"total_duration_s":0,"avg_duration_s":0,"errors":0,"error_rate_pct":0,"by_task":{}}'
     fi
 }
