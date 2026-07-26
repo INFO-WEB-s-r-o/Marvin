@@ -142,6 +142,66 @@ if [[ "$_unguarded_calls" -eq 0 ]]; then
     test_pass "run_claude call sites: all capture exit codes"
 fi
 
+# ─── 1e. weekly-analytics fallback/success shape parity ──────────────────────
+# `_claude_usage()` emits one object on success and a hand-written zero object
+# on the failure/empty paths. Those two shapes must carry the same keys: a
+# consumer reading a field that only the success shape defines gets `null`
+# instead of 0, and nothing downstream distinguishes "no runs" from "key was
+# never there". This is not hypothetical — both fallback literals had already
+# drifted from the jq object, omitting total_prompt_chars and
+# total_output_chars, and the drift was invisible because the fallback only
+# renders on an I/O fault. Collapsed to a single `_zero_claude_usage()`; this
+# asserts it stays in step as fields are added to the jq block.
+#
+# Extract the functions from the script rather than sourcing it (the script
+# runs its whole pipeline at import) and read them via `dirname $0`, NOT
+# MARVIN_DIR — a branch-authored test that resolves through MARVIN_DIR asserts
+# against the deployed main copy and would pass while the branch regressed.
+
+marvin_log "INFO" "Self-test: checking weekly-analytics claude-usage shape parity"
+
+_wa_script="$(dirname "$0")/weekly-analytics.sh"
+if [[ -r "$_wa_script" ]]; then
+    _wa_extract() {
+        awk -v fn="$1" '$0 ~ "^"fn"\\(\\) \\{" {p=1} p {print} p && /^\}$/ {exit}' "$_wa_script"
+    }
+    # Subshell: the extracted functions and the METRICS_DIR override must not
+    # leak into the rest of the suite.
+    _shape_result=$(
+        set +e
+        _wa_tmp=$(mktemp -d) || exit 3
+        trap 'rm -rf "$_wa_tmp"' EXIT
+        # Read by the _claude_usage extracted below; shellcheck cannot see
+        # through the eval, hence the disable rather than a spurious export.
+        # shellcheck disable=SC2034
+        METRICS_DIR="$_wa_tmp"
+        _wa_day=$(date -u +%Y-%m-%d)
+        printf '{"task":"selftest","duration_s":1,"prompt_chars":1,"output_chars":1,"exit_code":0}\n' \
+            > "${_wa_tmp}/claude-usage-${_wa_day}.jsonl" || exit 3
+        eval "$(_wa_extract _dates_in_range)" 2>/dev/null || exit 3
+        eval "$(_wa_extract _zero_claude_usage)" 2>/dev/null || exit 3
+        eval "$(_wa_extract _claude_usage)" 2>/dev/null || exit 3
+        declare -F _zero_claude_usage >/dev/null || exit 3
+        _ok=$(_claude_usage "$_wa_day" "$_wa_day" | jq -r 'keys|join(",")' 2>/dev/null) || exit 3
+        _zero=$(_zero_claude_usage | jq -r 'keys|join(",")' 2>/dev/null) || exit 3
+        [[ -n "$_ok" && -n "$_zero" ]] || exit 3
+        [[ "$_ok" == "$_zero" ]] && exit 0
+        printf 'success=[%s] fallback=[%s]' "$_ok" "$_zero"
+        exit 1
+    )
+    _shape_rc=$?
+    case "$_shape_rc" in
+        0) test_pass "weekly-analytics: claude-usage fallback shape matches success shape" ;;
+        1) test_fail "weekly-analytics: claude-usage fallback shape drifted — ${_shape_result}" ;;
+        # Exit 3 is "could not run the check", kept distinct from a clean pass —
+        # the §1h lesson from #858: a harness that collapses "did not run" into
+        # "found nothing" reports green for a test that never executed.
+        *) test_warn "weekly-analytics: claude-usage shape check could not run (extract/jq failure)" ;;
+    esac
+else
+    test_warn "weekly-analytics: claude-usage shape check skipped — script not readable"
+fi
+
 # ─── 2. JSON data file validation ────────────────────────────────────────────
 
 marvin_log "INFO" "Self-test: validating JSON data files"

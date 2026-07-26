@@ -95,6 +95,20 @@ current_metrics=$(_metrics_summary "$REPORT_START" "$REPORT_END")
 prev_metrics=$(_metrics_summary "$PREV_START" "$PREV_END")
 
 # ─── 2. Claude API usage ────────────────────────────────────────────────────
+
+# Single source of truth for the zero/failure shape of _claude_usage.
+#
+# This existed twice as a hand-written literal, and the two copies had already
+# drifted from the success shape they stand in for: both omitted
+# total_prompt_chars and total_output_chars, which the jq block below emits.
+# A consumer reading either field off a fallback result got `null` rather than
+# 0 — the "fallback missing a field" bug that this whole PR is about, sitting
+# inside the fix for it. Keep this in step with the jq object below; the
+# self-test asserts the two key sets match.
+_zero_claude_usage() {
+    echo '{"total_runs":0,"total_duration_s":0,"avg_duration_s":0,"total_prompt_chars":0,"total_output_chars":0,"errors":0,"error_rate_pct":0,"by_task":{}}'
+}
+
 _claude_usage() {
     local start="$1" end="$2"
     local files=()
@@ -104,7 +118,7 @@ _claude_usage() {
     done < <(_dates_in_range "$start" "$end")
 
     if [[ ${#files[@]} -eq 0 ]]; then
-        echo '{"total_runs":0,"total_duration_s":0,"avg_duration_s":0,"errors":0,"error_rate_pct":0,"by_task":{}}'
+        _zero_claude_usage
         return
     fi
 
@@ -149,7 +163,7 @@ _claude_usage() {
         # activity, which is a worse output than an obvious zero. Reaching this
         # branch at all takes an actual permissions or I/O fault, not an empty
         # window (zero files returns early above with this same shape).
-        echo '{"total_runs":0,"total_duration_s":0,"avg_duration_s":0,"errors":0,"error_rate_pct":0,"by_task":{}}'
+        _zero_claude_usage
     fi
 }
 
