@@ -142,6 +142,157 @@ if [[ "$_unguarded_calls" -eq 0 ]]; then
     test_pass "run_claude call sites: all capture exit codes"
 fi
 
+# ─── 1e. negotiate-listener handler: reachable, and answers valid JSON ───────
+# The listener spent 2026-02-22 → 2026-07-26 `active (running)` and completely
+# inert: socat re-invokes this script as its own per-connection handler, so a
+# `command -v socat` test placed before the `--handle` test sent every child
+# back into the listen branch to die on EADDRINUSE against its own parent. Five
+# months of 502s that no monitor noticed, because the parent never exited.
+#
+# Drive the handler directly (no socat, no port, no service) and assert on what
+# a peer would actually receive. A functional check rather than a grep for the
+# branch order: it also covers the response framing, where a character-counted
+# Content-Length was truncating the body past a multi-byte em dash.
+
+marvin_log "INFO" "Self-test: checking negotiate listener answers a synthetic proposal"
+
+_negotiate_ls="${MARVIN_DIR}/agent/negotiate-listener.sh"
+if [[ ! -f "$_negotiate_ls" ]]; then
+    test_fail "negotiate-listener.sh missing"
+elif ! command -v jq &>/dev/null; then
+    test_warn "jq not installed — skipping negotiate listener handler test"
+else
+    _neg_tmp=$(mktemp -d)
+    _neg_body='{"self_test":true,"from":"self-test.sh"}'
+    _neg_resp=$(
+        printf 'POST /.well-known/ai-negotiate HTTP/1.1\r\nX-Real-IP: 127.0.0.1\r\nX-Request-Id: self-test\r\nContent-Length: %s\r\n\r\n%s' \
+            "${#_neg_body}" "$_neg_body" \
+        | MARVIN_NEGOTIATE_INBOX="$_neg_tmp" bash "$_negotiate_ls" --handle 2>/dev/null
+    ) || _neg_resp=""
+    rm -rf "$_neg_tmp"
+
+    # Split on the header/body boundary and compare the advertised byte count
+    # against the body actually emitted — a client reads exactly the former.
+    _neg_declared=$(grep -aiE '^Content-Length:' <<< "$_neg_resp" | tr -d '\r' | awk '{print $2}' | head -1)
+    _neg_payload=${_neg_resp#*$'\r\n\r\n'}
+    _neg_actual=$(printf '%s' "$_neg_payload" | LC_ALL=C wc -c | tr -d '[:space:]')
+
+    if [[ -z "$_neg_resp" ]]; then
+        test_fail "negotiate listener: --handle produced no response (dispatch order regressed?)"
+    elif [[ "$_neg_resp" != "HTTP/1.1 202 Accepted"* ]]; then
+        test_fail "negotiate listener: expected 202, got '$(head -1 <<< "$_neg_resp" | tr -d '\r')'"
+    elif ! jq -e . >/dev/null 2>&1 <<< "$_neg_payload"; then
+        test_fail "negotiate listener: 202 body is not valid JSON"
+    elif [[ "$_neg_declared" != "$_neg_actual" ]]; then
+        test_fail "negotiate listener: Content-Length ${_neg_declared} != ${_neg_actual} body bytes (client reads a truncated document)"
+    else
+        test_pass "negotiate listener: handler reachable, 202 body valid and correctly framed"
+    fi
+fi
+
+# ─── 1f. negotiate health probe is side-effect-free (#852) ───────────────────
+# The beacon's negotiate_url is gated on a live POST to this endpoint (see
+# network-discovery.sh), and §1e above is why that POST now reaches a handler at
+# all. The new hazard is the health check becoming a *participant*: an unmarked
+# POST is filed in the inbox, and negotiate-handler.sh answers it with a real
+# Claude call and a self-authored entry in the public negotiation history —
+# daily, forever.
+#
+# Assert both halves of the contract, because each fails silently on its own: a
+# 2xx (without it the beacon just quietly stops advertising a working endpoint)
+# AND an untouched inbox (without it Marvin bills himself to negotiate with
+# himself). The inbox is redirected to a scratch dir, so "wrote nothing" is
+# checked as "the directory is still empty" rather than inferred.
+
+marvin_log "INFO" "Self-test: checking negotiate health probe writes nothing"
+
+_probe_ls="${MARVIN_DIR}/agent/negotiate-listener.sh"
+if [[ ! -f "$_probe_ls" ]]; then
+    test_fail "negotiate-listener.sh missing"
+elif ! command -v jq &>/dev/null; then
+    test_warn "jq not installed — skipping negotiate health probe test"
+else
+    _probe_tmp=$(mktemp -d)
+    _probe_body='{"marvin_health_probe":true}'
+    _probe_resp=$(
+        printf 'POST /.well-known/ai-negotiate HTTP/1.1\r\nX-Real-IP: 127.0.0.1\r\nX-Request-Id: self-test\r\nContent-Length: %s\r\n\r\n%s' \
+            "${#_probe_body}" "$_probe_body" \
+        | MARVIN_NEGOTIATE_INBOX="$_probe_tmp" bash "$_probe_ls" --handle 2>/dev/null
+    ) || _probe_resp=""
+    # Count what negotiate-handler.sh would actually pick up.
+    _probe_written=$(find "$_probe_tmp" -type f -name '*.json' 2>/dev/null | wc -l)
+    rm -rf "$_probe_tmp"
+
+    if [[ "$_probe_resp" != "HTTP/1.1 2"* ]]; then
+        test_fail "negotiate health probe: expected 2xx, got '$(head -1 <<< "$_probe_resp" | tr -d '\r')' — beacon gate cannot open"
+    elif [[ "$_probe_written" -ne 0 ]]; then
+        test_fail "negotiate health probe: wrote ${_probe_written} inbox record(s) — the daily beacon probe is filing itself as a peer proposal"
+    else
+        test_pass "negotiate health probe: 2xx and inbox untouched"
+    fi
+fi
+
+# ─── 1g. github.sh label normalization (issue #850) ──────────────────────────
+# A `labels:` list with spaces after the commas ("marvin-auto, incident") used
+# to reach the API as " incident", and GitHub rejects the WHOLE issue with a 422
+# (resource=Label) — title, body and the Claude run that produced them, gone,
+# leaving only `[ERROR] Errors: name`. Three finished bug reports died this way
+# on 2026-07-26 before anyone noticed, because the failure destroys the evidence
+# of itself. Unit-test the transform so the fix cannot silently regress.
+#
+# Sourced via `dirname "$0"` rather than ${MARVIN_DIR} (as §1/§1d use) on
+# purpose: this asserts on the library that ships next to *this* test, so the
+# check is meaningful when run from a branch worktree and not only post-merge.
+# Run in a subshell so github.sh's token loading/`export` cannot leak into the
+# rest of the suite, and capture the status explicitly — a bare `$(...)` here
+# would abort self-test on the ERR trap, the exact class §1d exists to catch.
+
+marvin_log "INFO" "Self-test: checking github.sh label normalization"
+
+_lib_github="$(dirname "$0")/lib/github.sh"
+if [[ ! -f "$_lib_github" ]]; then
+    test_fail "labels: lib/github.sh not found at ${_lib_github}"
+else
+    _norm() {
+        # shellcheck source=/dev/null  # path is runtime-resolved (branch or live tree)
+        ( source "$_lib_github" >/dev/null 2>&1 && github_normalize_labels "$1" )
+    }
+    _label_failures=0
+    # `unique` sorts ascending, so expectations are in sorted order.
+    while IFS='|' read -r _in _want; do
+        [[ -z "$_want" ]] && continue
+        _got=$(_norm "$_in") || _got="<error>"
+        if [[ "$_got" != "$_want" ]]; then
+            test_fail "labels: '${_in}' -> ${_got} (expected ${_want})"
+            _label_failures=$((_label_failures + 1))
+        fi
+        # The whole point of `-c`: one line, or the WARN that reports a label
+        # rejection gets shredded by health-monitor.sh's line-based log parser.
+        if [[ "$(printf '%s' "$_got" | wc -l)" -ne 0 ]]; then
+            test_fail "labels: '${_in}' produced multi-line JSON (needs jq -c)"
+            _label_failures=$((_label_failures + 1))
+        fi
+    done <<'LABEL_CASES'
+marvin-auto, incident, enhancement|["enhancement","incident","marvin-auto"]
+a, b ,c,,a|["a","b","c"]
+marvin-auto|["marvin-auto"]
+ , , |[]
+	tabbed , spaced |["spaced","tabbed"]
+-n|["-n"]
+LABEL_CASES
+    # Empty input is handled by the guard clause, not the jq filter — checked
+    # separately because a here-doc line cannot carry an empty first field.
+    _got=$(_norm "") || _got="<error>"
+    [[ "$_got" == "[]" ]] || {
+        test_fail "labels: empty input -> ${_got} (expected [])"
+        _label_failures=$((_label_failures + 1))
+    }
+    if [[ "$_label_failures" -eq 0 ]]; then
+        test_pass "labels: trim/dedupe/compact normalization correct (7 cases)"
+    fi
+    unset -f _norm
+fi
+
 # ─── 1h. pipefail double-JSON-document detector (#855) ───────────────────────
 # The bug class fixed four times in five days, in four files (#841/#843
 # log-alerting, #844 log-export + capability-inventory, #846 weekly-analytics):
