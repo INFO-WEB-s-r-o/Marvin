@@ -50,14 +50,15 @@ if [[ -f "$CRON_FILE" ]]; then
                 }
             }
             if(script) printf "{\"schedule\":\"%s\",\"script\":\"%s\"}\n", schedule, script
-        }' 2>/dev/null | jq -s '.' 2>/dev/null) || cron_entries=""
+        }' 2>/dev/null | jq -s '.' 2>/dev/null) || cron_entries="[]"
     # Fallbacks assign, never echo: under `pipefail` a grep that matches nothing
     # (e.g. every job commented out, leaving only MAILTO=/PATH= lines) exits 1
     # and that status leaks past a `jq -s` which already printed a valid `[]`.
     # A trailing `|| echo "[]"` would append a second document, and the
     # `--argjson` calls below reject multi-document input with a hard exit 2 —
-    # killing the whole inventory run via the ERR trap.
-    [[ -n "$cron_entries" ]] || cron_entries="[]"
+    # killing the whole inventory run via the ERR trap. Discarding the partial
+    # capture is deliberate: a pipeline that failed mid-way may have printed
+    # something, and "something" is not a JSON array.
     cron_jobs=$(printf '%s' "$cron_entries" | jq 'length' 2>/dev/null) || cron_jobs=""
     [[ "$cron_jobs" =~ ^[0-9]+$ ]] || cron_jobs=0
 fi

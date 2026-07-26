@@ -74,10 +74,16 @@ cat > "$EXPORT_FILE" << EOF
 EOF
 
 # The bundle is served to the outside world — never publish a corrupt one.
+# This is not fatal to the run: everything downstream that *depends* on the
+# bundle (gzip, webhook) is skipped, but Phase 2 metric aggregation is
+# independent of the export and still runs. The failing exit code is deferred
+# to the end of the script so one bad bundle cannot also cost us a day of
+# aggregated metrics.
+EXPORT_VALID=true
 if ! jq empty "$EXPORT_FILE" 2>/dev/null; then
     marvin_log "ERROR" "Export bundle ${EXPORT_FILE} is not valid JSON — removing"
     rm -f "$EXPORT_FILE"
-    exit 1
+    EXPORT_VALID=false
 fi
 
 # Regenerate export index (last 30 days)
@@ -103,7 +109,7 @@ chmod 644 "${EXPORT_DIR}"/*.json 2>/dev/null || true
 
 # Gzip compress the export bundle for efficient delivery
 # Keeps the original .json for direct API access; .json.gz for bandwidth savings
-if command -v gzip &>/dev/null; then
+if [[ "$EXPORT_VALID" == "true" ]] && command -v gzip &>/dev/null; then
     gzip -kf "$EXPORT_FILE" 2>/dev/null || true
     chmod 644 "${EXPORT_FILE}.gz" 2>/dev/null || true
     gz_size=$(stat -c%s "${EXPORT_FILE}.gz" 2>/dev/null || echo "?")
@@ -119,7 +125,9 @@ fi
 # Stored outside data/ to prevent nginx from serving it (webhook URLs may contain secrets)
 
 WEBHOOK_CONF="${MARVIN_DIR}/config/webhook.conf"
-if [[ -f "$WEBHOOK_CONF" ]]; then
+if [[ "$EXPORT_VALID" != "true" ]]; then
+    marvin_log "WARN" "Skipping webhook notification — no valid export bundle for ${TODAY}"
+elif [[ -f "$WEBHOOK_CONF" ]]; then
     export_size=$(stat -c%s "$EXPORT_FILE" 2>/dev/null || echo "0")
     webhook_payload=$(jq -nc \
         --arg event "export_ready" \
@@ -206,6 +214,11 @@ if [[ -x "$AGGREGATE_SCRIPT" ]]; then
     marvin_log "INFO" "Running metric aggregation..."
     bash "$AGGREGATE_SCRIPT" "$TODAY" 2>&1 || \
         marvin_log "WARN" "Metric aggregation failed (non-fatal)"
+fi
+
+if [[ "$EXPORT_VALID" != "true" ]]; then
+    marvin_log "ERROR" "=== LOG EXPORT COMPLETE — bundle for ${TODAY} was invalid and is not published ==="
+    exit 1
 fi
 
 marvin_log "INFO" "=== LOG EXPORT COMPLETE ==="
