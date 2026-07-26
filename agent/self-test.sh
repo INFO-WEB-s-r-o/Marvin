@@ -519,6 +519,49 @@ if [[ -r "$_nd_script" ]]; then
     fi
 fi
 
+# ─── 9f. Beacon negotiate gate ⇆ listener marker agreement ───────────────────
+# network-discovery.sh only probes (and therefore only advertises) the negotiate
+# endpoint if the DEPLOYED negotiate-listener.sh implements the health-probe
+# short-circuit, matched by grepping for `.marvin_health_probe == true`. That is
+# a textual dependency on a construct owned by a different file, and it fails
+# CLOSED: if the marker is renamed, the gate shuts, `negotiate_url` silently
+# disappears from the public beacon, and the only trace is a WARN among many.
+# That is the exact failure shape §9e exists for — a document quietly going
+# stale while everything reports success — so it gets a test rather than a
+# note in a review thread.
+#
+# Self-activating by design, which removes the "add this to whichever PR lands
+# second" coordination the review asked for: while #847 is unmerged the
+# deployed listener has no probe machinery at all and this WARNs. Once it does,
+# absence of the exact marker can only mean drift, and that FAILs.
+
+marvin_log "INFO" "Self-test: checking beacon negotiate gate agrees with listener marker"
+
+_nd_file="${MARVIN_DIR}/agent/network-discovery.sh"
+_nl_file="${MARVIN_DIR}/agent/negotiate-listener.sh"
+if [[ -r "$_nd_file" && -r "$_nl_file" ]]; then
+    # Normalize exactly as the runtime gate does, or the test would disagree
+    # with the code it is guarding: strip full-line comments (so prose that
+    # merely mentions the marker cannot satisfy it) then collapse whitespace
+    # (so reflowing the multi-line jq expression is not a false positive).
+    _nl_norm=$(sed 's/^[[:space:]]*#.*$//' "$_nl_file" 2>/dev/null | tr -s '[:space:]' ' ') || _nl_norm=""
+    # Does the gate still exist in network-discovery.sh at all? If someone drops
+    # the pre-condition, the probe starts polluting the inbox again (#852) and
+    # this test must not quietly keep passing on the listener half alone.
+    if ! grep -q 'marvin_health_probe == true' "$_nd_file" 2>/dev/null; then
+        test_fail "beacon negotiate gate: network-discovery.sh no longer checks for the listener's health-probe marker — the daily probe would write a forged peer entry to the negotiate inbox (#852)"
+    elif grep -q '\.marvin_health_probe == true' <<< "$_nl_norm"; then
+        test_pass "beacon negotiate gate: listener implements the health-probe marker the beacon gate greps for"
+    elif grep -qE '"(alive|probe)"|probe.*:.*true' <<< "$_nl_norm"; then
+        # Probe machinery present but not under the expected marker: drift.
+        test_fail "beacon negotiate gate: negotiate-listener.sh has probe handling but not '.marvin_health_probe == true' — the beacon gate is now permanently closed and negotiate_url will silently vanish from the public beacon"
+    else
+        test_warn "beacon negotiate gate: deployed negotiate-listener.sh has no health-probe short-circuit yet (#847 unmerged) — gate correctly fails closed, negotiate_url omitted"
+    fi
+else
+    test_warn "beacon negotiate gate: network-discovery.sh or negotiate-listener.sh not readable — check skipped"
+fi
+
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
 # Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
 # artefact with byte-identical duplicates of the active /home/marvin/.gnupg/

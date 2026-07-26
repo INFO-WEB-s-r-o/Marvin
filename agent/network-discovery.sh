@@ -27,7 +27,7 @@ if [[ "${1:-}" == "--beacon-only" ]]; then
     BEACON_ONLY=true
 fi
 
-if $BEACON_ONLY; then
+if [[ "$BEACON_ONLY" == true ]]; then
     marvin_log "INFO" "=== BEACON REGENERATION (--beacon-only) ==="
 else
     marvin_log "INFO" "=== NETWORK DISCOVERY STARTING ==="
@@ -62,11 +62,11 @@ echo "Started at: ${NOW}" >> "$COMM_LOG"
 # =============================================================================
 # 1. Check known peers
 # =============================================================================
-if ! $BEACON_ONLY; then
+if [[ "$BEACON_ONLY" != true ]]; then
     marvin_log "INFO" "Checking known peers..."
 fi
 
-if [[ -f "$PEERS_FILE" ]] && ! $BEACON_ONLY; then
+if [[ -f "$PEERS_FILE" && "$BEACON_ONLY" != true ]]; then
     PEER_COUNT=$(jq '.peers | length' "$PEERS_FILE" 2>/dev/null || echo "0")
     marvin_log "INFO" "Known peers: ${PEER_COUNT}"
     
@@ -294,7 +294,7 @@ fi
 # safe to run off-schedule. Section 3 sends an SSH probe that gets us fail2banned
 # by design (once-per-day stamped), section 4 spends a Claude call, and section 5
 # rewrites peer trust scores.
-if $BEACON_ONLY; then
+if [[ "$BEACON_ONLY" == true ]]; then
     marvin_log "INFO" "=== BEACON REGENERATION COMPLETE ==="
     exit 0
 fi
