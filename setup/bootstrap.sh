@@ -392,13 +392,12 @@ server {
             return 405;
         }
         
-        # Write request body to inbox
-        client_body_temp_path ${MARVIN_DIR}/data/comms/negotiate-inbox;
-        client_body_in_file_only on;
-        
-        # Use lua or a simple proxy to save — fallback: use a tiny CGI
-        # For now, proxy to a simple shell-based handler via a named pipe
-        # We'll use a simpler approach: nginx upload module or just log and process
+        # Deliberately NO client_body_temp_path / client_body_in_file_only
+        # (issue #854): negotiate-listener.sh reads the body from stdin, so
+        # nginx writing it into the handler's inbox fed nothing — and
+        # \`in_file_only on\` never removes the file, so every public POST
+        # left a permanent raw body there. Keep this block in step with
+        # setup/nginx-site.conf, which self-test §9d diffs against live.
         proxy_pass http://127.0.0.1:8043;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Request-Id \$request_id;
