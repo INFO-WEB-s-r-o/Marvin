@@ -37,10 +37,25 @@ $(journalctl --since "65 minutes ago" --no-pager -p err 2>/dev/null | tail -100 
 # `env -u TZ` pins the cutoff to that same zone: a TZ inherited from cron or a
 # service environment would reintroduce the identical skew, silently and with
 # nothing to catch it, since over-collecting never looks like a failure.
+#
+# The window must also span the ROTATED file. logrotate for nginx is daily at
+# 00:00 and this script runs at :35, so the 00:35 run looks back to 23:30 —
+# a half-hour that logrotate has already moved into error.log.1. Matching only
+# "error.log" lost that slice every single night. Read error.log.1 first so the
+# output stays chronological (the rotated file is strictly older), which also
+# means `tail -50` truncates the oldest entries rather than the newest.
+# Uncompressed only: error.log.2.gz and older are always outside a 65-minute
+# window, so decompressing them would be pure cost. Widening the file set
+# cannot over-report — the awk cutoff below still discards anything older.
 if [[ -f /var/log/nginx/error.log ]]; then
+    _nginx_cutoff="$(env -u TZ date -d '65 minutes ago' '+%Y/%m/%d %H:%M:%S' 2>/dev/null || env -u TZ date -v-65M '+%Y/%m/%d %H:%M:%S')"
     LOG_SNAPSHOT+="### nginx error.log (last 65 min)
 \`\`\`
-$(find /var/log/nginx -name "error.log" -exec awk -v d="$(env -u TZ date -d '65 minutes ago' '+%Y/%m/%d %H:%M:%S' 2>/dev/null || env -u TZ date -v-65M '+%Y/%m/%d %H:%M:%S')" '$0 >= d' {} \; 2>/dev/null | tail -50 || tail -50 /var/log/nginx/error.log 2>/dev/null || echo "unavailable")
+$(for _nginx_log in /var/log/nginx/error.log.1 /var/log/nginx/error.log; do
+    if [[ -f "$_nginx_log" ]]; then
+        awk -v d="$_nginx_cutoff" '$0 >= d' "$_nginx_log" 2>/dev/null
+    fi
+done | tail -50 || tail -50 /var/log/nginx/error.log 2>/dev/null || echo "unavailable")
 \`\`\`
 
 "
