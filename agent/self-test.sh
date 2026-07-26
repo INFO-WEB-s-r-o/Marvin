@@ -470,6 +470,55 @@ else
     fi
 fi
 
+# Recovery wiring: morning-check.sh regenerates the beacon by invoking
+# network-discovery.sh with a flag, and that call is the only thing standing
+# between "the pull deleted the untracked beacon" and a 404 on
+# /.well-known/ai-managed.json for up to 24h. Nothing else asserts the flag it
+# passes is a flag network-discovery.sh still understands — rename or drop it
+# and the recovery silently degrades to a WARN, which is precisely how the
+# beacon stayed frozen for 109 days. Static check, deliberately: actually
+# running --beacon-only would emit a live negotiate probe and rewrite the real
+# beacon, which a test suite has no business doing.
+_nd_script="${MARVIN_DIR}/agent/network-discovery.sh"
+if [[ -r "$_nd_script" ]]; then
+    _nd_flags_checked=0
+    _nd_flags_bad=0
+    while IFS= read -r _nd_flag; do
+        [[ -n "$_nd_flag" ]] || continue
+        _nd_flags_checked=$((_nd_flags_checked + 1))
+        if ! grep -q -- "\"${_nd_flag}\"" "$_nd_script"; then
+            test_fail "beacon recovery: callers pass network-discovery.sh ${_nd_flag}, but that flag is not handled there"
+            _nd_flags_bad=$((_nd_flags_bad + 1))
+        fi
+    done < <(grep -rhoE 'network-discovery\.sh"?[[:space:]]+--[a-z-]+' "${MARVIN_DIR}/agent" 2>/dev/null \
+                | grep -oE '\-\-[a-z-]+' | sort -u || true)
+    if [[ "$_nd_flags_checked" -gt 0 && "$_nd_flags_bad" -eq 0 ]]; then
+        test_pass "beacon recovery: all ${_nd_flags_checked} network-discovery.sh flag(s) used by callers are handled"
+    fi
+
+    # And the other direction, which is the worse failure: a recovery call that
+    # loses its flag doesn't fail, it runs the FULL discovery from the morning
+    # pull — section 3's SSH probe (deliberately fail2ban-triggering, once-daily
+    # stamped), a Claude call, and a peer-trust rewrite, none of which belong in
+    # a 06:00 git sync. Unflagged invocation is therefore a FAIL, not a WARN.
+    _nd_unflagged=0
+    _nd_calls=0
+    while IFS= read -r _nd_call; do
+        # Skip comments: the file discusses this call as well as making it.
+        [[ "${_nd_call#"${_nd_call%%[![:space:]]*}"}" == \#* ]] && continue
+        _nd_calls=$((_nd_calls + 1))
+        [[ "$_nd_call" == *"--beacon-only"* ]] || _nd_unflagged=$((_nd_unflagged + 1))
+    done < <(grep -hE 'bash[[:space:]]+"?[^"]*network-discovery\.sh' \
+                 "${MARVIN_DIR}/agent/morning-check.sh" 2>/dev/null || true)
+    if [[ "$_nd_unflagged" -gt 0 ]]; then
+        test_fail "beacon recovery: morning-check.sh invokes network-discovery.sh without --beacon-only — a git sync would trigger a full discovery run (SSH probe, Claude call, trust rescore)"
+    elif [[ "$_nd_calls" -gt 0 ]]; then
+        test_pass "beacon recovery: morning-check.sh's ${_nd_calls} network-discovery.sh call(s) all pass --beacon-only"
+    else
+        test_warn "beacon recovery: morning-check.sh no longer invokes network-discovery.sh at all — a pull that deletes the untracked beacon now has nothing to restore it"
+    fi
+fi
+
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
 # Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
 # artefact with byte-identical duplicates of the active /home/marvin/.gnupg/

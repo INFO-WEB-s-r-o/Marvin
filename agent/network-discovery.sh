@@ -193,8 +193,19 @@ BEACON_UPTIME=$(cut -d' ' -f1 /proc/uptime | cut -d'.' -f1)
 #      polluting response as proof that nothing was polluted.
 BEACON_NEGOTIATE=""
 NEGOTIATE_PROBE_CODE="skipped"
-if ! grep -q 'marvin_health_probe == true' \
-        "${MARVIN_DIR}/agent/negotiate-listener.sh" 2>/dev/null; then
+#      Matched against a whitespace-normalized copy of the file rather than
+#      line-by-line: in #847 the construct sits inside a multi-line `jq`
+#      expression, so `.marvin_health_probe == true` happens to land on one
+#      physical line today, but reflowing that expression — a formatting change
+#      nobody would think to check — would close this gate permanently and
+#      silently, leaving only a WARN. Collapsing whitespace first makes the
+#      check depend on the code being *present*, not on how it is wrapped.
+#      Full-line comments are stripped first so that merely *mentioning* the
+#      construct in prose cannot open the gate; the `.`-prefixed `== true`
+#      comparison is required, not a bare mention of the field name.
+if ! sed 's/^[[:space:]]*#.*$//' "${MARVIN_DIR}/agent/negotiate-listener.sh" 2>/dev/null \
+        | tr -s '[:space:]' ' ' \
+        | grep -q '\.marvin_health_probe == true'; then
     marvin_log "WARN" "negotiate listener has no health-probe short-circuit — not probing, omitting negotiate_url from beacon (#852)"
 else
     _probe_raw=$(curl -s -w $'\n%{http_code}' --max-time 5 \
