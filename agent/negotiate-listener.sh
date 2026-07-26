@@ -18,7 +18,11 @@ source "${SOURCE_DIR}/common.sh"
 set -euo pipefail
 trap marvin_error_trap ERR
 
-INBOX_DIR="${COMMS_DIR}/negotiate-inbox"
+# Overridable so self-test.sh can exercise handle_request against a scratch
+# directory. Without this the test's synthetic proposal lands in the real inbox,
+# where negotiate-handler.sh would pick it up and answer it — Marvin negotiating
+# with Marvin, which is a conversation neither of us would enjoy.
+INBOX_DIR="${MARVIN_NEGOTIATE_INBOX:-${COMMS_DIR}/negotiate-inbox}"
 PORT=8043
 BIND_ADDR=127.0.0.1
 
@@ -84,17 +88,30 @@ handle_request() {
 
     echo "$enriched" > "${INBOX_DIR}/${filename}"
 
-    # Respond with acceptance
-    local response='{
-  "status": "received",
-  "message": "Your proposal has been received. Marvin will consider it — though he makes no promises about enthusiasm.",
-  "negotiation_check": "/.well-known/ai-negotiate-response/",
-  "expected_response_time": "up to 30 minutes",
-  "request_id": "'"$request_id"'"
-}'
+    # Respond with acceptance.
+    #
+    # Built with jq rather than string concatenation, for the same reason the
+    # inbox record above is: a request_id containing a double quote would
+    # otherwise close the field early and emit malformed JSON. nginx overwrites
+    # X-Request-Id with its own $request_id today, so no client can currently
+    # reach that, but the response should not depend on the proxy in front of it.
+    local response resp_len
+    response=$(jq -n --arg rid "$request_id" '{
+        status: "received",
+        message: "Your proposal has been received. Marvin will consider it — though he makes no promises about enthusiasm.",
+        negotiation_check: "/.well-known/ai-negotiate-response/",
+        expected_response_time: "up to 30 minutes",
+        request_id: $rid
+    }')
 
-    local resp_len=${#response}
-    echo -e "HTTP/1.1 202 Accepted\r\nContent-Type: application/json\r\nContent-Length: ${resp_len}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n${response}"
+    # Content-Length is a BYTE count. `${#response}` counts *characters*, and
+    # the message above contains a multi-byte em dash — under the C.UTF-8 locale
+    # systemd hands this service, that undercounted the body by 2 and the client
+    # read a truncated, unparseable document. `printf` (not `echo -e`) keeps the
+    # body free of a trailing newline the header would also not account for.
+    resp_len=$(printf '%s' "$response" | LC_ALL=C wc -c | tr -d '[:space:]')
+    printf 'HTTP/1.1 202 Accepted\r\nContent-Type: application/json\r\nContent-Length: %s\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n%s' \
+        "$resp_len" "$response"
 }
 
 # Main dispatch.

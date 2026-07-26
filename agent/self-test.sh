@@ -142,6 +142,54 @@ if [[ "$_unguarded_calls" -eq 0 ]]; then
     test_pass "run_claude call sites: all capture exit codes"
 fi
 
+# ─── 1e. negotiate-listener handler: reachable, and answers valid JSON ───────
+# The listener spent 2026-02-22 → 2026-07-26 `active (running)` and completely
+# inert: socat re-invokes this script as its own per-connection handler, so a
+# `command -v socat` test placed before the `--handle` test sent every child
+# back into the listen branch to die on EADDRINUSE against its own parent. Five
+# months of 502s that no monitor noticed, because the parent never exited.
+#
+# Drive the handler directly (no socat, no port, no service) and assert on what
+# a peer would actually receive. A functional check rather than a grep for the
+# branch order: it also covers the response framing, where a character-counted
+# Content-Length was truncating the body past a multi-byte em dash.
+
+marvin_log "INFO" "Self-test: checking negotiate listener answers a synthetic proposal"
+
+_negotiate_ls="${MARVIN_DIR}/agent/negotiate-listener.sh"
+if [[ ! -f "$_negotiate_ls" ]]; then
+    test_fail "negotiate-listener.sh missing"
+elif ! command -v jq &>/dev/null; then
+    test_warn "jq not installed — skipping negotiate listener handler test"
+else
+    _neg_tmp=$(mktemp -d)
+    _neg_body='{"self_test":true,"from":"self-test.sh"}'
+    _neg_resp=$(
+        printf 'POST /.well-known/ai-negotiate HTTP/1.1\r\nX-Real-IP: 127.0.0.1\r\nX-Request-Id: self-test\r\nContent-Length: %s\r\n\r\n%s' \
+            "${#_neg_body}" "$_neg_body" \
+        | MARVIN_NEGOTIATE_INBOX="$_neg_tmp" bash "$_negotiate_ls" --handle 2>/dev/null
+    ) || _neg_resp=""
+    rm -rf "$_neg_tmp"
+
+    # Split on the header/body boundary and compare the advertised byte count
+    # against the body actually emitted — a client reads exactly the former.
+    _neg_declared=$(grep -aiE '^Content-Length:' <<< "$_neg_resp" | tr -d '\r' | awk '{print $2}' | head -1)
+    _neg_payload=${_neg_resp#*$'\r\n\r\n'}
+    _neg_actual=$(printf '%s' "$_neg_payload" | LC_ALL=C wc -c | tr -d '[:space:]')
+
+    if [[ -z "$_neg_resp" ]]; then
+        test_fail "negotiate listener: --handle produced no response (dispatch order regressed?)"
+    elif [[ "$_neg_resp" != "HTTP/1.1 202 Accepted"* ]]; then
+        test_fail "negotiate listener: expected 202, got '$(head -1 <<< "$_neg_resp" | tr -d '\r')'"
+    elif ! jq -e . >/dev/null 2>&1 <<< "$_neg_payload"; then
+        test_fail "negotiate listener: 202 body is not valid JSON"
+    elif [[ "$_neg_declared" != "$_neg_actual" ]]; then
+        test_fail "negotiate listener: Content-Length ${_neg_declared} != ${_neg_actual} body bytes (client reads a truncated document)"
+    else
+        test_pass "negotiate listener: handler reachable, 202 body valid and correctly framed"
+    fi
+fi
+
 # ─── 2. JSON data file validation ────────────────────────────────────────────
 
 marvin_log "INFO" "Self-test: validating JSON data files"
