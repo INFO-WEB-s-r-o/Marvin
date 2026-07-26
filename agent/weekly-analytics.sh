@@ -176,17 +176,30 @@ _log_stats() {
     done < <(_dates_in_range "$start" "$end")
 
     if [[ -n "$all_errors" ]]; then
-        # Truncation happens inside jq, not via `head -5`. `head` exits as soon as
-        # it has its 5 lines and kills `sort -rn` with SIGPIPE once the sorted
-        # output exceeds the pipe buffer (~64 KiB — a week with many distinct error
-        # messages). Under `pipefail` that made the pipeline exit 141 *after*
+        # Truncation happens in `awk` via NR<=5, not via `head -5`. `head` exits as
+        # soon as it has its 5 lines and kills `sort -rn` with SIGPIPE once the
+        # sorted output exceeds the pipe buffer (~64 KiB — a week with many distinct
+        # error messages). Under `pipefail` that made the pipeline exit 141 *after*
         # `jq -s` had already printed a valid array, so the `|| echo '[]'` fallback
         # appended a second document; the two-document value then aborted the run
-        # at `--argjson top_errors` (jq exit 2 → ERR trap). Slicing in jq removes
-        # the SIGPIPE, and the assignment-form fallback replaces instead of appends.
+        # at `--argjson top_errors` (jq exit 2 → ERR trap). `awk` reads to EOF
+        # regardless of NR, so no stage can be signalled, and the assignment-form
+        # fallback replaces instead of appends.
+        #
+        # JSON is built by `jq`, not by `awk` printf. Hand-rolled `"%s"` interpolation
+        # does not escape `"` or `\`, so a single error message containing a quote
+        # made `jq` fail to parse and the fallback then blanked the *entire* top-error
+        # list, while a backslash sequence such as `C:\temp` was silently reinterpreted
+        # as a control character. `-R -s` hands the text to jq, which does the encoding.
+        # The `count \t message` framing is unambiguous because awk's `$1=""` forces a
+        # `$0` rebuild on OFS, so an emitted message can never itself contain a tab.
         error_summary=$(echo "$all_errors" | sed '/^$/d' | sort | uniq -c | sort -rn \
-            | awk '{count=$1; $1=""; sub(/^ /, ""); printf "{\"count\":%d,\"message\":\"%s\"}\n", count, $0}' \
-            | jq -s '.[0:5]' 2>/dev/null) || error_summary='[]'
+            | awk 'NR<=5 {count=$1; $1=""; sub(/^ /, ""); print count "\t" $0}' \
+            | jq -R -s 'split("\n")
+                        | map(select(length > 0)
+                              | split("\t")
+                              | {count: (.[0] | tonumber), message: (.[1:] | join("\t"))})' \
+                 2>/dev/null) || error_summary='[]'
     fi
 
     jq -n \
