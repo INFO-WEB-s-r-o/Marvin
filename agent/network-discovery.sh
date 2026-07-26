@@ -133,7 +133,13 @@ if [[ -f "$PEERS_FILE" ]]; then
     # PEER_ALIVE/PEER_DEAD written since 2026-03-22. Prefer `.url` when a peer
     # still carries one; otherwise derive https:// from `.domain`. Peers with a
     # null domain are scanners/observers, not reachable hosts — skipped.
-    done < <(jq -r '.peers[] | (.url // empty), (select(has("url") | not) | select((.domain // "") != "") | "https://" + .domain)' "$PEERS_FILE" 2>/dev/null)
+    #
+    # Single generator, and `//` rather than `has("url")`: an explicit
+    # `"url": null` beside a valid `.domain` must still fall back. Keying the
+    # fallback on key *absence* would skip such a peer entirely — a milder
+    # rerun of the very outage this fixes (verified: 3 peers → 0 under the
+    # has()-form, 3 under this one).
+    done < <(jq -r '.peers[] | (.url // ((.domain // "") | select(. != "") | "https://" + .))' "$PEERS_FILE" 2>/dev/null)
 
     # procsub-guarded (#873) — the marker must sit within a few lines of the
     # `done` it vouches for; §1i only trusts a guard it can see from the site.

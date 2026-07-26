@@ -187,6 +187,13 @@ function pcount(s,   i, c, d) {
     }
     return d
 }
+# awk globals persist across files. A block that never balances (a stray paren
+# in a continuation comment) leaves `collecting` set, and since FNR resets per
+# file the 8-line runaway cap goes negative and never trips — so the leak eats
+# the NEXT file whole. Measured: a leaky file followed by a file containing one
+# obvious jq producer emitted zero blocks. A scanner for silent misses,
+# silently missing. Reset per file (#875).
+FNR == 1 { collecting = 0; depth = 0; buf = ""; startline = 0 }
 {
     if (collecting) {
         buf = buf " " $0
@@ -197,7 +204,13 @@ function pcount(s,   i, c, d) {
         }
         next
     }
-    if ($0 ~ /done[ \t]*<[ \t]*<\(/) {
+    # A comment that *documents* the pattern is not a site. The §1i commentary
+    # below quotes the construct verbatim and the scanner duly counted its own
+    # documentation (58 blocks → 59). Benign here (no jq, no pipe, so it never
+    # reached the baseline), but a comment citing a jq producer would have
+    # inflated the count. Only skip at block start — comment lines *inside* a
+    # collected block still carry parens that must be counted.
+    if ($0 ~ /done[ \t]*<[ \t]*<\(/ && $0 !~ /^[ \t]*#/) {
         idx = index($0, "<(")
         rest = substr($0, idx + 2)
         depth = 1 + pcount(rest)
