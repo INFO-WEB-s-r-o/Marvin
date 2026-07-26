@@ -453,9 +453,10 @@ marvin_log "INFO" "Self-test: checking process-substitution producers for silent
 #   self-test.sh:906      `grep -rhoE ... || true`   — arrived with #851 (§9f)
 # The second is a real instance of the class, not an artefact: `|| true` on a
 # producer IS the silent-zero idiom. If that grep ever breaks, §9f finds zero
-# flags and PASSES — a check reporting clean because it could not run. Filed
-# separately rather than fixed here; it is another PR's code and this branch is
-# already carrying three fixes.
+# flags and PASSES — a check reporting clean because it could not run. NOT
+# fixed here (it is another branch's code and this one already carries three
+# fixes) and NOT yet tracked in an issue — recorded at the baseline itself so
+# the next person to trip §1i finds the reason rather than an unexplained 26.
 _PROCSUB_BASELINE=26
 
 # Walks each `done < <(` site to its matching close paren so multi-line
