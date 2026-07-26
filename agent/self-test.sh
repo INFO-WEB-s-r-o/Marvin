@@ -179,6 +179,19 @@ if [[ -r "$_wa_script" ]]; then
     }
     # Subshell: the extracted functions and the METRICS_DIR override must not
     # leak into the rest of the suite.
+    #
+    # `|| _shape_rc=$?` rather than a bare assignment read by `$?` on the next
+    # line: this file runs under `set -euo pipefail` with `trap
+    # marvin_error_trap ERR`, so an assignment from a subshell that exits
+    # non-zero is a failing simple command, and the suite ABORTS — reporting a
+    # crash — at the exact moment this check finds the drift it exists to
+    # find. Demonstrated after the fact: with a field deleted from
+    # `_zero_claude_usage()`, the previous spelling fired the ERR trap and
+    # exited 1 with no `test_fail` line at all; the entry above claims this
+    # negative control "fails with both key lists printed", and it did not.
+    # As part of an OR-list the assignment is exempt from both errexit and the
+    # trap. (Same defect, same shape, found the same way in #862's §9g.)
+    _shape_rc=0
     _shape_result=$(
         set +e
         _wa_tmp=$(mktemp -d) || exit 3
@@ -207,8 +220,7 @@ if [[ -r "$_wa_script" ]]; then
         [[ "$_ok" == "$_zero" ]] && exit 0
         printf 'success=[%s] fallback=[%s]' "$_ok" "$_zero"
         exit 1
-    )
-    _shape_rc=$?
+    ) || _shape_rc=$?
     case "$_shape_rc" in
         0) test_pass "weekly-analytics: claude-usage fallback shape matches success shape" ;;
         1) test_fail "weekly-analytics: claude-usage fallback shape drifted — ${_shape_result}" ;;
