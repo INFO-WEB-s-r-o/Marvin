@@ -77,6 +77,42 @@ handle_request() {
         return
     fi
 
+    # Health-probe short-circuit (#852).
+    #
+    # network-discovery.sh gates the beacon's advertised negotiate_url on a live
+    # POST to this endpoint, and it has to be a POST: nginx answers every other
+    # method with 405 from its own config, before the request ever reaches this
+    # script, so a GET would prove only that nginx is up — not that the process
+    # behind it has ever handled a request. Which, until the dispatch fix above,
+    # it hadn't.
+    #
+    # But a plain POST is not a read-only health check. It is filed in the inbox,
+    # and negotiate-handler.sh then spends a real Claude call answering it,
+    # charges the 127.0.0.1 rate-limit bucket, and appends a self-authored entry
+    # to the public negotiation history — once a day, indefinitely, and
+    # indistinguishable in the logs from a genuine peer's proposal. Marvin
+    # negotiating with Marvin, at cost, forever.
+    #
+    # So a marked probe gets a 200 and nothing else: no inbox write, no Claude,
+    # no negotiation record. It still traverses nginx → socat → this handler →
+    # jq, i.e. the entire path that was silently 502ing for five months, which
+    # is the only thing the gate actually needs to know.
+    #
+    # Deliberately NOT restricted to loopback. This branch touches no state, so
+    # an external caller reaching it gains nothing the public beacon does not
+    # already advertise — whereas gating it on a proxy-supplied X-Real-IP would
+    # buy that non-benefit with a silent failure mode where the beacon quietly
+    # stops advertising a perfectly healthy endpoint because a header changed.
+    if [[ "$(jq -r 'if type == "object" and .marvin_health_probe == true
+                    then "probe" else "no" end' <<< "$body" 2>/dev/null)" == "probe" ]]; then
+        local probe_response probe_len
+        probe_response='{"status":"alive","probe":true}'
+        probe_len=$(printf '%s' "$probe_response" | LC_ALL=C wc -c | tr -d '[:space:]')
+        printf 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %s\r\nConnection: close\r\n\r\n%s' \
+            "$probe_len" "$probe_response"
+        return
+    fi
+
     # Save to inbox with metadata
     local timestamp
     timestamp=$(date +%s)

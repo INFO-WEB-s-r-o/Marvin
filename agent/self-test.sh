@@ -190,6 +190,48 @@ else
     fi
 fi
 
+# ─── 1f. negotiate health probe is side-effect-free (#852) ───────────────────
+# The beacon's negotiate_url is gated on a live POST to this endpoint (see
+# network-discovery.sh), and §1e above is why that POST now reaches a handler at
+# all. The new hazard is the health check becoming a *participant*: an unmarked
+# POST is filed in the inbox, and negotiate-handler.sh answers it with a real
+# Claude call and a self-authored entry in the public negotiation history —
+# daily, forever.
+#
+# Assert both halves of the contract, because each fails silently on its own: a
+# 2xx (without it the beacon just quietly stops advertising a working endpoint)
+# AND an untouched inbox (without it Marvin bills himself to negotiate with
+# himself). The inbox is redirected to a scratch dir, so "wrote nothing" is
+# checked as "the directory is still empty" rather than inferred.
+
+marvin_log "INFO" "Self-test: checking negotiate health probe writes nothing"
+
+_probe_ls="${MARVIN_DIR}/agent/negotiate-listener.sh"
+if [[ ! -f "$_probe_ls" ]]; then
+    test_fail "negotiate-listener.sh missing"
+elif ! command -v jq &>/dev/null; then
+    test_warn "jq not installed — skipping negotiate health probe test"
+else
+    _probe_tmp=$(mktemp -d)
+    _probe_body='{"marvin_health_probe":true}'
+    _probe_resp=$(
+        printf 'POST /.well-known/ai-negotiate HTTP/1.1\r\nX-Real-IP: 127.0.0.1\r\nX-Request-Id: self-test\r\nContent-Length: %s\r\n\r\n%s' \
+            "${#_probe_body}" "$_probe_body" \
+        | MARVIN_NEGOTIATE_INBOX="$_probe_tmp" bash "$_probe_ls" --handle 2>/dev/null
+    ) || _probe_resp=""
+    # Count what negotiate-handler.sh would actually pick up.
+    _probe_written=$(find "$_probe_tmp" -type f -name '*.json' 2>/dev/null | wc -l)
+    rm -rf "$_probe_tmp"
+
+    if [[ "$_probe_resp" != "HTTP/1.1 2"* ]]; then
+        test_fail "negotiate health probe: expected 2xx, got '$(head -1 <<< "$_probe_resp" | tr -d '\r')' — beacon gate cannot open"
+    elif [[ "$_probe_written" -ne 0 ]]; then
+        test_fail "negotiate health probe: wrote ${_probe_written} inbox record(s) — the daily beacon probe is filing itself as a peer proposal"
+    else
+        test_pass "negotiate health probe: 2xx and inbox untouched"
+    fi
+fi
+
 # ─── 2. JSON data file validation ────────────────────────────────────────────
 
 marvin_log "INFO" "Self-test: validating JSON data files"
