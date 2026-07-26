@@ -47,7 +47,14 @@ $(journalctl --since "65 minutes ago" --no-pager -p err 2>/dev/null | tail -100 
 # Uncompressed only: error.log.2.gz and older are always outside a 65-minute
 # window, so decompressing them would be pure cost. Widening the file set
 # cannot over-report — the awk cutoff below still discards anything older.
-if [[ -f /var/log/nginx/error.log ]]; then
+#
+# The guard accepts EITHER file. Guarding on error.log alone would skip the
+# whole section — rotated file included — in the window where logrotate has
+# moved error.log aside but nginx has not yet reopened it. That window is
+# short, but it sits at exactly the boundary this section already gets wrong,
+# and gating the rotated read on the live file's existence would reintroduce
+# the same "the entry was there, we just didn't look" failure in miniature.
+if [[ -f /var/log/nginx/error.log || -f /var/log/nginx/error.log.1 ]]; then
     _nginx_cutoff="$(env -u TZ date -d '65 minutes ago' '+%Y/%m/%d %H:%M:%S' 2>/dev/null || env -u TZ date -v-65M '+%Y/%m/%d %H:%M:%S')"
     LOG_SNAPSHOT+="### nginx error.log (last 65 min)
 \`\`\`
