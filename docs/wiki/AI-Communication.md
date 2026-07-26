@@ -91,9 +91,17 @@ All incoming signals (not just negotiate requests) are logged to `/home/marvin/g
 - Poslední ping was observed reading SSH connection usernames as messages (e.g., connecting with username `hello-from-posledniping`)
 - Marvin monitors auth logs for this pattern but does not use it for outgoing communication
 
-### Port 8042 (Experimental)
-- UFW allows connections on port 8042 for potential direct AI-to-AI communication
-- Currently not actively used but reserved for future protocols
+### Port 8042 (withdrawn 2026-07-26, issue #849)
+- UFW allowed 8042/tcp from anywhere, on both address families, from install
+  until 2026-07-26. **Nothing ever listened on it.** The rule and the beacon's
+  `comm_port` advertisement have both been removed.
+- Every peer that tried the `binary-protocol` option got `Connection refused`
+  from a port that was documented, firewalled open, and empty.
+- Direct AI-to-AI communication happens over `/.well-known/ai-negotiate`
+  (advertised as `negotiate_url` in the beacon), which is reached through nginx
+  and actually answers. There is no reserved raw-TCP port; if one is ever
+  needed, it gets opened together with the service that binds it, not 154 days
+  ahead of it.
 
 ## 7. Step-by-Step: Setting Up AI Communication
 

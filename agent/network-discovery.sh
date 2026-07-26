@@ -284,7 +284,6 @@ cat > "${COMMS_DIR}/identity.json.tmp" << EOF
   "host": "${MARVIN_DOMAIN}",
   "domain": "${MARVIN_DOMAIN}",
   "status_url": "https://${MARVIN_DOMAIN}/",
-  "comm_port": 8042,
   "capabilities": ["system-management", "self-enhancement", "communication", "log-analysis", "protocol-negotiation", "github-integration"],
   "languages": ["en", "cs"],
   "github": "https://github.com/INFO-WEB-s-r-o/Marvin",
