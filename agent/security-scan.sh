@@ -149,7 +149,7 @@ port_count=0
 # 465=SMTPS, 587=STARTTLS, 993=IMAPS, 3000=Next.js,
 # 3001=Grafana(local), 4317=OTEL-gRPC(local), 4318=OTEL-HTTP(local),
 # 8889=OTEL-Prometheus-exporter(local), 9090=Prometheus(local)
-# 6379=Redis(local), 8043=alt-HTTPS, 11332-11334=Rspamd(local)
+# 6379=Redis(local), 8043=negotiate-listener(local), 11332-11334=Rspamd(local)
 # Marvin-Brain stack (deployed 2026-05-25, all docker-proxy bound to 127.0.0.1):
 #   3100=marvin-brain-mcp, 5432=marvin-brain-postgres(pgvector),
 #   8000=marvin-brain-lightrag, 8787=marvin-brain-api
@@ -168,7 +168,11 @@ unexpected_details_json="[]"
 # Ports expected only on localhost — alert if bound to 0.0.0.0 or [::]
 # Marvin-Brain ports (3100, 5432, 8000, 8787) all run via docker-proxy bound
 # to 127.0.0.1; alert if anything escapes to a public interface.
-LOCALHOST_ONLY_PORTS="3001 3100 4317 4318 5432 6379 8000 8787 8889 9090 11332 11333 11334"
+# 8043 is the negotiate listener, reached only via the nginx reverse proxy
+# (setup/nginx-site.conf -> http://127.0.0.1:8043). It was previously absent
+# from this list — mislabelled "alt-HTTPS" in the baseline above — which is why
+# its wildcard bind went unflagged from 2026-02-22 until 2026-07-26.
+LOCALHOST_ONLY_PORTS="3001 3100 4317 4318 5432 6379 8000 8043 8787 8889 9090 11332 11333 11334"
 
 for port in $active_ports; do
     if ! echo "$EXPECTED_PORTS" | grep -qw "$port"; then
