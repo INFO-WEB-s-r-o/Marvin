@@ -43,10 +43,31 @@
 # name a known-pending site without pinning a line number that any edit above it
 # would shift. Consumed by self-test.sh §1h.
 #
-# Exit: 0 = clean, 1 = at least one hit
+# Exit:
+#   0 — clean
+#   1 — at least one hit
+#   2 — COULD NOT SCAN (missing tool, unreadable input, no targets). Distinct on
+#       purpose: a caller must never read "produced no findings" as "found
+#       nothing wrong", which is the failure-collapsing class this file exists to
+#       police in the first place (#858).
 # =============================================================================
 
+# `set -e` is deliberately omitted, and this is the one file under agent/ that
+# deviates from the project convention. The scan body is built from guard clauses
+# like `[[ "$code" =~ ^[[:space:]]*# ]] && continue`, whose compound status is 1
+# on the ordinary path — under `-e` that aborts the run mid-file instead of
+# skipping a line, and from the caller's side an aborted scan looks exactly like
+# a clean one. Propagation here is explicit instead: every failure path exits 2
+# and says why on stderr, which is a stronger guarantee than `-e` would give.
 set -uo pipefail
+
+# A scan that cannot run must not resemble a scan that found nothing.
+for _tool in awk sha1sum find basename tr cut; do
+    if ! command -v "$_tool" >/dev/null 2>&1; then
+        echo "pipefail-scan: required tool not available: ${_tool}" >&2
+        exit 2
+    fi
+done
 
 # Joins backslash-continuations AND multi-line single-quoted programs. The
 # latter is required, not a nicety: capability-inventory.sh's
@@ -87,21 +108,37 @@ _hits=0
 # statement itself changes — which is what makes a fixed site fall out of a
 # baseline automatically instead of staying permanently excused.
 _stmt_key() {
-    local _norm
+    local _norm _key
     _norm="$(tr -s '[:space:]' ' ' <<< "$1")"
     _norm="${_norm# }"; _norm="${_norm% }"
-    printf '%s' "$_norm" | sha1sum | cut -c1-12
+    _key="$(printf '%s' "$_norm" | sha1sum | cut -c1-12)" || return 1
+    [[ -n "$_key" ]] || return 1
+    printf '%s' "$_key"
 }
 
+# Returns 2 if the file could not be processed, so a read error can never be
+# reported as an absence of findings.
 _scan_file() {
-    local f="$1" rec ln code pre key
+    local f="$1" rec ln code pre key joined
+    joined="$(awk "$_JOIN_AWK" "$f")" || {
+        echo "pipefail-scan: awk failed on ${f}" >&2
+        return 2
+    }
     while IFS= read -r rec; do
+        [[ -z "$rec" ]] && continue
         ln="${rec%%:*}"; code="${rec#*:}"
         [[ "$code" =~ ^[[:space:]]*# ]] && continue
         # 1. non-empty echo fallback
         [[ "$code" =~ \|\|[[:space:]]*echo[[:space:]] ]] || continue
         [[ "$code" =~ \|\|[[:space:]]*echo[[:space:]]+(\"\"|\'\')[[:space:]]*[\),\;]*[[:space:]]*$ ]] && continue
-        pre="${code%%||*}"
+        # Split on the LAST `||`, not the first: a statement with an earlier
+        # unrelated `||` (`foo || bar | jq -s || echo '[]'`) would otherwise have
+        # `pre` truncated before the real `| jq` producer and slip through as a
+        # false negative. None of the four historical instances had more than one
+        # `||`, so this is a blind spot closed rather than a bug fixed; erring
+        # toward over-inclusion is the right direction for a detector whose hits
+        # a human reads.
+        pre="${code%||*}"
         # 2. it is a pipeline
         [[ "$pre" == *"|"* ]] || continue
         # 3. a stage that can exit non-zero while emitting nothing
@@ -111,30 +148,65 @@ _scan_file() {
             || [[ "$pre" =~ \|[[:space:]]*wc[[:space:]] ]] || continue
         _hits=$((_hits + 1))
         if [[ "$_tsv" == true ]]; then
-            key="$(_stmt_key "$code")"
+            key="$(_stmt_key "$code")" || {
+                echo "pipefail-scan: could not hash statement at ${f}:${ln}" >&2
+                return 2
+            }
             printf '%s\t%s\t%s\t%s\n' "$(basename "$f")" "$ln" "$key" "$(tr -s '[:space:]' ' ' <<< "$code")"
         else
             echo "  HIT: $(basename "$f"):${ln}"
         fi
-    done < <(awk "$_JOIN_AWK" "$f")
+    done <<< "$joined"
 }
 
 _targets=("$@")
+_explicit_targets=true
 if [[ ${#_targets[@]} -eq 0 ]]; then
+    _explicit_targets=false
     # MARVIN_DIR when sourced into an agent script's environment; otherwise
     # derived from this file's own location (agent/lib/ -> repo root).
     _base="${MARVIN_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-    mapfile -t _targets < <(find "${_base}/agent" -name '*.sh' -type f | sort)
+    if ! mapfile -t _targets < <(find "${_base}/agent" -name '*.sh' -type f | sort); then
+        echo "pipefail-scan: could not enumerate ${_base}/agent" >&2
+        exit 2
+    fi
+    # Zero targets means the tree is not where we think it is — a silent 0-hit
+    # "clean" from an empty file list is the exact false reassurance this
+    # script's exit codes exist to prevent.
+    if [[ ${#_targets[@]} -eq 0 ]]; then
+        echo "pipefail-scan: no *.sh files found under ${_base}/agent" >&2
+        exit 2
+    fi
 fi
 
+_errors=0
+_scanned=0
 for _f in "${_targets[@]}"; do
-    [[ -r "$_f" ]] || continue
-    _scan_file "$_f"
+    if [[ ! -r "$_f" ]]; then
+        # An explicitly-named file that cannot be read is an error; a vanished
+        # entry from our own find (rotated/removed mid-run) is not.
+        if [[ "$_explicit_targets" == true ]]; then
+            echo "pipefail-scan: cannot read ${_f}" >&2
+            _errors=$((_errors + 1))
+        fi
+        continue
+    fi
+    _scan_file "$_f" || _errors=$((_errors + 1))
+    _scanned=$((_scanned + 1))
 done
+
+if [[ "$_errors" -gt 0 ]]; then
+    echo "pipefail-scan: ${_errors} file(s) could not be scanned — results are incomplete" >&2
+    exit 2
+fi
+if [[ "$_scanned" -eq 0 ]]; then
+    echo "pipefail-scan: nothing was scanned" >&2
+    exit 2
+fi
 
 if [[ "$_tsv" == false ]]; then
     if [[ "$_hits" -eq 0 ]]; then
-        echo "pipefail double-document scan: clean (${#_targets[@]} files)"
+        echo "pipefail double-document scan: clean (${_scanned} files)"
     else
         echo "pipefail double-document scan: ${_hits} hit(s)"
     fi

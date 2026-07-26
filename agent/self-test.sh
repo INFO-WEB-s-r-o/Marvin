@@ -180,12 +180,32 @@ if [[ ! -r "$_pipefail_scan" ]]; then
     test_warn "pipefail double-document scanner missing (${_pipefail_scan})"
 else
     marvin_log "INFO" "Self-test: scanning for pipefail double-document fallbacks"
-    # `|| true`: the scanner exits 1 on hits by design, and a bare command
-    # substitution here would abort the suite on the ERR trap — the §1d class.
-    _pf_out=$(bash "$_pipefail_scan" --tsv 2>/dev/null) || true
+    # The scanner's exit code is load-bearing and must NOT be collapsed (#858):
+    #   0 = clean, 1 = hits, 2 = could not scan.
+    # An earlier version used `|| true`, which made a scanner that failed to run
+    # indistinguishable from a clean tree — it would have reported PASS *and*
+    # declared all five baseline entries stale, i.e. announced that #844/#846 had
+    # landed when nothing had. That is the same "collapse a failure into an empty
+    # result and call it fine" shape this whole section exists to catch, which is
+    # the second time this bug class has been reintroduced by code written to
+    # prevent it. The capture still must not fire the ERR trap (the §1d class),
+    # hence `&& rc=0 || rc=$?` rather than a bare substitution.
+    _pf_out=$(bash "$_pipefail_scan" --tsv 2>/dev/null) && _pf_rc=0 || _pf_rc=$?
+    _pf_trusted=true
+    if [[ "$_pf_rc" -gt 1 ]]; then
+        test_fail "pipefail double-document scanner could not run (exit ${_pf_rc}) — the check did NOT execute; do not read this run as clean"
+        _pf_trusted=false
+    elif [[ "$_pf_rc" -eq 0 && -n "$_pf_out" ]]; then
+        test_fail "pipefail scanner reported clean (exit 0) but printed findings — scanner contract violated, results untrustworthy"
+        _pf_trusted=false
+    elif [[ "$_pf_rc" -eq 1 && -z "$_pf_out" ]]; then
+        test_fail "pipefail scanner reported hits (exit 1) but printed nothing — scanner contract violated, results untrustworthy"
+        _pf_trusted=false
+    fi
     _pf_new=0
     _pf_seen=()
     while IFS=$'\t' read -r _pf_file _pf_line _pf_key _pf_rest; do
+        [[ "$_pf_trusted" == true ]] || break
         [[ -z "${_pf_file:-}" ]] && continue
         _pf_id="${_pf_file}|${_pf_key}"
         _pf_note=""
@@ -204,12 +224,15 @@ else
             _pf_new=$((_pf_new + 1))
         fi
     done <<< "$_pf_out"
-    if [[ "$_pf_new" -eq 0 ]]; then
+    if [[ "$_pf_trusted" == true && "$_pf_new" -eq 0 ]]; then
         test_pass "pipefail double-document scan: no new sites"
     fi
     # Stale baseline entries: the fix landed, so the line is now excusing
     # nothing and must go, or it silently re-excuses a reintroduction later.
+    # Gated on a trustworthy scan — an unlisted-because-nothing-ran entry is not
+    # a landed fix, and saying so would be the false all-clear from #858.
     for _pf_b in "${_PIPEFAIL_KNOWN[@]}"; do
+        [[ "$_pf_trusted" == true ]] || break
         IFS='|' read -r _pf_bf _pf_bk _pf_bn <<< "$_pf_b"
         _pf_bid="${_pf_bf}|${_pf_bk}"
         _pf_found=false
