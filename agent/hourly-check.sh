@@ -66,13 +66,44 @@ if [[ -f /var/log/nginx/error.log || -f /var/log/nginx/error.log.1 ]]; then
     # hourly run. Losing the age filter costs us an over-wide snapshot that
     # `tail -50` already bounds; losing the run costs us the whole check.
     _nginx_cutoff="$(env -u TZ date -d '65 minutes ago' '+%Y/%m/%d %H:%M:%S' 2>/dev/null || env -u TZ date -v-65M '+%Y/%m/%d %H:%M:%S')" || _nginx_cutoff=""
+
+    # Capture, THEN emit — the read must not be spliced inline with a trailing
+    # `|| fallback`. This pipeline can fail *late*: the loop writes file 1 to
+    # the pipe and only then dies (unreadable error.log, awk gone), so `tail`
+    # has already emitted when pipefail reports the failure. Inline, the
+    # fallback's output would be appended to that partial read rather than
+    # replace it — the double-JSON-document class from #841/#844/#846, wearing
+    # a different hat. Verified: the old line emitted the filtered window AND
+    # the whole unfiltered tail, with entries duplicated across the seam.
+    #
+    # An empty result is a SUCCESS, not a failure — a quiet hour has no errors
+    # in the window. Only a non-zero status may reach the fallback; testing
+    # for emptiness instead would fire the unfiltered fallback on every
+    # healthy run and flood the snapshot with hours-old entries, which is
+    # precisely the over-wide window #848 closed.
+    if ! _nginx_recent="$(for _nginx_log in /var/log/nginx/error.log.1 /var/log/nginx/error.log; do
+            if [[ -f "$_nginx_log" ]]; then
+                awk -v d="$_nginx_cutoff" '$0 >= d' "$_nginx_log" 2>/dev/null
+            fi
+        done | tail -50)"; then
+        # Last resort: the age filter itself is broken, so the 65-minute claim
+        # in the heading cannot be honoured. Read BOTH files here too — a
+        # fallback that reads only the live file silently reintroduces the
+        # rotated-window gap this whole section exists to close — and label
+        # the output, because an unfiltered tail under a "last 65 min" heading
+        # invites the next hourly run to re-diagnose this morning's entries as
+        # if they had just happened. `|| true` keeps a missing error.log.1
+        # from failing the pipe under pipefail.
+        if _nginx_recent="$({ cat /var/log/nginx/error.log.1 /var/log/nginx/error.log 2>/dev/null || true; } | tail -50)"; then
+            _nginx_recent="[age filter unavailable — last 50 lines, UNFILTERED, window above does not hold]
+${_nginx_recent}"
+        else
+            _nginx_recent="unavailable"
+        fi
+    fi
     LOG_SNAPSHOT+="### nginx error.log (last 65 min)
 \`\`\`
-$(for _nginx_log in /var/log/nginx/error.log.1 /var/log/nginx/error.log; do
-    if [[ -f "$_nginx_log" ]]; then
-        awk -v d="$_nginx_cutoff" '$0 >= d' "$_nginx_log" 2>/dev/null
-    fi
-done | tail -50 || tail -50 /var/log/nginx/error.log 2>/dev/null || echo "unavailable")
+${_nginx_recent}
 \`\`\`
 
 "
