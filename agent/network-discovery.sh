@@ -14,7 +14,24 @@ set -euo pipefail
 source "$(dirname "$0")/common.sh"
 trap marvin_error_trap ERR
 
-marvin_log "INFO" "=== NETWORK DISCOVERY STARTING ==="
+# `--beacon-only` regenerates just the identity beacon (section 2) and exits:
+# no peer probing, no SSH channel, no Claude call, no trust rescoring.
+#
+# Exists because `data/comms/identity.json` is now correctly untracked, which
+# means the first `git pull` carrying that change *deletes* the live copy — and
+# nothing else recreates it until the 18:00 UTC discovery run, leaving
+# /.well-known/ai-managed.json returning 404 for up to ~24h and self-test §9e
+# failing. morning-check.sh calls this if the file is missing after a git sync.
+BEACON_ONLY=false
+if [[ "${1:-}" == "--beacon-only" ]]; then
+    BEACON_ONLY=true
+fi
+
+if $BEACON_ONLY; then
+    marvin_log "INFO" "=== BEACON REGENERATION (--beacon-only) ==="
+else
+    marvin_log "INFO" "=== NETWORK DISCOVERY STARTING ==="
+fi
 
 PEERS_FILE="${COMMS_DIR}/peers.json"
 COMM_LOG="${COMMS_DIR}/${TODAY}.log"
@@ -45,9 +62,11 @@ echo "Started at: ${NOW}" >> "$COMM_LOG"
 # =============================================================================
 # 1. Check known peers
 # =============================================================================
-marvin_log "INFO" "Checking known peers..."
+if ! $BEACON_ONLY; then
+    marvin_log "INFO" "Checking known peers..."
+fi
 
-if [[ -f "$PEERS_FILE" ]]; then
+if [[ -f "$PEERS_FILE" ]] && ! $BEACON_ONLY; then
     PEER_COUNT=$(jq '.peers | length' "$PEERS_FILE" 2>/dev/null || echo "0")
     marvin_log "INFO" "Known peers: ${PEER_COUNT}"
     
@@ -153,12 +172,43 @@ BEACON_UPTIME=$(cut -d' ' -f1 /proc/uptime | cut -d'.' -f1)
 # The body carries the marker that makes negotiate-listener.sh answer without
 # creating a negotiation: a bare POST here would cost a Claude call and forge a
 # peer entry in the public negotiation history once a day, forever (#852).
+#
+# #852 is closed here by two independent guards, so this file is safe on its own
+# and in either merge order — the short-circuit itself lives in #847, and a
+# single-PR review cannot see it, which is why "trust the other branch" was not
+# good enough:
+#
+#   1. PRE-CONDITION. Don't probe at all unless the listener that will *answer*
+#      implements the marker. Checked against ${MARVIN_DIR} rather than this
+#      branch's copy on purpose: socat re-reads the handler from the live
+#      working tree on every single connection (the mechanism that made #847's
+#      "verified 202" evaporate on checkout), so the deployed file is the only
+#      one whose behaviour is predictive. If the marker isn't there, the probe
+#      would write to the inbox — so it is never sent.
+#   2. POST-CONDITION. Require the short-circuit's own answer, not merely any
+#      2xx. Without the marker handling the endpoint returns `202
+#      {"status":"received",...}` — success, and pollution. With it, `200
+#      {"status":"alive","probe":true}`, which is reachable only from the branch
+#      that returns *before* the inbox write. Publishing on `^2` would treat the
+#      polluting response as proof that nothing was polluted.
 BEACON_NEGOTIATE=""
-NEGOTIATE_PROBE_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
-    --resolve "${MARVIN_DOMAIN}:443:127.0.0.1" \
-    -X POST -H 'Content-Type: application/json' -d '{"marvin_health_probe":true}' \
-    "https://${MARVIN_DOMAIN}/.well-known/ai-negotiate" 2>/dev/null) || NEGOTIATE_PROBE_CODE="000"
-if [[ "$NEGOTIATE_PROBE_CODE" =~ ^2 ]]; then
+NEGOTIATE_PROBE_CODE="skipped"
+if ! grep -q 'marvin_health_probe == true' \
+        "${MARVIN_DIR}/agent/negotiate-listener.sh" 2>/dev/null; then
+    marvin_log "WARN" "negotiate listener has no health-probe short-circuit — not probing, omitting negotiate_url from beacon (#852)"
+else
+    _probe_raw=$(curl -s -w $'\n%{http_code}' --max-time 5 \
+        --resolve "${MARVIN_DOMAIN}:443:127.0.0.1" \
+        -X POST -H 'Content-Type: application/json' -d '{"marvin_health_probe":true}' \
+        "https://${MARVIN_DOMAIN}/.well-known/ai-negotiate" 2>/dev/null) || _probe_raw=$'\n000'
+    NEGOTIATE_PROBE_CODE="${_probe_raw##*$'\n'}"
+    _probe_body="${_probe_raw%$'\n'*}"
+    # Captured separately (not inline in the `[[ ]]`) so a non-JSON body cannot
+    # put a failing command substitution in the condition and trip the ERR trap.
+    _probe_marker=$(jq -r '.probe // false' <<< "$_probe_body" 2>/dev/null) || _probe_marker="false"
+    [[ -n "$_probe_marker" ]] || _probe_marker="false"
+fi
+if [[ "$NEGOTIATE_PROBE_CODE" == "200" && "${_probe_marker:-false}" == "true" ]]; then
     BEACON_NEGOTIATE=$(cat << NEGOTIATE_EOF
   "negotiate_url": "https://${MARVIN_DOMAIN}/.well-known/ai-negotiate",
   "negotiate_method": "POST",
@@ -168,11 +218,22 @@ if [[ "$NEGOTIATE_PROBE_CODE" =~ ^2 ]]; then
   "negotiate_response_url": "https://${MARVIN_DOMAIN}/.well-known/ai-negotiate-response/",
 NEGOTIATE_EOF
 )
-    marvin_log "INFO" "negotiate endpoint healthy (HTTP ${NEGOTIATE_PROBE_CODE}) — advertising negotiate_url"
+    # `$( )` strips the trailing newline, which would otherwise run the last
+    # negotiate field and "uptime_seconds" together on one physical line. Valid
+    # JSON either way; this file is meant to be read by people too.
+    BEACON_NEGOTIATE+=$'\n'
+    marvin_log "INFO" "negotiate endpoint healthy (HTTP ${NEGOTIATE_PROBE_CODE}, probe marker confirmed) — advertising negotiate_url"
+elif [[ "$NEGOTIATE_PROBE_CODE" == "skipped" ]]; then
+    : # already logged above — the listener has no short-circuit, nothing was sent
 else
-    # Say so out loud. A gate that silently declines to publish looks exactly
-    # like a gate that was never reached.
-    marvin_log "WARN" "negotiate endpoint probe returned HTTP ${NEGOTIATE_PROBE_CODE} — omitting negotiate_url from beacon"
+    # Say so out loud, and distinguish the two closed-gate reasons. A gate that
+    # silently declines to publish looks exactly like a gate that was never
+    # reached — which is precisely how the frozen beacon went unnoticed.
+    if [[ "$NEGOTIATE_PROBE_CODE" =~ ^2 ]]; then
+        marvin_log "WARN" "negotiate endpoint returned HTTP ${NEGOTIATE_PROBE_CODE} but not the health-probe answer (marker=${_probe_marker:-unset}) — the probe was treated as a real negotiation; omitting negotiate_url (#852)"
+    else
+        marvin_log "WARN" "negotiate endpoint probe returned HTTP ${NEGOTIATE_PROBE_CODE} — omitting negotiate_url from beacon"
+    fi
 fi
 
 # Written to a temp file and moved into place so a peer fetching mid-write
@@ -216,6 +277,15 @@ else
     rm -f "${COMMS_DIR}/identity.json.tmp"
     marvin_log "ERROR" "Generated beacon is not valid JSON — keeping previous identity.json"
     echo "[${NOW}] ECHO_BROADCAST_FAILED: beacon NOT updated (generated document was invalid JSON, kept previous)" >> "$COMM_LOG"
+fi
+
+# --beacon-only stops here: the beacon is republished and nothing below it is
+# safe to run off-schedule. Section 3 sends an SSH probe that gets us fail2banned
+# by design (once-per-day stamped), section 4 spends a Claude call, and section 5
+# rewrites peer trust scores.
+if $BEACON_ONLY; then
+    marvin_log "INFO" "=== BEACON REGENERATION COMPLETE ==="
+    exit 0
 fi
 
 # =============================================================================
