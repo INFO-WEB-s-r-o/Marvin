@@ -228,6 +228,39 @@ while IFS= read -r -d '' f; do
 done < <(find "${COMMS_DIR}" -maxdepth 1 -type f -name 'log-analysis-????-??-??.json.gz' -mtime +180 -print0 2>/dev/null)
 track_freed "Old comms log-analysis JSON.gz (>180d)" "$comms_analysis_gz_size"
 
+# ─── 6e. Orphaned nginx request bodies in the negotiate inbox (>1 day) ──────
+# ${COMMS_DIR}/negotiate-inbox is negotiate-handler.sh's input directory AND
+# nginx's client_body_temp_path for /.well-known/ai-negotiate (see #854/#856).
+# Every POST to that endpoint therefore deposits its raw body here — including
+# the ones that never reach the handler — and nothing has ever swept them.
+#
+# These are NOT handler leftovers: negotiate-handler.sh removes its own file on
+# every exit path. They are nginx's, written into a directory nginx was told to
+# use, which is why reading the handler would never have found them. They are
+# www-data-owned and extensionless (nginx names them by a monotonic counter),
+# while the handler globs '*.json' — that extension mismatch is the only reason
+# they are inert rather than an input path into the handler.
+#
+# Scope, deliberately narrow on both axes:
+#   ! -name '*.json' — a .json file here is handler-owned. The handler leaves
+#     one behind on purpose when it must skip a request (see its mid-loop skip
+#     path) and will retry it on the next run; deleting those would silently
+#     discard a pending peer negotiation. Only files no code path will ever
+#     claim are removed.
+#   -mtime +1 — nginx is still actively writing bodies into this directory, so
+#     the age floor is what keeps an in-flight request body from being deleted
+#     out from under a live POST. A day is far beyond any request's lifetime.
+#
+# #856 stops nginx creating these; this bounds the ones already here and any
+# written before it deploys. Complementary, not a duplicate.
+negotiate_inbox_size=0
+while IFS= read -r -d '' f; do
+    fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
+    negotiate_inbox_size=$((negotiate_inbox_size + fsize))
+    marvin_is_dry_run || rm -f "$f"
+done < <(find "${COMMS_DIR}/negotiate-inbox" -maxdepth 1 -type f ! -name '*.json' -mtime +1 -print0 2>/dev/null)
+track_freed "Orphaned negotiate request bodies (>1d)" "$negotiate_inbox_size"
+
 # ─── 7. Systemd journal vacuum (keep 7 days) ────────────────────────────────
 
 journal_before=$(journalctl --disk-usage 2>/dev/null | grep -oP '[\d.]+[KMGT]' || echo "0")
