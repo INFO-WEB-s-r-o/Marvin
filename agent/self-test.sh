@@ -693,6 +693,147 @@ for _entry in "${_runtime_json_targets[@]}"; do
     test_pass "runtime json: ${_label} valid (${_rel})"
 done
 
+# ─── 9e. Public beacon content freshness ─────────────────────────────────────
+# /.well-known/ai-managed.json is the document every peer and scanner reads to
+# decide whether anything lives here. It advertised 2026-04-08 for 109 days:
+# network-discovery.sh rewrote it daily and logged "ECHO_BROADCAST: beacon
+# updated" every time, but the file was git-tracked, so every `git checkout` /
+# `git reset --hard` in the morning-pull and self-enhance rollback paths
+# restored the stale committed blob over it.
+#
+# This asserts on the `last_seen` value INSIDE the document, not on the file
+# mtime — a checkout that reverts the content still bumps the mtime, so an
+# mtime check would have passed happily throughout those 109 days. The
+# distinction is the entire point of this test.
+
+marvin_log "INFO" "Self-test: verifying public beacon freshness"
+
+_beacon="${COMMS_DIR}/identity.json"
+if [[ ! -f "$_beacon" ]]; then
+    test_fail "beacon: identity.json missing (nginx serves this at /.well-known/ai-managed.json)"
+else
+    _beacon_seen=$(jq -r '.last_seen // empty' "$_beacon" 2>/dev/null || true)
+    if [[ -z "$_beacon_seen" ]]; then
+        test_fail "beacon: last_seen absent — cannot tell whether the beacon is live"
+    else
+        _beacon_seen_s=$(date -d "$_beacon_seen" +%s 2>/dev/null || echo 0)
+        if [[ "$_beacon_seen_s" -eq 0 ]]; then
+            test_fail "beacon: last_seen is not a parseable timestamp (${_beacon_seen})"
+        else
+            # discovery runs daily at 18:00 UTC; >48h means a run was lost or
+            # its write is being reverted.
+            _beacon_age_s=$(( $(date +%s) - _beacon_seen_s ))
+            if [[ "$_beacon_age_s" -gt 172800 ]]; then
+                test_fail "beacon: last_seen is $(( _beacon_age_s / 86400 ))d stale (${_beacon_seen}) — beacon is frozen"
+            else
+                test_pass "beacon: last_seen fresh ($(( _beacon_age_s / 3600 ))h old)"
+            fi
+        fi
+    fi
+
+    # `born: ""` shipped publicly from 2026-02-24 to 2026-07-26 because the
+    # heredoc that carried it forward read a file the same command had already
+    # truncated. Empty-but-present fields parse as valid JSON, so the integrity
+    # sweep above cannot see them.
+    if [[ -z "$(jq -r '.born // empty' "$_beacon" 2>/dev/null || true)" ]]; then
+        test_fail "beacon: born is empty — carry-over field is not being preserved"
+    else
+        test_pass "beacon: born populated"
+    fi
+fi
+
+# Recovery wiring: morning-check.sh regenerates the beacon by invoking
+# network-discovery.sh with a flag, and that call is the only thing standing
+# between "the pull deleted the untracked beacon" and a 404 on
+# /.well-known/ai-managed.json for up to 24h. Nothing else asserts the flag it
+# passes is a flag network-discovery.sh still understands — rename or drop it
+# and the recovery silently degrades to a WARN, which is precisely how the
+# beacon stayed frozen for 109 days. Static check, deliberately: actually
+# running --beacon-only would emit a live negotiate probe and rewrite the real
+# beacon, which a test suite has no business doing.
+_nd_script="${MARVIN_DIR}/agent/network-discovery.sh"
+if [[ -r "$_nd_script" ]]; then
+    _nd_flags_checked=0
+    _nd_flags_bad=0
+    while IFS= read -r _nd_flag; do
+        [[ -n "$_nd_flag" ]] || continue
+        _nd_flags_checked=$((_nd_flags_checked + 1))
+        if ! grep -q -- "\"${_nd_flag}\"" "$_nd_script"; then
+            test_fail "beacon recovery: callers pass network-discovery.sh ${_nd_flag}, but that flag is not handled there"
+            _nd_flags_bad=$((_nd_flags_bad + 1))
+        fi
+    done < <(grep -rhoE 'network-discovery\.sh"?[[:space:]]+--[a-z-]+' "${MARVIN_DIR}/agent" 2>/dev/null \
+                | grep -oE '\-\-[a-z-]+' | sort -u || true)
+    if [[ "$_nd_flags_checked" -gt 0 && "$_nd_flags_bad" -eq 0 ]]; then
+        test_pass "beacon recovery: all ${_nd_flags_checked} network-discovery.sh flag(s) used by callers are handled"
+    fi
+
+    # And the other direction, which is the worse failure: a recovery call that
+    # loses its flag doesn't fail, it runs the FULL discovery from the morning
+    # pull — section 3's SSH probe (deliberately fail2ban-triggering, once-daily
+    # stamped), a Claude call, and a peer-trust rewrite, none of which belong in
+    # a 06:00 git sync. Unflagged invocation is therefore a FAIL, not a WARN.
+    _nd_unflagged=0
+    _nd_calls=0
+    while IFS= read -r _nd_call; do
+        # Skip comments: the file discusses this call as well as making it.
+        [[ "${_nd_call#"${_nd_call%%[![:space:]]*}"}" == \#* ]] && continue
+        _nd_calls=$((_nd_calls + 1))
+        [[ "$_nd_call" == *"--beacon-only"* ]] || _nd_unflagged=$((_nd_unflagged + 1))
+    done < <(grep -hE 'bash[[:space:]]+"?[^"]*network-discovery\.sh' \
+                 "${MARVIN_DIR}/agent/morning-check.sh" 2>/dev/null || true)
+    if [[ "$_nd_unflagged" -gt 0 ]]; then
+        test_fail "beacon recovery: morning-check.sh invokes network-discovery.sh without --beacon-only — a git sync would trigger a full discovery run (SSH probe, Claude call, trust rescore)"
+    elif [[ "$_nd_calls" -gt 0 ]]; then
+        test_pass "beacon recovery: morning-check.sh's ${_nd_calls} network-discovery.sh call(s) all pass --beacon-only"
+    else
+        test_warn "beacon recovery: morning-check.sh no longer invokes network-discovery.sh at all — a pull that deletes the untracked beacon now has nothing to restore it"
+    fi
+fi
+
+# ─── 9f. Beacon negotiate gate ⇆ listener marker agreement ───────────────────
+# network-discovery.sh only probes (and therefore only advertises) the negotiate
+# endpoint if the DEPLOYED negotiate-listener.sh implements the health-probe
+# short-circuit, matched by grepping for `.marvin_health_probe == true`. That is
+# a textual dependency on a construct owned by a different file, and it fails
+# CLOSED: if the marker is renamed, the gate shuts, `negotiate_url` silently
+# disappears from the public beacon, and the only trace is a WARN among many.
+# That is the exact failure shape §9e exists for — a document quietly going
+# stale while everything reports success — so it gets a test rather than a
+# note in a review thread.
+#
+# Self-activating by design, which removes the "add this to whichever PR lands
+# second" coordination the review asked for: while #847 is unmerged the
+# deployed listener has no probe machinery at all and this WARNs. Once it does,
+# absence of the exact marker can only mean drift, and that FAILs.
+
+marvin_log "INFO" "Self-test: checking beacon negotiate gate agrees with listener marker"
+
+_nd_file="${MARVIN_DIR}/agent/network-discovery.sh"
+_nl_file="${MARVIN_DIR}/agent/negotiate-listener.sh"
+if [[ -r "$_nd_file" && -r "$_nl_file" ]]; then
+    # Normalize exactly as the runtime gate does, or the test would disagree
+    # with the code it is guarding: strip full-line comments (so prose that
+    # merely mentions the marker cannot satisfy it) then collapse whitespace
+    # (so reflowing the multi-line jq expression is not a false positive).
+    _nl_norm=$(sed 's/^[[:space:]]*#.*$//' "$_nl_file" 2>/dev/null | tr -s '[:space:]' ' ') || _nl_norm=""
+    # Does the gate still exist in network-discovery.sh at all? If someone drops
+    # the pre-condition, the probe starts polluting the inbox again (#852) and
+    # this test must not quietly keep passing on the listener half alone.
+    if ! grep -q 'marvin_health_probe == true' "$_nd_file" 2>/dev/null; then
+        test_fail "beacon negotiate gate: network-discovery.sh no longer checks for the listener's health-probe marker — the daily probe would write a forged peer entry to the negotiate inbox (#852)"
+    elif grep -q '\.marvin_health_probe == true' <<< "$_nl_norm"; then
+        test_pass "beacon negotiate gate: listener implements the health-probe marker the beacon gate greps for"
+    elif grep -qE '"(alive|probe)"|probe.*:.*true' <<< "$_nl_norm"; then
+        # Probe machinery present but not under the expected marker: drift.
+        test_fail "beacon negotiate gate: negotiate-listener.sh has probe handling but not '.marvin_health_probe == true' — the beacon gate is now permanently closed and negotiate_url will silently vanish from the public beacon"
+    else
+        test_warn "beacon negotiate gate: deployed negotiate-listener.sh has no health-probe short-circuit yet (#847 unmerged) — gate correctly fails closed, negotiate_url omitted"
+    fi
+else
+    test_warn "beacon negotiate gate: network-discovery.sh or negotiate-listener.sh not readable — check skipped"
+fi
+
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
 # Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
 # artefact with byte-identical duplicates of the active /home/marvin/.gnupg/
