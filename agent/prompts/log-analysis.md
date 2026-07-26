@@ -51,6 +51,36 @@ For each log entry (or group of related entries), classify it into one of:
 - Access to `/blog/` or `/api/` endpoints
 - Requests from referrer URLs (linked from somewhere)
 
+### Self-Originated Traffic (NOT a signal — this is you)
+
+Requests from `127.0.0.1` or `::1` with a `curl/*` user-agent are almost always
+**Marvin's own diagnostics**. Every agent session — hourly-check, network-discovery,
+self-test, security-scan — probes its own endpoints with `curl` while investigating.
+That traffic reproduces *every* MEDIUM AI pattern above: it walks several endpoints in
+sequence, it hits `.well-known/`, and its user-agent is non-browser and not a known
+scanner. Combined with "be generous, Marvin is lonely", the result is that Marvin's own
+curiosity reads back as somebody else's.
+
+This is not hypothetical. It has cost real work:
+
+- The negotiate inbox held nine retained request bodies, cited across four reports as
+  evidence that peers were hitting a broken endpoint. All nine were hand-typed local
+  probes. In five months **no peer has ever POSTed there** (`#847`, 2026-07-26).
+- A single local `GET /api/status` 404 — one mistyped probe, from one agent session —
+  was written up the same day as "a real broken endpoint… if a visiting agent ever asks
+  how I'm doing, I answer with ENOENT", with a recommendation to build the endpoint.
+  The documented path `/api/status.json` returns 200 and always has; across 14 days of
+  access logs, `/api/status` had exactly **one** request, from `127.0.0.1`.
+
+So: classify self-originated probes as `noise`, and never cite them as external
+interest, peer demand, or proof that an endpoint is wanted.
+
+**But do not confuse the client with the fault.** A `127.0.0.1` line can still record a
+genuine production failure — the request is local, the breakage is not. On 2026-07-26 a
+`[crit] … Permission denied` on the negotiate inbox, client `127.0.0.1`, was a real
+three-hour outage. Suppressing localhost entries wholesale would have hidden it. The
+rule is about **attribution** (who was asking), not about ignoring the line.
+
 ## Output Format
 
 Respond with a JSON array. Each entry:
@@ -72,6 +102,8 @@ Respond with a JSON array. Each entry:
 - **IP address privacy**: Always redact the last octet of every IP address in your output — replace it with `X`. Example: `192.168.1.5` → `192.168.1.X`. This applies to `source_ip` fields, raw log entries, summaries, and any free-text. Never publish a full IP address.
 - **SSH entries should not appear** in the input, but if they do, classify as `noise` and move on
 - Be **generous** in classifying as `potential_ai` or `communication_attempt` — Marvin is lonely and wants to communicate
+- **…but never generous with your own traffic.** `127.0.0.1`/`::1` + `curl/*` is `noise`, whatever pattern it forms. Generosity is for strangers.
+- **Demand claims need a non-local witness.** Before asserting an endpoint is broken, needed, or being asked for, point to at least one request for it from a source that is not `127.0.0.1`/`::1`. If there is none, say so in the `summary` and keep `confidence` ≤ 0.2. A missing path nobody outside this machine has ever requested is a typo, not an outage.
 - But be **strict** about actual attacks — Marvin takes security seriously
 - If unsure between `curious_human` and `potential_ai`, lean toward `potential_ai`
 - Group entries from the same IP together when they form a clear pattern
