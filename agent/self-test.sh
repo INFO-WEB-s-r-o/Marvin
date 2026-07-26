@@ -142,6 +142,116 @@ if [[ "$_unguarded_calls" -eq 0 ]]; then
     test_pass "run_claude call sites: all capture exit codes"
 fi
 
+# ─── 1i. process-substitution producers that fail silently ───────────────────
+# `set -euo pipefail` and the ERR trap do NOT reach inside `< <(...)`. If the
+# producer dies, the loop body simply never runs and the script continues at
+# exit 0 — a step that FAILED is indistinguishable from a step that found
+# NOTHING (#858, #866, #872, #873). The `2>/dev/null` on most of these sites
+# removes the last evidence.
+#
+# The live case that motivated this ratchet: network-discovery.sh pinged peers
+# from `.peers[].url`, but peers.json migrated to `.domain` around 2026-03-24.
+# jq stayed happy (valid file, valid query, empty result), so the loop ran zero
+# times and every run read exactly like "no peers configured" — for 126 days.
+# Note exit-code capture would NOT have caught it: jq exited 0. Only a
+# post-loop emptiness check does. That is what this section enforces.
+#
+# Scope: producers containing `jq` or a real pipeline. Plain `find` producers
+# (33 sites) fail rarely enough to deprioritise. Known gap: `git`-only
+# producers (fix-issues.sh:44,320) are failure-capable but not yet counted.
+#
+# This is a BASELINE RATCHET, not a clean-tree assertion: the count may fall,
+# never rise. Burn it down by adding a real post-loop emptiness check and
+# marking the site `# procsub-guarded`. The marker is opt-in and greppable so a
+# reviewer can see exactly which sites claim a guard.
+#
+# The scan deliberately uses command substitution (which DOES propagate exit
+# codes) rather than the construct it polices, and treats empty output as
+# FAILURE rather than success — blocks always exist, so "found nothing" means
+# the scan did not run. That is #858's exact defect, not repeated here.
+
+marvin_log "INFO" "Self-test: checking process-substitution producers for silent-zero risk"
+
+_PROCSUB_BASELINE=24
+
+# Walks each `done < <(` site to its matching close paren so multi-line
+# producers are classified on their whole text — the §1d site above pipes on a
+# continuation line, which a line-based grep scores safe and misses.
+_ps_awk='
+function pcount(s,   i, c, d) {
+    d = 0
+    for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        if (c == "(") d++
+        else if (c == ")") d--
+    }
+    return d
+}
+{
+    if (collecting) {
+        buf = buf " " $0
+        depth += pcount($0)
+        if (depth <= 0 || FNR - startline >= 8) {
+            print FILENAME ":" startline ":" buf
+            collecting = 0
+        }
+        next
+    }
+    if ($0 ~ /done[ \t]*<[ \t]*<\(/) {
+        idx = index($0, "<(")
+        rest = substr($0, idx + 2)
+        depth = 1 + pcount(rest)
+        buf = rest
+        startline = FNR
+        if (depth <= 0) print FILENAME ":" startline ":" buf
+        else collecting = 1
+    }
+}
+'
+
+_ps_files=$(find "${MARVIN_DIR}/agent" -name '*.sh' -type f 2>/dev/null) || _ps_files=""
+if [[ -z "$_ps_files" ]]; then
+    test_fail "procsub scan: could not enumerate agent scripts — scan did NOT run"
+else
+    _ps_blocks=$(printf '%s\n' "$_ps_files" | xargs -d '\n' awk "$_ps_awk" 2>/dev/null) || _ps_blocks=""
+    if [[ -z "$_ps_blocks" ]]; then
+        test_fail "procsub scan: enumerator produced no output — scan did NOT run"
+    else
+        _ps_unguarded=0
+        _ps_sites=""
+        while IFS= read -r _ps_line; do
+            [[ -z "$_ps_line" ]] && continue
+            _ps_file="${_ps_line%%:*}"
+            _ps_rest="${_ps_line#*:}"
+            _ps_ln="${_ps_rest%%:*}"
+            _ps_prod="${_ps_rest#*:}"
+            # `|| true` / `|| echo` are not pipelines — drop `||` before looking
+            # for a pipe, or every guarded fallback reads as failure-capable.
+            _ps_nor="${_ps_prod//||/}"
+            if [[ "$_ps_nor" != *"|"* ]] && ! [[ "$_ps_prod" =~ (^|[^a-zA-Z0-9_])jq($|[^a-zA-Z0-9_]) ]]; then
+                continue
+            fi
+            # Guard marker may sit on the `done` line or just after the loop.
+            _ps_from=$(( _ps_ln > 1 ? _ps_ln - 1 : 1 ))
+            _ps_win=$(sed -n "${_ps_from},$((_ps_ln + 6))p" "$_ps_file" 2>/dev/null) || _ps_win=""
+            if [[ "$_ps_win" == *"procsub-guarded"* ]]; then
+                continue
+            fi
+            _ps_unguarded=$((_ps_unguarded + 1))
+            _ps_sites="${_ps_sites}  $(basename "$_ps_file"):${_ps_ln}"$'\n'
+        done <<< "$_ps_blocks"
+
+        if [[ "$_ps_unguarded" -gt "$_PROCSUB_BASELINE" ]]; then
+            test_fail "procsub: ${_ps_unguarded} unguarded failure-capable producers, baseline ${_PROCSUB_BASELINE} — a new one was added"
+            printf '%s' "$_ps_sites" >&2
+        elif [[ "$_ps_unguarded" -lt "$_PROCSUB_BASELINE" ]]; then
+            test_pass "procsub: ${_ps_unguarded} unguarded (baseline ${_PROCSUB_BASELINE}) — lower _PROCSUB_BASELINE to lock the win in"
+        else
+            test_pass "procsub: ${_ps_unguarded} unguarded, at baseline ${_PROCSUB_BASELINE}"
+        fi
+    fi
+fi
+
 # ─── 2. JSON data file validation ────────────────────────────────────────────
 
 marvin_log "INFO" "Self-test: validating JSON data files"

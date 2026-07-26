@@ -48,10 +48,23 @@ echo "Started at: ${NOW}" >> "$COMM_LOG"
 marvin_log "INFO" "Checking known peers..."
 
 if [[ -f "$PEERS_FILE" ]]; then
-    PEER_COUNT=$(jq '.peers | length' "$PEERS_FILE" 2>/dev/null || echo "0")
+    # `PEER_COUNT=$(jq ... || echo "0")` is the same silent-zero idiom one level
+    # up: on a corrupt peers.json jq fails, the count falls back to 0, and the
+    # emptiness guard below can never fire because it keys off PEER_COUNT > 0 —
+    # the run reports "0/0 peers pinged" and exits clean. Validate the file
+    # first so unreadable is distinguishable from empty (#873).
+    if jq empty "$PEERS_FILE" 2>/dev/null; then
+        PEERS_READABLE=1
+        PEER_COUNT=$(jq '.peers | length' "$PEERS_FILE" 2>/dev/null || echo "0")
+    else
+        PEERS_READABLE=0
+        PEER_COUNT=0
+        marvin_log "ERROR" "peers.json is not valid JSON — peer liveness checks cannot run"
+    fi
     marvin_log "INFO" "Known peers: ${PEER_COUNT}"
     
     # Ping each known peer
+    _pinged_peers=0
     while IFS= read -r peer_url; do
         if [[ -n "$peer_url" && "$peer_url" != "null" ]]; then
             # SSRF / DNS rebinding protection: resolve hostname and reject private IPs
@@ -110,8 +123,31 @@ if [[ -f "$PEERS_FILE" ]]; then
                 marvin_log "WARN" "Peer unreachable: ${peer_url} (HTTP ${STATUS_CODE})"
                 printf '%s\n' "[${NOW}] PEER_DEAD: ${peer_url} (HTTP ${STATUS_CODE})" | anonymize_ips >> "$COMM_LOG"
             fi
+            _pinged_peers=$((_pinged_peers + 1))
         fi
-    done < <(jq -r '.peers[].url // empty' "$PEERS_FILE" 2>/dev/null)
+    # Peers carry `.domain`, not `.url` — the `.url` field disappeared when
+    # peers.json stopped being tracked (#176, 2026-03-24) and the schema drifted;
+    # the rest of this file (trust registry, beacon updates) already reads
+    # `.domain`. This line was the last `.url` reader, and it silently matched
+    # nothing for 126 days: valid file, valid query, empty result, jq exit 0, no
+    # PEER_ALIVE/PEER_DEAD written since 2026-03-22. Prefer `.url` when a peer
+    # still carries one; otherwise derive https:// from `.domain`. Peers with a
+    # null domain are scanners/observers, not reachable hosts — skipped.
+    done < <(jq -r '.peers[] | (.url // empty), (select(has("url") | not) | select((.domain // "") != "") | "https://" + .domain)' "$PEERS_FILE" 2>/dev/null)
+
+    # procsub-guarded (#873) — the marker must sit within a few lines of the
+    # `done` it vouches for; §1i only trusts a guard it can see from the site.
+    #
+    # The guard the 126-day outage needed: peers exist but none produced a
+    # pingable address ⇒ the producer matched nothing. Zero iterations is
+    # otherwise indistinguishable from "no peers configured" (#873).
+    if [[ "$PEERS_READABLE" -eq 0 ]]; then
+        : # already reported above — do not double-log
+    elif [[ "$PEER_COUNT" -gt 0 && "$_pinged_peers" -eq 0 ]]; then
+        marvin_log "ERROR" "Peer schema drift: ${PEER_COUNT} peers in ${PEERS_FILE}, none yielded a pingable URL — liveness checks did not run"
+    else
+        marvin_log "INFO" "Peer liveness checks completed: ${_pinged_peers}/${PEER_COUNT} peers pinged"
+    fi
 fi
 
 # =============================================================================
