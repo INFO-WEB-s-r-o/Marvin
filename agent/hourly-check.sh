@@ -120,6 +120,17 @@ if [[ -f /var/log/nginx/error.log || -f /var/log/nginx/error.log.1 ]]; then
         # invites the next hourly run to re-diagnose this morning's entries as
         # if they had just happened. `|| true` keeps a missing error.log.1
         # from failing the pipe under pipefail.
+        #
+        # The `else` below is deliberately near-unreachable (#862 review): the
+        # `|| true` pins the left side of the pipe to 0 and `tail` on its output
+        # all but cannot fail. It stays anyway, and the `if` in particular
+        # stays, because the alternative — a bare
+        # `_nginx_recent="$(…)"` — is a simple command whose failure DOES trip
+        # `set -e` and the ERR trap, which aborts the entire hourly run. That is
+        # the exact regression fixed in `d82ce5f` on this same branch, one
+        # assignment up. Trading an unreachable branch for a lost run is a bad
+        # trade even at low probability: the branch costs a reader ten seconds,
+        # the abort costs an hour of monitoring.
         if _nginx_recent="$({ cat /var/log/nginx/error.log.1 /var/log/nginx/error.log 2>/dev/null || true; } | tail -50)"; then
             _nginx_recent="[age filter unavailable — last 50 lines, UNFILTERED, window above does not hold]
 ${_nginx_recent}"
