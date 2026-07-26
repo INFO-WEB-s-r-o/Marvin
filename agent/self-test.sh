@@ -959,22 +959,41 @@ fi
 
 marvin_log "INFO" "Self-test: checking nginx does not retain raw negotiate bodies"
 
-_body_retain_re='^[[:space:]]*client_body_in_file_only[[:space:]]+(on|clean)'
+# Two distinct invariants, deliberately not merged into one regex — the review of
+# #856 was right that `client_body_in_file_only clean` does NOT retain (nginx
+# removes the file after the request), so banning it under a "retains" message
+# would fail a future legitimate config with a factually false reason.
+#
+#   RETAIN — `in_file_only on` is the one value that never removes the file.
+#   INBOX  — a client_body_temp_path under the project data dir puts a raw,
+#            caller-controlled body inside the directory negotiate-handler.sh
+#            globs, which is the actual defect. This one catches `clean` too:
+#            transient or not, untrusted input does not belong in the inbox.
+#
+# So `clean` with a temp path outside the project tree stays legal, and both
+# messages state something true.
+_body_retain_re='^[[:space:]]*client_body_in_file_only[[:space:]]+on([[:space:]]|;)'
+_body_inbox_re='^[[:space:]]*client_body_temp_path[[:space:]]+[^;]*(negotiate-inbox|data/comms)'
 _body_retain_fails=0
 for _brs in "${MARVIN_DIR}/setup/nginx-site.conf" "${MARVIN_DIR}/setup/bootstrap.sh"; do
     [[ -r "$_brs" ]] || continue
     if grep -qE "$_body_retain_re" "$_brs" 2>/dev/null; then
-        test_fail "nginx source retains raw request bodies (client_body_in_file_only): $(basename "$_brs")"
+        test_fail "nginx source never removes request-body temp files (client_body_in_file_only on): $(basename "$_brs")"
+        _body_retain_fails=$((_body_retain_fails + 1))
+    fi
+    if grep -qE "$_body_inbox_re" "$_brs" 2>/dev/null; then
+        test_fail "nginx source writes raw request bodies into the handler's inbox (client_body_temp_path): $(basename "$_brs")"
         _body_retain_fails=$((_body_retain_fails + 1))
     fi
 done
 if [[ "$_body_retain_fails" -eq 0 ]]; then
-    test_pass "nginx sources do not retain raw request bodies"
+    test_pass "nginx sources do not deposit raw request bodies in the negotiate inbox"
 fi
 
 _nginx_live_site="/etc/nginx/sites-available/marvin"
-if [[ -r "$_nginx_live_site" ]] && grep -qE "$_body_retain_re" "$_nginx_live_site" 2>/dev/null; then
-    test_warn "live nginx config still retains raw request bodies — reload after deploying the fixed nginx-site.conf (#854)"
+if [[ -r "$_nginx_live_site" ]] \
+    && grep -qE "$_body_retain_re|$_body_inbox_re" "$_nginx_live_site" 2>/dev/null; then
+    test_warn "live nginx config still deposits raw request bodies in the negotiate inbox — reload after deploying the fixed nginx-site.conf (#854)"
 fi
 
 # Residue: nginx temp bodies are extension-less numeric names, so any non-*.json
