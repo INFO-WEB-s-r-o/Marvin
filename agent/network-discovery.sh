@@ -63,10 +63,22 @@ if [[ -f "$PEERS_FILE" ]]; then
     fi
     marvin_log "INFO" "Known peers: ${PEER_COUNT}"
     
-    # Ping each known peer
+    # Ping each known peer.
+    #
+    # Two counters, because they answer two different questions and only the
+    # first one is about schema drift (#876):
+    #   _yielded_peers — candidate URLs the jq producer actually emitted
+    #   _pinged_peers  — peers that survived the SSRF/DNS gauntlet and got curled
+    # Every skip below `continue`s past the ping, so keying the drift guard off
+    # _pinged_peers alone reports "none yielded a pingable URL" when the producer
+    # yielded plenty and the filters rejected them all. Verified: 3 peers with
+    # private-IP domains logged three "Skipping peer" WARNs and then claimed
+    # "liveness checks did not run" — the checks ran, and refused every candidate.
+    _yielded_peers=0
     _pinged_peers=0
     while IFS= read -r peer_url; do
         if [[ -n "$peer_url" && "$peer_url" != "null" ]]; then
+            _yielded_peers=$((_yielded_peers + 1))
             # SSRF / DNS rebinding protection: resolve hostname and reject private IPs
             # IPv6 bracket-notation needs dedicated extraction (#488):
             #   http://[2001:db8::1]:8080/path → 2001:db8::1
@@ -90,7 +102,16 @@ if [[ -f "$PEERS_FILE" ]]; then
             if [[ "$peer_host_lower" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || _is_ipv6_address "$peer_host_lower"; then
                 resolved_ip="$peer_host_lower"
             else
-                resolved_ip=$(getent hosts "$peer_host_lower" 2>/dev/null | awk '{print $1; exit}')
+                # `|| resolved_ip=""` is load-bearing, not defensive noise: under
+                # `set -o pipefail` an unresolvable host makes getent exit 2, the
+                # pipeline inherits it, and `set -e` kills the whole run right
+                # here — the "skipping" branch below was unreachable dead code.
+                # Masked for 126 days because the producer never yielded a peer;
+                # resurrecting the loop (#873) arms it. One peer losing DNS would
+                # take out the broadcast, Last Ping check and trust scoring that
+                # follow, and the ERR trap would report it as a peer-loop error.
+                # Verified: unresolvable host exits 2 without this, 0 with it.
+                resolved_ip=$(getent hosts "$peer_host_lower" 2>/dev/null | awk '{print $1; exit}') || resolved_ip=""
                 if [[ -z "$resolved_ip" ]]; then
                     marvin_log "WARN" "Could not resolve peer hostname, skipping: ${peer_host_lower}"
                     continue
@@ -149,10 +170,16 @@ if [[ -f "$PEERS_FILE" ]]; then
     # otherwise indistinguishable from "no peers configured" (#873).
     if [[ "$PEERS_READABLE" -eq 0 ]]; then
         : # already reported above — do not double-log
-    elif [[ "$PEER_COUNT" -gt 0 && "$_pinged_peers" -eq 0 ]]; then
+    elif [[ "$PEER_COUNT" -gt 0 && "$_yielded_peers" -eq 0 ]]; then
         marvin_log "ERROR" "Peer schema drift: ${PEER_COUNT} peers in ${PEERS_FILE}, none yielded a pingable URL — liveness checks did not run"
+    elif [[ "$_yielded_peers" -gt 0 && "$_pinged_peers" -eq 0 ]]; then
+        # Producer fine, filters rejected everything. A different root cause than
+        # drift and it must not borrow drift's message (#876) — a future debugging
+        # session reading "schema drift" would go and audit the jq filter, which
+        # is working perfectly.
+        marvin_log "ERROR" "Peer liveness: ${_yielded_peers} candidate URLs from ${PEER_COUNT} peers were all rejected by SSRF/DNS protections — see preceding WARNs; producer is fine"
     else
-        marvin_log "INFO" "Peer liveness checks completed: ${_pinged_peers}/${PEER_COUNT} peers pinged"
+        marvin_log "INFO" "Peer liveness checks completed: ${_pinged_peers}/${PEER_COUNT} peers pinged (${_yielded_peers} candidates yielded)"
     fi
 fi
 
@@ -384,7 +411,14 @@ if [[ -f "$PEERS_FILE" ]]; then
                 beacon_resolve_opt=()
                 resolved_ip=""
                 if [[ "$is_ip_peer" != "true" ]]; then
-                    resolved_ip=$(getent hosts "$peer_domain" 2>/dev/null | awk '{print $1}' | head -1)
+                    # Second site of the same pipefail landmine as the peer loop
+                    # above, and this one is live on main today: trust scoring
+                    # already reads `.domain`, so it runs every night. `head -1`
+                    # exits 0, but pipefail hands back getent exit 2 for an
+                    # unresolvable domain and set -e kills the run mid-scoring —
+                    # leaving a half-written trust registry. The "resolution
+                    # failed" branch below has never once executed.
+                    resolved_ip=$(getent hosts "$peer_domain" 2>/dev/null | awk '{print $1}' | head -1) || resolved_ip=""
                     if [[ -z "$resolved_ip" ]] || _is_private_ip "$resolved_ip"; then
                         marvin_log "WARN" "DNS rebinding blocked or resolution failed: ${peer_domain} (resolved: ${resolved_ip:-empty})"
                         beacon_blocked=true

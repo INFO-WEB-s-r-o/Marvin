@@ -193,13 +193,24 @@ function pcount(s,   i, c, d) {
 # the NEXT file whole. Measured: a leaky file followed by a file containing one
 # obvious jq producer emitted zero blocks. A scanner for silent misses,
 # silently missing. Reset per file (#875).
-FNR == 1 { collecting = 0; depth = 0; buf = ""; startline = 0 }
+#
+# Flush, do not merely reset (#875, second half): a block still open at EOF has
+# never been printed, so a bare reset drops a real site silently and the
+# baseline quietly ratchets DOWN — the scanner under-reporting itself, which is
+# precisely the failure mode this section exists to prevent. The 8-line runaway
+# cap catches an unbalanced block mid-file, but not one that opens within 8
+# lines of EOF. Emit what was collected and classify it on the text so far.
+FNR == 1 {
+    if (collecting) print startfile ":" startline ":" buf
+    collecting = 0; depth = 0; buf = ""; startline = 0
+}
+END { if (collecting) print startfile ":" startline ":" buf }
 {
     if (collecting) {
         buf = buf " " $0
         depth += pcount($0)
         if (depth <= 0 || FNR - startline >= 8) {
-            print FILENAME ":" startline ":" buf
+            print startfile ":" startline ":" buf
             collecting = 0
         }
         next
@@ -216,7 +227,14 @@ FNR == 1 { collecting = 0; depth = 0; buf = ""; startline = 0 }
         depth = 1 + pcount(rest)
         buf = rest
         startline = FNR
-        if (depth <= 0) print FILENAME ":" startline ":" buf
+        # Record the owning file at block start. A flush running at the FNR==1
+        # of the NEXT file sees FILENAME already advanced, and would blame the
+        # dropped site on whichever innocent file happened to follow.
+        # (No apostrophes in this program: it is a single-quoted shell string,
+        # and one stray quote ends it mid-awk. Caught by bash -n, but only
+        # because the wreckage happened to be a syntax error.)
+        startfile = FILENAME
+        if (depth <= 0) print startfile ":" startline ":" buf
         else collecting = 1
     }
 }
