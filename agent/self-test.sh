@@ -213,7 +213,16 @@ if [[ -r "$_wa_script" ]]; then
         eval "$(_wa_extract _dates_in_range)" 2>/dev/null || exit 3
         eval "$(_wa_extract _zero_claude_usage)" 2>/dev/null || exit 3
         eval "$(_wa_extract _claude_usage)" 2>/dev/null || exit 3
-        declare -F _zero_claude_usage >/dev/null || exit 3
+        # All three, not just one. `eval ""` on a failed extraction succeeds, so
+        # `|| exit 3` above cannot catch an extractor miss — only this can. And a
+        # missing `_dates_in_range` specifically produces a FALSE PASS, not a
+        # crash: it is called from `< <(_dates_in_range …)`, whose command-not-
+        # found never reaches `_claude_usage`'s exit status, so `files` comes back
+        # empty and `_claude_usage` returns `_zero_claude_usage` — the check then
+        # compares the fallback shape against itself and reports test_pass having
+        # asserted nothing. Demonstrated: extracting only the other two functions
+        # exits 0 today. (#867 — an assertion that cannot fail.)
+        declare -F _dates_in_range _zero_claude_usage _claude_usage >/dev/null || exit 3
         _ok=$(_claude_usage "$_wa_day" "$_wa_day" | jq -r 'keys|join(",")' 2>/dev/null) || exit 3
         _zero=$(_zero_claude_usage | jq -r 'keys|join(",")' 2>/dev/null) || exit 3
         [[ -n "$_ok" && -n "$_zero" ]] || exit 3
