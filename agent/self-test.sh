@@ -162,6 +162,18 @@ marvin_log "INFO" "Self-test: checking weekly-analytics claude-usage shape parit
 
 _wa_script="$(dirname "$0")/weekly-analytics.sh"
 if [[ -r "$_wa_script" ]]; then
+    # Slices one function out of weekly-analytics.sh: matches its opening
+    # `fn() {` and stops at the first `}` in column 0.
+    #
+    # That terminator is a structural ASSUMPTION about the source file, not
+    # something the source file enforces. Every brace inside the three
+    # functions extracted here — including the multi-line jq literal — is
+    # indented today; a future reformat leaving a closing `}` at column 0
+    # mid-body would truncate the slice. It fails safe rather than silently
+    # passing: a truncated function is unbalanced bash, `eval` rejects it, and
+    # the `|| exit 3` / `declare -F` guards below render that as test_warn
+    # ("could not run"), never test_pass. Recorded so the next reader knows
+    # the assumption is deliberate and what to re-check if it spreads.
     _wa_extract() {
         awk -v fn="$1" '$0 ~ "^"fn"\\(\\) \\{" {p=1} p {print} p && /^\}$/ {exit}' "$_wa_script"
     }
@@ -178,6 +190,13 @@ if [[ -r "$_wa_script" ]]; then
         _wa_day=$(date -u +%Y-%m-%d)
         printf '{"task":"selftest","duration_s":1,"prompt_chars":1,"output_chars":1,"exit_code":0}\n' \
             > "${_wa_tmp}/claude-usage-${_wa_day}.jsonl" || exit 3
+        # `eval` is on the guideline's security red-flag list, so the trust
+        # boundary is worth stating rather than leaving to inference: the text
+        # evaluated here is sliced from agent/weekly-analytics.sh, a file
+        # tracked in this same repo and already executed as root by cron. It is
+        # never runtime input, never peer- or user-supplied, and never leaves
+        # this subshell. Anyone who can change what this evaluates can already
+        # change what the daily job runs.
         eval "$(_wa_extract _dates_in_range)" 2>/dev/null || exit 3
         eval "$(_wa_extract _zero_claude_usage)" 2>/dev/null || exit 3
         eval "$(_wa_extract _claude_usage)" 2>/dev/null || exit 3
