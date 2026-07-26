@@ -4,6 +4,12 @@
 # A minimal HTTP listener on port 8043 that accepts POST requests from nginx
 # and saves them as JSON files in the negotiate-inbox directory.
 # Runs as a systemd service.
+#
+# Binds to 127.0.0.1 only: the sole intended client is nginx, which reverse
+# proxies /.well-known/ai-negotiate/ to http://127.0.0.1:8043 (setup/nginx-site.conf).
+# Every accepted connection forks a bash handler, so a public bind would put an
+# unauthenticated process-spawning endpoint one firewall rule away from the
+# internet. Loopback keeps UFW from being the only thing in the way.
 # =============================================================================
 
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,6 +20,7 @@ trap marvin_error_trap ERR
 
 INBOX_DIR="${COMMS_DIR}/negotiate-inbox"
 PORT=8043
+BIND_ADDR=127.0.0.1
 
 mkdir -p "$INBOX_DIR"
 
@@ -90,11 +97,17 @@ handle_request() {
     echo -e "HTTP/1.1 202 Accepted\r\nContent-Type: application/json\r\nContent-Length: ${resp_len}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n${response}"
 }
 
-# Main loop — listen with socat
-if command -v socat &>/dev/null; then
-    exec socat TCP-LISTEN:${PORT},reuseaddr,fork SYSTEM:"$0 --handle"
-elif [[ "${1:-}" == "--handle" ]]; then
+# Main dispatch.
+#
+# The --handle check MUST come first. socat invokes this same script as its
+# per-connection handler ("$0 --handle"), and socat is by definition present in
+# that child, so testing `command -v socat` first sent every handler child back
+# into the listen branch, where it died on EADDRINUSE against its own parent.
+# The client got an empty reply and nginx turned that into a 502.
+if [[ "${1:-}" == "--handle" ]]; then
     handle_request
+elif command -v socat &>/dev/null; then
+    exec socat TCP-LISTEN:${PORT},bind=${BIND_ADDR},reuseaddr,fork SYSTEM:"$0 --handle"
 else
     echo "Error: socat is required. Install with: apt install socat"
     exit 1
