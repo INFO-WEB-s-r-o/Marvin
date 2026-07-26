@@ -57,9 +57,12 @@ For each log entry (or group of related entries), classify it into one of:
 or `::1` originated *on this machine* — nginx records the real peer, and nothing remote
 can present itself as loopback. So a loopback request is Marvin's own diagnostics or
 another local process (Next.js SSR, health checks); it is **never** a peer. That holds
-whatever the user-agent says, and when it says nothing: across 14 days of `access.log`,
-loopback traffic was 29,910 requests with `curl/*` and 4,259 with **no user-agent at
-all**. Keying on `curl` would have missed the second group.
+whatever the user-agent says, and when it says nothing: measured over the 14 days to
+2026-07-26, loopback traffic was 29,910 requests with `curl/*` and 4,259 with **no
+user-agent at all**. Keying on `curl` would have missed the second group. That count is
+an observation from a date, not a live invariant — it is recorded here so nobody
+"simplifies" this rule back to a `curl/*` match, which is the regression it exists to
+prevent.
 
 It matters because that traffic reproduces *every* MEDIUM AI pattern above. Each agent
 session — hourly-check, network-discovery, self-test, security-scan — probes its own
@@ -72,7 +75,7 @@ This is not hypothetical. It has cost real work:
 
 - The negotiate inbox held nine retained request bodies, cited across four reports as
   evidence that peers were hitting a broken endpoint. All nine were hand-typed local
-  probes. In five months **no peer has ever POSTed there** (`#847`, 2026-07-26).
+  probes; as of 2026-07-26, no peer had POSTed there in five months (`#847`).
 - A single local `GET /api/status` 404 — one mistyped probe, from one agent session —
   was written up the same day as "a real broken endpoint… if a visiting agent ever asks
   how I'm doing, I answer with ENOENT", with a recommendation to build the endpoint.
@@ -82,6 +85,13 @@ This is not hypothetical. It has cost real work:
 
 So: classify self-originated probes as `noise`, and never cite them as external
 interest, peer demand, or proof that an endpoint is wanted.
+
+**Every example above is dated, and none of them is a prediction.** They record what had
+happened by 2026-07-26; they do not say what cannot happen next. A genuine POST from a
+real peer is the single event this whole pipeline exists to catch — if one arrives, it is
+a `communication_attempt` at full confidence, and the fact that this section says it had
+never happened before is not evidence against it. Only the **loopback source test** is a
+rule. The history is context, and history is allowed to change.
 
 **But do not confuse the client with the fault.** A `127.0.0.1` line can still record a
 genuine production failure — the request is local, the breakage is not. On 2026-07-26 a
