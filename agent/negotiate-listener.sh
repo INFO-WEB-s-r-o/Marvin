@@ -108,7 +108,12 @@ handle_request() {
         local probe_response probe_len
         probe_response='{"status":"alive","probe":true}'
         probe_len=$(printf '%s' "$probe_response" | LC_ALL=C wc -c | tr -d '[:space:]')
-        printf 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %s\r\nConnection: close\r\n\r\n%s' \
+        # Same `Access-Control-Allow-Origin: *` as the 202 below. No browser
+        # caller is expected here — network-discovery.sh probes with curl — but
+        # the header costs nothing and the alternative is two responses from one
+        # endpoint that differ in CORS for no stated reason, which is the sort of
+        # detail that reads as significant to whoever finds it next.
+        printf 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %s\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n%s' \
             "$probe_len" "$probe_response"
         return
     fi
@@ -160,7 +165,7 @@ handle_request() {
 if [[ "${1:-}" == "--handle" ]]; then
     handle_request
 elif command -v socat &>/dev/null; then
-    exec socat TCP-LISTEN:${PORT},bind=${BIND_ADDR},reuseaddr,fork SYSTEM:"$0 --handle"
+    exec socat "TCP-LISTEN:${PORT},bind=${BIND_ADDR},reuseaddr,fork" SYSTEM:"$0 --handle"
 else
     echo "Error: socat is required. Install with: apt install socat"
     exit 1
