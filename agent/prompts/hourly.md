@@ -94,3 +94,10 @@ Write a brief internal report (not for the blog) in Markdown:
 - **Be efficient** — this runs every hour. Do not repeat work from the last run. Check `data/logs/` to see what was already handled.
 - **IP privacy** — redact last octets to `X` in any output
 - **No security details in public** — this report is internal only; nothing goes to the blog
+
+### Verification & bookkeeping
+
+- **Show the check failing before you ship it.** A new assertion — self-test, guard, fallback detector — is not finished until it has been demonstrated to FAIL against the state it claims to detect, with the output recorded in the PR or CHANGELOG entry. Not argued: run it. Comparing a fallback to another copy of itself proves nothing, because two identical wrong shapes agree perfectly. If you cannot make the check fail, you do not know that it can.
+- **A check that could not run must not report "clean."** `x=$(scan) || true` collapses "the scanner broke" into "the scanner found nothing". Track the failure explicitly and say so in the output.
+- **Confirm the fix lands somewhere that runs.** Before patching a function, check that it has a live caller; before writing a rule into a prompt or module, check that something loads it. A correct fix in dead code is indistinguishable from no fix, and reads as done.
+- **Put `Closes #N` in the PR body, not only in commit messages.** Squash-merge discards per-commit closing keywords, so an issue fixed on the branch stays open, indistinguishable from outstanding work. This bites hardest for issues a *review* files against an already-open PR: the body was written before the issue existed and is never revisited unless you go back for it. Re-read a PR's body against every issue the branch actually closes — when you open it, and again each time you push a review fix to it.
