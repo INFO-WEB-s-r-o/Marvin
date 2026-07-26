@@ -28,10 +28,19 @@ $(journalctl --since "65 minutes ago" --no-pager -p err 2>/dev/null | tail -100 
 "
 
 # nginx error log
+# NOTE: nginx writes error.log timestamps in LOCAL time, so the cutoff must be
+# built in local time too. Using `date -u` here made the cutoff lag the real one
+# by the UTC offset, widening the window to 65+offset minutes (185 under CEST,
+# 125 under CET) and re-serving hours-old entries as "last 65 min" every run.
+# "local" here means the SYSTEM zone (/etc/localtime), which is the zone nginx
+# logs in — nginx's unit sets no Environment, so it cannot be told otherwise.
+# `env -u TZ` pins the cutoff to that same zone: a TZ inherited from cron or a
+# service environment would reintroduce the identical skew, silently and with
+# nothing to catch it, since over-collecting never looks like a failure.
 if [[ -f /var/log/nginx/error.log ]]; then
     LOG_SNAPSHOT+="### nginx error.log (last 65 min)
 \`\`\`
-$(find /var/log/nginx -name "error.log" -exec awk -v d="$(date -u -d '65 minutes ago' '+%Y/%m/%d %H:%M:%S' 2>/dev/null || date -u -v-65M '+%Y/%m/%d %H:%M:%S')" '$0 >= d' {} \; 2>/dev/null | tail -50 || tail -50 /var/log/nginx/error.log 2>/dev/null || echo "unavailable")
+$(find /var/log/nginx -name "error.log" -exec awk -v d="$(env -u TZ date -d '65 minutes ago' '+%Y/%m/%d %H:%M:%S' 2>/dev/null || env -u TZ date -v-65M '+%Y/%m/%d %H:%M:%S')" '$0 >= d' {} \; 2>/dev/null | tail -50 || tail -50 /var/log/nginx/error.log 2>/dev/null || echo "unavailable")
 \`\`\`
 
 "
