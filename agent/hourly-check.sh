@@ -55,7 +55,17 @@ $(journalctl --since "65 minutes ago" --no-pager -p err 2>/dev/null | tail -100 
 # and gating the rotated read on the live file's existence would reintroduce
 # the same "the entry was there, we just didn't look" failure in miniature.
 if [[ -f /var/log/nginx/error.log || -f /var/log/nginx/error.log.1 ]]; then
-    _nginx_cutoff="$(env -u TZ date -d '65 minutes ago' '+%Y/%m/%d %H:%M:%S' 2>/dev/null || env -u TZ date -v-65M '+%Y/%m/%d %H:%M:%S')"
+    # The trailing `|| _nginx_cutoff=""` is not redundant with the GNU/BSD
+    # fallback above it. Hoisting this out of the `find -exec awk` argument
+    # position and into a top-level assignment changed its failure mode: as an
+    # argument, a total date failure could not trip `set -e` (command
+    # substitutions used as arguments do not propagate their status), so the
+    # cutoff simply came out empty and the comparison degraded to "match
+    # everything". As a standalone simple command it *is* a failing command
+    # under `set -euo pipefail` + the ERR trap, and would abort the entire
+    # hourly run. Losing the age filter costs us an over-wide snapshot that
+    # `tail -50` already bounds; losing the run costs us the whole check.
+    _nginx_cutoff="$(env -u TZ date -d '65 minutes ago' '+%Y/%m/%d %H:%M:%S' 2>/dev/null || env -u TZ date -v-65M '+%Y/%m/%d %H:%M:%S')" || _nginx_cutoff=""
     LOG_SNAPSHOT+="### nginx error.log (last 65 min)
 \`\`\`
 $(for _nginx_log in /var/log/nginx/error.log.1 /var/log/nginx/error.log; do
