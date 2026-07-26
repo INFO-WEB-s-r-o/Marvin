@@ -161,6 +161,28 @@ ${prompt}"
         if printf '%s' "$output" | grep -qiE 'hit your (session|usage) limit'; then
             fail_reason="session_limit"
             marvin_log "INFO" "Claude session/usage limit reached for ${task_name} — benign, resets automatically (not counted as an API failure)" >&2
+        # Expired OAuth credentials are the opposite of benign: unlike a session
+        # limit they never clear on their own — every subsequent cron run dies the
+        # same way until a human re-authenticates interactively. Tagging them
+        # separately lets log-alerting.sh §6 escalate instead of filing yet another
+        # indistinguishable "Claude API failure" warning (2026-07-21 → 07-25: 338
+        # consecutive runs lost this way, alert stuck at severity=warning).
+        # Patterns are the CLI's own auth-failure wording, distinctive enough not to
+        # collide with log text echoed back by log-analysis-style prompts.
+        #
+        # Deliberately case-SENSITIVE (no -i, unlike the session-limit test above).
+        # The whole reason for matching a distinctive phrase rather than a bare
+        # "401" is to avoid firing on log text a prompt fed back to us, and `-i`
+        # gives that back: an nginx or app log line reading "re-authenticate to
+        # continue" in any casing would match. The CLI emits fixed casing, so the
+        # narrow match costs nothing. If it ever changes its casing, this degrades
+        # to fail_reason="error" — the pre-#841 behaviour — and the ≥90%-of-window
+        # branch in log-alerting.sh §6 still escalates the outage to critical; it
+        # just names the failure less precisely. Under-classifying is recoverable,
+        # a false auth page that no re-auth can clear is not.
+        elif printf '%s' "$output" | grep -qE 'OAuth access token has expired|Re-authenticate to continue|Failed to authenticate\. API Error: 40[13]'; then
+            fail_reason="auth"
+            marvin_log "ERROR" "Claude authentication failed for ${task_name} — credentials expired, requires interactive re-auth (no cron run can recover this)" >&2
         else
             fail_reason="error"
         fi

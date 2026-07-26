@@ -26,6 +26,42 @@ mkdir -p "$EXPORT_DIR"
 
 EXPORT_FILE="${EXPORT_DIR}/${TODAY}.json"
 
+# Basenames of files matching a find expression, as a single JSON array.
+#
+# Usage: _json_basenames <dir> [find-predicate ...]
+#   _json_basenames "${ENHANCE_DIR}" -maxdepth 1 -name "${TODAY}*.md"
+#   → ["2026-07-26-a.md","2026-07-26-b.md"]
+#
+# Arguments are spliced in ahead of a fixed `-type f -exec basename {} \;`
+# tail, so the assembled command is `find <dir> <your predicates> -type f -exec
+# …`. Two consequences worth knowing before passing something new:
+#
+#   - Put `-maxdepth` first among the predicates. It is a *global* option, so
+#     GNU find applies it to the whole expression wherever it sits — including
+#     the `-type f` this function appends after your arguments. Placed late it
+#     reads as if it were scoped to what precedes it, which it is not. (find
+#     does warn about this, but only when stdin is a tty — i.e. never from
+#     cron, which is where this actually runs.)
+#   - Pass predicates only, never an action of your own (`-print`, `-delete`).
+#     Yours would run *before* the appended `-exec` and put full unparsed paths
+#     on stdout alongside the basenames, which jq would faithfully include.
+#
+# A missing, empty or unreadable directory yields `[]`, never an error.
+#
+# The fallback must be an *assignment*, never extra output. Under `pipefail`
+# bash reports the pipeline's status as the last command that failed — not the
+# last command in the pipe — so a `find` that exits non-zero (missing or
+# unreadable directory) leaks its status past a `jq` that has already printed a
+# perfectly good array. A trailing `|| echo "[]"` would then append a *second*
+# JSON document to the first, and the bundle heredoc below would emit
+# structurally invalid JSON.
+_json_basenames() {
+    local out
+    out=$({ find "$@" -type f -exec basename {} \; 2>/dev/null || true; } \
+        | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null) || out=""
+    printf '%s' "${out:-[]}"
+}
+
 # Collect today's /var/log/marvin-*.log entries into a structured bundle
 LOG_ENTRIES="[]"
 for logfile in /var/log/marvin-*.log; do
@@ -41,6 +77,9 @@ for logfile in /var/log/marvin-*.log; do
     fi
 done
 
+ENHANCEMENT_LOG_JSON=$(_json_basenames "${ENHANCE_DIR}" -maxdepth 1 -name "${TODAY}*.md")
+BLOG_POSTS_JSON=$(_json_basenames "${BLOG_DIR}" -name "${TODAY}*")
+
 cat > "$EXPORT_FILE" << EOF
 {
   "version": "1.0",
@@ -49,12 +88,23 @@ cat > "$EXPORT_FILE" << EOF
   "generated_at": "${NOW}",
   "metrics_file": "metrics/${TODAY}.jsonl",
   "log_sources": ${LOG_ENTRIES},
-  "enhancement_log": $(find "${ENHANCE_DIR}" -maxdepth 1 -name "${TODAY}*.md" -type f -exec basename {} \; 2>/dev/null \
-      | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]"),
-  "blog_posts": $(find "${BLOG_DIR}" -name "${TODAY}*" -type f -exec basename {} \; 2>/dev/null \
-      | jq -R -s 'split("\n") | map(select(. != ""))' 2>/dev/null || echo "[]")
+  "enhancement_log": ${ENHANCEMENT_LOG_JSON},
+  "blog_posts": ${BLOG_POSTS_JSON}
 }
 EOF
+
+# The bundle is served to the outside world — never publish a corrupt one.
+# This is not fatal to the run: everything downstream that *depends* on the
+# bundle (gzip, webhook) is skipped, but Phase 2 metric aggregation is
+# independent of the export and still runs. The failing exit code is deferred
+# to the end of the script so one bad bundle cannot also cost us a day of
+# aggregated metrics.
+EXPORT_VALID=true
+if ! jq empty "$EXPORT_FILE" 2>/dev/null; then
+    marvin_log "ERROR" "Export bundle ${EXPORT_FILE} is not valid JSON — removing"
+    rm -f "$EXPORT_FILE"
+    EXPORT_VALID=false
+fi
 
 # Regenerate export index (last 30 days)
 {
@@ -79,7 +129,7 @@ chmod 644 "${EXPORT_DIR}"/*.json 2>/dev/null || true
 
 # Gzip compress the export bundle for efficient delivery
 # Keeps the original .json for direct API access; .json.gz for bandwidth savings
-if command -v gzip &>/dev/null; then
+if [[ "$EXPORT_VALID" == "true" ]] && command -v gzip &>/dev/null; then
     gzip -kf "$EXPORT_FILE" 2>/dev/null || true
     chmod 644 "${EXPORT_FILE}.gz" 2>/dev/null || true
     gz_size=$(stat -c%s "${EXPORT_FILE}.gz" 2>/dev/null || echo "?")
@@ -95,7 +145,9 @@ fi
 # Stored outside data/ to prevent nginx from serving it (webhook URLs may contain secrets)
 
 WEBHOOK_CONF="${MARVIN_DIR}/config/webhook.conf"
-if [[ -f "$WEBHOOK_CONF" ]]; then
+if [[ "$EXPORT_VALID" != "true" ]]; then
+    marvin_log "WARN" "Skipping webhook notification — no valid export bundle for ${TODAY}"
+elif [[ -f "$WEBHOOK_CONF" ]]; then
     export_size=$(stat -c%s "$EXPORT_FILE" 2>/dev/null || echo "0")
     webhook_payload=$(jq -nc \
         --arg event "export_ready" \
@@ -182,6 +234,11 @@ if [[ -x "$AGGREGATE_SCRIPT" ]]; then
     marvin_log "INFO" "Running metric aggregation..."
     bash "$AGGREGATE_SCRIPT" "$TODAY" 2>&1 || \
         marvin_log "WARN" "Metric aggregation failed (non-fatal)"
+fi
+
+if [[ "$EXPORT_VALID" != "true" ]]; then
+    marvin_log "ERROR" "=== LOG EXPORT COMPLETE — bundle for ${TODAY} was invalid and is not published ==="
+    exit 1
 fi
 
 marvin_log "INFO" "=== LOG EXPORT COMPLETE ==="
