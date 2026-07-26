@@ -275,6 +275,15 @@ detail="Last failed task: ${last_fail}"
 if [[ "${recent_auth:-0}" -gt 0 ]]; then
     # Credentials expired: no retry, no next cron cycle, and no agent run
     # can fix this — only an interactive login by the human can.
+    #
+    # ANY auth failure in the window holds `critical`, so after a human
+    # re-authenticates the alert lags by up to 9 more cycles until the stale
+    # entry ages out. That lag is deliberate — do not "fix" it by narrowing
+    # this to the newest entry or by re-scoping the window to the current day.
+    # A window that clears the instant one run succeeds is how #842 happened:
+    # the alert de-escalates on a single lucky run mid-outage, the merge step
+    # marks it resolved, and incident-report.sh opens a fresh incident when it
+    # comes back. Recovering slowly is cheap; flapping during an outage is not.
     severity="critical"
     title="Claude auth expired — pipeline halted (${recent_failed}/${recent_total} recent runs failed)"
     detail="${recent_auth} of the last ${recent_total} run(s) failed with expired OAuth credentials. Requires interactive re-auth on the host (run \`claude\` and log in); no automated task can recover this. Last failed task: ${last_fail}"
