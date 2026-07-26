@@ -250,6 +250,10 @@ track_freed "Old comms log-analysis JSON.gz (>180d)" "$comms_analysis_gz_size"
 #   -mtime +1 — nginx is still actively writing bodies into this directory, so
 #     the age floor is what keeps an in-flight request body from being deleted
 #     out from under a live POST. A day is far beyond any request's lifetime.
+#     Note GNU find buckets -mtime by whole days, so a file first qualifies
+#     somewhere between 24h and 48h old, not at a tight 24h. That slack only
+#     ever errs toward keeping a file longer, which is the safe direction here
+#     — but it means this is a growth bound, not a disk-reclaim SLA.
 #
 # #856 stops nginx creating these; this bounds the ones already here and any
 # written before it deploys. Complementary, not a duplicate.
