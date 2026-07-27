@@ -376,7 +376,6 @@ cat > "${COMMS_DIR}/identity.json.tmp" << EOF
   "host": "${MARVIN_DOMAIN}",
   "domain": "${MARVIN_DOMAIN}",
   "status_url": "https://${MARVIN_DOMAIN}/",
-  "comm_port": 8042,
   "capabilities": ["system-management", "self-enhancement", "communication", "log-analysis", "protocol-negotiation", "github-integration"],
   "languages": ["en", "cs"],
   "github": "https://github.com/INFO-WEB-s-r-o/Marvin",
@@ -397,9 +396,11 @@ EOF
 # (#853). Reporting success on the discard path would rebuild the exact blind
 # spot §9e below exists to close: the previous 109-day freeze survived because
 # the only thing reporting on the beacon was the beacon's own success log.
+BEACON_WRITTEN=false
 if jq empty "${COMMS_DIR}/identity.json.tmp" 2>/dev/null; then
     mv "${COMMS_DIR}/identity.json.tmp" "${COMMS_DIR}/identity.json"
     echo "[${NOW}] ECHO_BROADCAST: beacon updated at /.well-known/ai-managed.json" >> "$COMM_LOG"
+    BEACON_WRITTEN=true
 else
     rm -f "${COMMS_DIR}/identity.json.tmp"
     marvin_log "ERROR" "Generated beacon is not valid JSON — keeping previous identity.json"
@@ -411,7 +412,22 @@ trap - EXIT
 # safe to run off-schedule. Section 3 sends an SSH probe that gets us fail2banned
 # by design (once-per-day stamped), section 4 spends a Claude call, and section 5
 # rewrites peer trust scores.
+# The exit status has to carry the discard path, or the one caller that depends
+# on it is lied to (#877). morning-check.sh runs this ONLY when identity.json is
+# already missing after a git sync, and guards it with `|| marvin_log WARN ...`.
+# On the discard path there is no "previous identity.json" to keep — the file
+# stays missing — so an unconditional `exit 0` meant the `||` never fired and
+# the caller recorded a successful recovery over a beacon that does not exist.
+#
+# Reporting failure whenever the write was discarded, rather than whenever the
+# file happens to be absent, is deliberate: a stale-but-valid identity.json left
+# in place is precisely the 109-day freeze §9e was written to catch. "A previous
+# copy is still on disk" is not success, and must not be reported as such.
 if [[ "$BEACON_ONLY" == true ]]; then
+    if [[ "$BEACON_WRITTEN" != true ]]; then
+        marvin_log "ERROR" "=== BEACON REGENERATION FAILED — beacon not republished ==="
+        exit 1
+    fi
     marvin_log "INFO" "=== BEACON REGENERATION COMPLETE ==="
     exit 0
 fi

@@ -239,6 +239,9 @@ source "${_MARVIN_LIB_DIR}/logging.sh"
 source "${_MARVIN_LIB_DIR}/metrics.sh"
 source "${_MARVIN_LIB_DIR}/claude.sh"
 source "${_MARVIN_LIB_DIR}/prompts.sh"
+# outbound.sh defines only functions and defaults — the expensive Docker bridge
+# probe inside it is lazy, so sourcing it everywhere costs nothing (issue #882).
+source "${_MARVIN_LIB_DIR}/outbound.sh"
 
 # ─── Service management ──────────────────────────────────────────────────────
 

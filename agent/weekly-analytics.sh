@@ -95,6 +95,20 @@ current_metrics=$(_metrics_summary "$REPORT_START" "$REPORT_END")
 prev_metrics=$(_metrics_summary "$PREV_START" "$PREV_END")
 
 # ─── 2. Claude API usage ────────────────────────────────────────────────────
+
+# Single source of truth for the zero/failure shape of _claude_usage.
+#
+# This existed twice as a hand-written literal, and the two copies had already
+# drifted from the success shape they stand in for: both omitted
+# total_prompt_chars and total_output_chars, which the jq block below emits.
+# A consumer reading either field off a fallback result got `null` rather than
+# 0 — the "fallback missing a field" bug that this whole PR is about, sitting
+# inside the fix for it. Keep this in step with the jq object below; the
+# self-test asserts the two key sets match.
+_zero_claude_usage() {
+    echo '{"total_runs":0,"total_duration_s":0,"avg_duration_s":0,"total_prompt_chars":0,"total_output_chars":0,"errors":0,"error_rate_pct":0,"by_task":{}}'
+}
+
 _claude_usage() {
     local start="$1" end="$2"
     local files=()
@@ -104,7 +118,7 @@ _claude_usage() {
     done < <(_dates_in_range "$start" "$end")
 
     if [[ ${#files[@]} -eq 0 ]]; then
-        echo '{"total_runs":0,"total_duration_s":0,"avg_duration_s":0,"errors":0,"error_rate_pct":0,"by_task":{}}'
+        _zero_claude_usage
         return
     fi
 
@@ -113,7 +127,14 @@ _claude_usage() {
     # not API/tooling failures. Mirrors the same exclusion in log-alerting.sh §6 so
     # the daily alert and the weekly error-rate metric agree on what a "failure" is.
     # The `(.fail_reason // "")` guard keeps pre-classification rows counted.
-    cat "${files[@]}" | jq -s '
+    #
+    # Capture-then-emit rather than `cat … | jq … || echo '{…}'`: under `pipefail`
+    # an unreadable file makes `cat` exit non-zero *after* `jq -s` has already
+    # printed a valid object, so a trailing `|| echo` fallback would append a
+    # second JSON document instead of replacing the first (same class as #841 /
+    # #843 / #844). Assignment form makes the fallback a true replacement.
+    local _usage
+    if _usage=$(cat "${files[@]}" | jq -s '
         {
             total_runs: length,
             total_duration_s: ([.[].duration_s] | add // 0),
@@ -131,7 +152,19 @@ _claude_usage() {
                 }
             }) | from_entries)
         }
-    ' 2>/dev/null || echo '{"total_runs":0}'
+    ' 2>/dev/null); then
+        echo "$_usage"
+    else
+        # All-or-nothing on purpose. If one of the week's files becomes unreadable
+        # mid-`cat`, this discards the days that *were* readable and reports zeros
+        # rather than a partial week. That is the conservative direction here
+        # because the consumers are trend comparisons — the WoW deltas and the
+        # report card — and a silently partial week reads as a real drop in
+        # activity, which is a worse output than an obvious zero. Reaching this
+        # branch at all takes an actual permissions or I/O fault, not an empty
+        # window (zero files returns early above with this same shape).
+        _zero_claude_usage
+    fi
 }
 
 current_claude=$(_claude_usage "$REPORT_START" "$REPORT_END")
@@ -165,9 +198,30 @@ _log_stats() {
     done < <(_dates_in_range "$start" "$end")
 
     if [[ -n "$all_errors" ]]; then
-        error_summary=$(echo "$all_errors" | sed '/^$/d' | sort | uniq -c | sort -rn | head -5 \
-            | awk '{count=$1; $1=""; sub(/^ /, ""); printf "{\"count\":%d,\"message\":\"%s\"}\n", count, $0}' \
-            | jq -s '.' 2>/dev/null || echo '[]')
+        # Truncation happens in `awk` via NR<=5, not via `head -5`. `head` exits as
+        # soon as it has its 5 lines and kills `sort -rn` with SIGPIPE once the
+        # sorted output exceeds the pipe buffer (~64 KiB — a week with many distinct
+        # error messages). Under `pipefail` that made the pipeline exit 141 *after*
+        # `jq -s` had already printed a valid array, so the `|| echo '[]'` fallback
+        # appended a second document; the two-document value then aborted the run
+        # at `--argjson top_errors` (jq exit 2 → ERR trap). `awk` reads to EOF
+        # regardless of NR, so no stage can be signalled, and the assignment-form
+        # fallback replaces instead of appends.
+        #
+        # JSON is built by `jq`, not by `awk` printf. Hand-rolled `"%s"` interpolation
+        # does not escape `"` or `\`, so a single error message containing a quote
+        # made `jq` fail to parse and the fallback then blanked the *entire* top-error
+        # list, while a backslash sequence such as `C:\temp` was silently reinterpreted
+        # as a control character. `-R -s` hands the text to jq, which does the encoding.
+        # The `count \t message` framing is unambiguous because awk's `$1=""` forces a
+        # `$0` rebuild on OFS, so an emitted message can never itself contain a tab.
+        error_summary=$(echo "$all_errors" | sed '/^$/d' | sort | uniq -c | sort -rn \
+            | awk 'NR<=5 {count=$1; $1=""; sub(/^ /, ""); print count "\t" $0}' \
+            | jq -R -s 'split("\n")
+                        | map(select(length > 0)
+                              | split("\t")
+                              | {count: (.[0] | tonumber), message: (.[1:] | join("\t"))})' \
+                 2>/dev/null) || error_summary='[]'
     fi
 
     jq -n \

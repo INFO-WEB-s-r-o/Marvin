@@ -995,6 +995,198 @@ else
     test_warn "beacon negotiate gate: network-discovery.sh or negotiate-listener.sh not readable — check skipped"
 fi
 
+# ─── 9i. --beacon-only reports failure when the beacon was discarded ─────────
+# #877: `--beacon-only` ended in an unconditional `exit 0`, so morning-check.sh's
+# `|| marvin_log WARN "Beacon regeneration failed"` could never fire. The caller
+# runs this ONLY when identity.json is already missing after a git sync, so the
+# discard path leaves no beacon at all — and the caller recorded a successful
+# recovery over a file that does not exist.
+#
+# Deliberately structural rather than behavioural. Executing the real
+# `--beacon-only` path would fire the localhost negotiate probe at line ~222,
+# which POSTs to the live endpoint and lands a forged peer entry in the real
+# negotiate inbox (#852) — a self-test must not do that, and sandboxing
+# COMMS_DIR does not sandbox the probe's destination. The regression this needs
+# to stop is textual anyway: someone simplifying the block back to a bare
+# `exit 0`.
+#
+# Resolved via `dirname "$0"`, not ${MARVIN_DIR}: the latter is hardcoded to the
+# deployed tree, so a branch-authored check would assert against main and pass
+# while the branch it ships with is broken.
+
+marvin_log "INFO" "Self-test: checking --beacon-only exit status carries the discard path"
+
+_bo_file="$(dirname "$0")/network-discovery.sh"
+if [[ -r "$_bo_file" ]]; then
+    # The early-exit block, not the argument-parsing block of the same name:
+    # take the LAST `if [[ "$BEACON_ONLY" == true ]]` region that closes on a
+    # column-0 `fi`. Both are at column 0, and the exit block is always later.
+    _bo_block=$(awk '
+        /^if \[\[ "\$BEACON_ONLY" == true \]\]; then$/ { collecting=1; buf=""; next }
+        collecting && /^fi$/ { collecting=0; last=buf; next }
+        collecting { buf = buf $0 "\n" }
+        END { printf "%s", last }
+    ' "$_bo_file") || _bo_block=""
+
+    # A single unconditional assignment would make the flag meaningless while
+    # leaving every check below it green, so pin the count as well as the shape.
+    _bo_set_count=$(grep -c '^[[:space:]]*BEACON_WRITTEN=true$' "$_bo_file") || _bo_set_count=0
+
+    if [[ -z "$_bo_block" ]]; then
+        test_warn "--beacon-only exit status: could not locate the early-exit block in network-discovery.sh — check skipped (reformatted?)"
+    elif ! grep -q 'exit 1' <<< "$_bo_block"; then
+        test_fail "--beacon-only exit status: the early-exit block has no failing exit — a discarded beacon is reported to morning-check.sh as a successful regeneration (#877)"
+    elif ! grep -q 'BEACON_WRITTEN' <<< "$_bo_block"; then
+        test_fail "--beacon-only exit status: the early-exit block exits non-zero but not on BEACON_WRITTEN — failure is keyed on something other than 'was the beacon actually written' (#877)"
+    elif [[ "$_bo_set_count" -ne 1 ]]; then
+        test_fail "--beacon-only exit status: BEACON_WRITTEN=true is set ${_bo_set_count} times (expected exactly 1, on the mv success path) — the flag no longer proves the beacon was written"
+    else
+        test_pass "--beacon-only exit status: failure path is keyed on BEACON_WRITTEN and exits non-zero (#877)"
+    fi
+else
+    test_warn "--beacon-only exit status: network-discovery.sh not readable — check skipped"
+fi
+
+# ─── 9j. Outbound egress sampling is wired, running, and reaches the score ────
+# Section letter 9j: 9h and 9i are live on main (#856/#878 merged while this
+# branch was open); 9k is claimed by the open #890. 9g is free but left so,
+# since #862's replacement may yet want it.
+#
+# This section was originally written AT 9i's line range, back when #878 was
+# still open and 9i did not exist on main. The `git merge main` that followed
+# resolved that overlapping hunk in favour of this branch and deleted 9i — the
+# #877 regression guard — silently. Restored above (#889). A section letter
+# chosen against the set of *open PRs* rather than against main is a letter that
+# stops being true the moment one of them merges; check main before renumbering.
+#
+# Issue #882: outbound auditing took ONE `ss` sample a day, at the deadest minute
+# on this box, and published the result as the day's answer. It reported zero
+# outbound connections on 30 of 31 retained scans while 704 MB left the interface
+# on one of them. Nothing was broken — it simply never looked, and "never looked"
+# and "nothing there" produced the same output.
+#
+# Four things must hold for the fix to be worth anything, each a way it could rot
+# back into a control that reports clean because it is blind:
+#   1. the sampler is called from a script that actually runs on a tick
+#   2. the call is not `|| true`-suppressed
+#   3. the daily scan consults the day aggregate, not just its own instant sample
+#   4. coverage status reaches overall_status (the #880 lesson: a finding that
+#      only reaches marvin_log is invisible to every consumer of the reports)
+# Plus a drift guard: exactly ONE copy of the classifier may exist.
+
+marvin_log "INFO" "Self-test: checking outbound egress sampling is wired and scored"
+
+_ob_lib="${MARVIN_DIR}/agent/lib/outbound.sh"
+_ob_hm="${MARVIN_DIR}/agent/health-monitor.sh"
+_ob_scan="${MARVIN_DIR}/agent/security-scan.sh"
+
+if [[ ! -r "$_ob_lib" ]]; then
+    test_warn "outbound sampling: agent/lib/outbound.sh not present — #882 fix not deployed yet, egress history is one sample/day"
+else
+    # (1) + (2) — wired into the 5-minute tick, failure not swallowed.
+    if ! grep -q 'marvin_outbound_record_sample' "$_ob_hm" 2>/dev/null; then
+        test_fail "outbound sampling: lib/outbound.sh exists but health-monitor.sh never calls marvin_outbound_record_sample — the sampler has no live caller, so the egress history stays empty and #882 is unfixed in effect"
+    elif grep -qE 'marvin_outbound_record_sample[[:space:]]*(\|\|[[:space:]]*true|&>|>[[:space:]]*/dev/null)' "$_ob_hm" 2>/dev/null; then
+        test_fail "outbound sampling: health-monitor.sh suppresses marvin_outbound_record_sample failures — a sampler that fails silently reproduces the exact defect #882 fixed"
+    else
+        test_pass "outbound sampling: health-monitor.sh (5-min cron tick) calls the sampler and does not suppress its failures"
+    fi
+
+    # (3) — the daily scan must read the aggregate, not just its own instant.
+    if grep -q 'marvin_outbound_day_summary' "$_ob_scan" 2>/dev/null; then
+        test_pass "outbound sampling: security-scan.sh §3d aggregates the retained samples"
+    else
+        test_fail "outbound sampling: security-scan.sh no longer calls marvin_outbound_day_summary — §3d is back to publishing a single instantaneous sample as the day's egress answer (#882)"
+    fi
+
+    # (4) — coverage must be able to move overall_status, or it is decoration.
+    # Scoped to the gate block itself (overall_status="clean" up to the report
+    # heredoc), so a passing mention of the variable elsewhere cannot satisfy it.
+    if awk '/^overall_status="clean"/{f=1} f && /outbound_coverage_status/{found=1} /^cat > "\$REPORT_FILE"/{f=0} END{exit !found}' "$_ob_scan" 2>/dev/null; then
+        test_pass "outbound sampling: egress coverage status participates in overall_status"
+    else
+        test_fail "outbound sampling: outbound_coverage_status does not reach the overall_status gate — a day the sampler never ran would score clean, which is precisely the 30-day failure in #882"
+    fi
+
+    # Drift guard — one classifier only. Two copies cannot be kept in agreement,
+    # and a sampler that disagrees with its aggregator about what counts as
+    # outbound produces authoritative-looking numbers that mean nothing.
+    _ob_dupes=$(grep -lE '^_ip_in_docker_cidr\(\)' "${MARVIN_DIR}"/agent/*.sh "${MARVIN_DIR}"/agent/lib/*.sh 2>/dev/null | wc -l)
+    if [[ "$_ob_dupes" -eq 1 ]]; then
+        test_pass "outbound sampling: exactly one copy of the outbound classifier (_ip_in_docker_cidr)"
+    else
+        test_fail "outbound sampling: ${_ob_dupes} definitions of _ip_in_docker_cidr — the sampler and the daily aggregate can now drift on what 'outbound' means (#882/#591)"
+    fi
+
+    # Runtime — is it actually producing samples? Self-activating: only assert
+    # this once the sampler is deployed, so an unmerged branch warns instead of
+    # failing on a host that has not been given the code yet.
+    if grep -q 'marvin_outbound_record_sample' "$_ob_hm" 2>/dev/null; then
+        # Resolve the path through the library, never by rebuilding it here.
+        # A second hand-written copy of the sample path is the same "two places
+        # must agree" risk this PR just removed for _ip_in_docker_cidr, one file
+        # over. Today the two happen to coincide — SECURITY_DIR is unset at this
+        # point in self-test.sh, so _marvin_outbound_dir() also falls through to
+        # ${DATA_DIR}/security — but that agreement is incidental, not designed.
+        # If the fallback chain ever changes, a hardcoded copy silently starts
+        # stat()ing a file nothing writes and reports "ZERO samples today"
+        # forever, which is a FAIL below.
+        _ob_paths_ok=true
+        _ob_today=$(marvin_outbound_sample_file "$(date -u +%Y-%m-%d)") \
+            || { _ob_today=""; _ob_paths_ok=false; }
+        _ob_yday=$(marvin_outbound_sample_file "$(date -u -d 'yesterday' +%Y-%m-%d 2>/dev/null)") \
+            || { _ob_yday=""; _ob_paths_ok=false; }
+        # Count RECORDS, not lines, and assign the fallback rather than echoing
+        # it. Two bugs in the one line this replaces:
+        #
+        #   1. `$(grep -c . f || echo 0)` — `grep -c` prints 0 and THEN exits 1
+        #      on no match, so the fallback appended a second document and
+        #      _ob_count became "0\n0", an arithmetic error at the `-gt` below.
+        #      This is the #855/#857 double-document class, and §1h caught it in
+        #      this very file.
+        #   2. `grep -c .` counts LINES. The sampler's records were
+        #      pretty-printed (the missing `jq -c` fixed in this PR), so one
+        #      sample was ~31 lines and this reported "31 samples recorded
+        #      today" against 1 real sample. `^{` counts record openings, which
+        #      is correct for BOTH the compact form and any legacy
+        #      pretty-printed file still inside the 30-day retention window.
+        _ob_count=0
+        if [[ "$_ob_paths_ok" != true ]]; then
+            # The path could not be resolved, so no file was ever looked at.
+            # Say exactly that and assert nothing else — falling through with an
+            # empty path would make both -f tests false and land on the "ZERO
+            # samples today" FAIL below, reporting a definite finding from a
+            # check that never ran. That collapse of "could not look" into
+            # "looked and found nothing" is the shape coverage_status exists to
+            # separate; it would be poor to reintroduce it in the test for it.
+            test_warn "outbound sampling: could not resolve the sample file path — _marvin_outbound_dir() found none of SECURITY_DIR/DATA_DIR/MARVIN_DIR, so runtime sampling was NOT verified"
+        else
+            if [[ -f "$_ob_today" ]]; then
+                _ob_count=$(grep -c '^{' "$_ob_today" 2>/dev/null) || _ob_count=0
+            fi
+            # Expected samples so far today, one per 5 minutes since 00:00 UTC.
+            # Single epoch reading rather than `10#%H`/`10#%M` (#886): `10#` does
+            # fix the octal crash, but two `date` calls can still straddle a
+            # minute boundary and report hour N with minute 0. One cannot.
+            _ob_expected=$(( (($(date -u +%s) % 86400) / 60) / 5 ))
+            if [[ "$_ob_count" -gt 0 ]]; then
+                _ob_errs=$(grep -c '"error"' "$_ob_today" 2>/dev/null) || _ob_errs=0
+                if [[ "$_ob_errs" -gt 0 ]]; then
+                    test_warn "outbound sampling: ${_ob_errs} of ${_ob_count} samples today recorded an error — gaps in the egress history"
+                else
+                    test_pass "outbound sampling: ${_ob_count} samples recorded today (≈${_ob_expected} expected so far)"
+                fi
+            elif [[ -f "$_ob_yday" ]]; then
+                test_warn "outbound sampling: no samples yet today but yesterday's history exists — expected shortly after 00:00 UTC"
+            elif [[ "$_ob_expected" -lt 3 ]]; then
+                test_warn "outbound sampling: no samples yet — fewer than 3 ticks have elapsed since 00:00 UTC"
+            else
+                test_fail "outbound sampling: sampler is wired into health-monitor.sh but has produced ZERO samples today after ~${_ob_expected} ticks — egress is unmonitored and the daily audit will report coverage 'absent' (#882)"
+            fi
+        fi
+    fi
+fi
+
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
 # Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
 # artefact with byte-identical duplicates of the active /home/marvin/.gnupg/
@@ -1099,6 +1291,77 @@ else
         test_pass "config in sync: cron (setup-cron.sh ⇆ /etc/cron.d/marvin)"
     else
         test_warn "config drift: cron — setup-cron.sh would not reproduce live /etc/cron.d/marvin (a bootstrap re-run could drop or revert active jobs)"
+    fi
+fi
+
+# ─── 9h. nginx must not retain raw request bodies in the negotiate inbox ──────
+# Issue #854. `client_body_in_file_only on` in the /.well-known/ai-negotiate
+# location made nginx keep every request body forever, as a raw
+# attacker-controlled file inside the very directory negotiate-handler.sh globs
+# for proposals. It survived because the glob is `*.json` and nginx's temp files
+# have no extension — one character of luck between "inert" and "the public
+# endpoint feeds the handler unsanitized input".
+#
+# Lives in the §9 config family rather than §1 because it is the same shape as
+# §9d: an assertion about configuration, not about script syntax. Sources are
+# FAIL (the repo is what a rebuild reads); the live copy is WARN, because
+# reconciling it is a deploy step and §9d already tracks that drift. Checked in
+# BOTH tracked sources — nginx-site.conf and bootstrap.sh's heredoc — since only
+# the former is diffed against live, so a bootstrap re-run was free to reinstate
+# what a fix to the other one removed.
+
+marvin_log "INFO" "Self-test: checking nginx does not retain raw negotiate bodies"
+
+# Two distinct invariants, deliberately not merged into one regex — the review of
+# #856 was right that `client_body_in_file_only clean` does NOT retain (nginx
+# removes the file after the request), so banning it under a "retains" message
+# would fail a future legitimate config with a factually false reason.
+#
+#   RETAIN — `in_file_only on` is the one value that never removes the file.
+#   INBOX  — a client_body_temp_path under the project data dir puts a raw,
+#            caller-controlled body inside the directory negotiate-handler.sh
+#            globs, which is the actual defect. This one catches `clean` too:
+#            transient or not, untrusted input does not belong in the inbox.
+#
+# So `clean` with a temp path outside the project tree stays legal, and both
+# messages state something true.
+_body_retain_re='^[[:space:]]*client_body_in_file_only[[:space:]]+on([[:space:]]|;)'
+_body_inbox_re='^[[:space:]]*client_body_temp_path[[:space:]]+[^;]*(negotiate-inbox|data/comms)'
+_body_retain_fails=0
+for _brs in "${MARVIN_DIR}/setup/nginx-site.conf" "${MARVIN_DIR}/setup/bootstrap.sh"; do
+    [[ -r "$_brs" ]] || continue
+    if grep -qE "$_body_retain_re" "$_brs" 2>/dev/null; then
+        test_fail "nginx source never removes request-body temp files (client_body_in_file_only on): $(basename "$_brs")"
+        _body_retain_fails=$((_body_retain_fails + 1))
+    fi
+    if grep -qE "$_body_inbox_re" "$_brs" 2>/dev/null; then
+        test_fail "nginx source writes raw request bodies into the handler's inbox (client_body_temp_path): $(basename "$_brs")"
+        _body_retain_fails=$((_body_retain_fails + 1))
+    fi
+done
+if [[ "$_body_retain_fails" -eq 0 ]]; then
+    test_pass "nginx sources do not deposit raw request bodies in the negotiate inbox"
+fi
+
+_nginx_live_site="/etc/nginx/sites-available/marvin"
+if [[ -r "$_nginx_live_site" ]] \
+    && grep -qE "$_body_retain_re|$_body_inbox_re" "$_nginx_live_site" 2>/dev/null; then
+    test_warn "live nginx config still deposits raw request bodies in the negotiate inbox — reload after deploying the fixed nginx-site.conf (#854)"
+fi
+
+# Residue: nginx temp bodies are extension-less numeric names, so any non-*.json
+# file in the inbox is either retained-body leftovers or something stranger.
+# WARN-only — the handler ignores them, and deleting evidence is not a test's job.
+_inbox_dir="${COMMS_DIR}/negotiate-inbox"
+if [[ -d "$_inbox_dir" ]]; then
+    # Assignment fallback, not `|| echo` — a bare `$(find | wc)` under
+    # `set -euo pipefail` + the ERR trap would abort the whole suite if the dir
+    # were ever unreadable (the §1d crash class, and the #841 fallback shape).
+    _inbox_residue=$(find "$_inbox_dir" -maxdepth 1 -type f ! -name '*.json' 2>/dev/null | wc -l) || _inbox_residue=0
+    if [[ "${_inbox_residue:-0}" -gt 0 ]]; then
+        test_warn "negotiate inbox holds ${_inbox_residue} non-JSON file(s) — retained nginx request bodies (#854)"
+    else
+        test_pass "negotiate inbox holds no retained request bodies"
     fi
 fi
 
