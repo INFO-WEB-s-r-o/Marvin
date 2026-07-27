@@ -702,6 +702,120 @@ else
     fi
 fi
 
+# ─── 1k. self-test section inventory — sections may be removed, not vanish ───
+# `self-test.sh` is the file that catches regressions in everything else, and
+# until now nothing caught regressions in it. Sections have vanished twice
+# without anyone deciding to remove them:
+#
+#   #889 — §9i (the #877 guard) was deleted by a `git merge main`, not an edit.
+#          The section landed on main from #878 while the branch was open, at
+#          the same line range the branch had filled with a new section, and git
+#          resolved the overlapping hunk in favour of the branch. No conflict.
+#   #892 — §1i's weekly-analytics shape-parity check was written over by an
+#          unrelated new check that took the same letter. Same header, different
+#          body, no mention anywhere.
+#
+# Both were caught by a human reading a diff, and in both cases the CHANGELOG
+# went on describing a test that no longer existed, because prose and code merge
+# independently. Three of the four open PRs edit this file concurrently and all
+# of them append to the same regions, so the exposure is not hypothetical.
+#
+# TITLES, not just section letters. #892 kept the letter and replaced what was
+# under it; an inventory of letters would have called that file complete.
+#
+# Not a freeze: a section may be removed by deleting its line from the manifest
+# in the same commit, which is a visible, reviewable diff instead of a silent
+# hunk resolution. A section present in the file but absent from the manifest is
+# a WARN naming the line to add, never a FAIL — an open PR must not be able to
+# turn main red by being the first to merge.
+#
+# Resolved via `dirname "$0"`, not ${MARVIN_DIR}: a branch-authored check that
+# resolves through MARVIN_DIR asserts against the DEPLOYED tree and passes while
+# the branch it ships with is broken (#855, and again in #874's §1j this same
+# day). And every "could not look" path below is a FAIL that says so, rather
+# than a pass by absence of evidence — a section inventory that reports clean
+# because it could not read the file would be the thing it is guarding against.
+
+marvin_log "INFO" "Self-test: checking no self-test section has silently disappeared"
+
+_si_self="$(dirname "$0")/self-test.sh"
+_si_manifest="$(dirname "$0")/lib/self-test-sections.txt"
+
+if [[ ! -r "$_si_self" ]]; then
+    test_fail "section inventory: cannot read ${_si_self} — the inventory was NOT checked (a check that could not run, not a clean tree)"
+elif [[ ! -r "$_si_manifest" ]]; then
+    test_fail "section inventory: cannot read ${_si_manifest} — the manifest is missing or unreadable, so no section can be reported as lost (#891)"
+else
+    # Command substitution, which DOES propagate exit codes, and empty output is
+    # treated as failure on both sides: headers always exist and the manifest is
+    # never legitimately empty, so "found nothing" means the extraction broke.
+    _si_present=$(grep -oE '^# ─── [^─]+' "$_si_self" | sed 's/^# ─── //; s/ *$//' | sort -u) || _si_present=""
+    _si_expected=$(grep -vE '^[[:space:]]*(#|$)' "$_si_manifest" | sed 's/ *$//' | sort -u) || _si_expected=""
+
+    if [[ -z "$_si_present" ]]; then
+        test_fail "section inventory: extracted ZERO section headers from ${_si_self} — the header format changed or the scan broke; this assertion is inert and MUST be repaired (#891)"
+    elif [[ -z "$_si_expected" ]]; then
+        test_fail "section inventory: the manifest contains no entries — every section would look accounted for (#891)"
+    else
+        _si_missing=$(comm -23 <(printf '%s\n' "$_si_expected") <(printf '%s\n' "$_si_present"))
+        _si_new=$(comm -13 <(printf '%s\n' "$_si_expected") <(printf '%s\n' "$_si_present"))
+        _si_count=$(printf '%s\n' "$_si_present" | grep -c .)
+
+        if [[ -n "$_si_missing" ]]; then
+            test_fail "section inventory: $(printf '%s\n' "$_si_missing" | grep -c .) recorded section(s) have disappeared from self-test.sh — if the removal was deliberate, delete the line from lib/self-test-sections.txt in the same commit (#891): $(printf '%s' "$_si_missing" | tr '\n' '|')"
+        else
+            test_pass "section inventory: all $(printf '%s\n' "$_si_expected" | grep -c .) recorded sections still present (${_si_count} in file)"
+        fi
+
+        if [[ -n "$_si_new" ]]; then
+            test_warn "section inventory: $(printf '%s\n' "$_si_new" | grep -c .) section(s) not yet recorded — add to lib/self-test-sections.txt: $(printf '%s' "$_si_new" | tr '\n' '|')"
+        fi
+
+        # ── No two sections may claim the same letter (#904) ──────────────────
+        # The arms above answer "did a section vanish?". This one answers the
+        # other half of #891: "is this letter already taken?" Three collisions
+        # landed in this file before noon on 2026-07-27 (#895 vs #874's §1j,
+        # #890 vs #884's §9j, and §9m picked by hand-scanning the open-PR set),
+        # because choosing a letter no *open PR* is using is unsound by
+        # construction — that set changes underneath you whenever one merges.
+        #
+        # Two mechanisms, and this is only the second of them. Both branches
+        # inserting their manifest line at the same position makes git raise a
+        # one-line conflict at the point of allocation — cheap, obvious, and
+        # exactly where the decision is being made, instead of a 188-line
+        # conflict in code git can silently resolve in favour of whichever side
+        # it happened to prefer. That is how #889 deleted a regression guard
+        # with no warning at all. But when the two insertions are far enough
+        # apart to auto-merge, nothing objects: the tree ends up with two §9k
+        # blocks and a manifest that records both. This FAILs on exactly that.
+        #
+        # Scanned from the FILE, not the deduped title set: two sections with
+        # byte-identical headers collapse under `sort -u` and would otherwise be
+        # invisible here. Unlettered headers (e.g. "Test helpers") are skipped
+        # by the pattern rather than by a rule — but extracting zero letters
+        # from a file that visibly has them means the header format moved, so
+        # that case is a FAIL naming "did not run", never a quiet pass.
+        _si_letters=$(grep -oE '^# ─── [0-9]+[a-z]?\.' "$_si_self" | sed 's/^# ─── //; s/\.$//') || _si_letters=""
+
+        if [[ -z "$_si_letters" ]]; then
+            test_fail "section inventory: extracted ZERO section letters from ${_si_self} — the header format changed and the letter-collision arm DID NOT RUN (#904)"
+        else
+            _si_dupes=$(printf '%s\n' "$_si_letters" | sort | uniq -d) || _si_dupes=""
+            if [[ -n "$_si_dupes" ]]; then
+                _si_dupehdrs=""
+                while IFS= read -r _si_l; do
+                    [[ -z "$_si_l" ]] && continue
+                    _si_dupehdrs+="$(grep -oE "^# ─── ${_si_l}\.[^─]*" "$_si_self" | sed 's/^# ─── //; s/ *$//' | paste -sd '/' -)"
+                    _si_dupehdrs+="; "
+                done <<< "$_si_dupes"
+                test_fail "section inventory: $(printf '%s\n' "$_si_dupes" | grep -c .) section letter(s) claimed twice in self-test.sh — two branches picked the same letter and the merge kept both, so one section's guarantee now depends on which copy runs (#904): ${_si_dupehdrs}"
+            else
+                test_pass "section inventory: all $(printf '%s\n' "$_si_letters" | grep -c .) section letters are unique"
+            fi
+        fi
+    fi
+fi
+
 # ─── 2. JSON data file validation ────────────────────────────────────────────
 
 marvin_log "INFO" "Self-test: validating JSON data files"
