@@ -3409,6 +3409,13 @@ if command -v dig >/dev/null 2>&1; then
     _bl_dig="$(command -v dig)"
 fi
 
+# The 127.0.0.1/127.0.0.2 test-vector convention below, and the `A.B.C.[X..Y]`
+# mask form parsed by _bl_mask_admits, are not invented here: the vectors are the
+# standard DNSBL self-test pair published by Spamhaus, SpamCop and dnswl alike
+# (RFC 5782 §5, "IPv4-address DNSxL test entries" — 127.0.0.2 MUST be listed,
+# 127.0.0.1 MUST NOT be), and the mask spelling is postfix's own, documented
+# under reject_rbl_client in postconf(5).
+#
 # Emits "STATUS|answers" for one DNSBL lookup. No marvin_log inside: this
 # function's stdout is a value, and marvin_log tees to stdout, so a log line here
 # would be read back by the caller as a DNS answer.
@@ -3500,12 +3507,31 @@ else
                     if [[ -z "$_bl_mask" ]]; then
                         test_fail "dnsbl health: ${_bl_zone} answers ${_bl_cans} for 1.0.0.127, which MUST be unlisted — it cannot tell a listed host from a clean one, and with no =mask postfix counts any 127.0.0.0/8 answer as a listing, so this rejects EVERY sender (#871)"
                     else
-                        _bl_verdict=$(_bl_mask_admits "${_bl_cans%% *}" "$_bl_mask") || _bl_verdict="unknown"
-                        case "$_bl_verdict" in
+                        # EVERY returned address is evaluated, not just the first
+                        # (#913). postfix rejects if *any* A record in the reply
+                        # satisfies the mask, so scoring only `${_bl_cans%% *}`
+                        # would downgrade a FAIL to a WARN precisely when a zone
+                        # returns several addresses and the one that matches is
+                        # not the one that sorted first — understating the single
+                        # distinction this section exists to compute.
+                        #
+                        # Severity is taken at the worst address, and `unknown`
+                        # outranks `no`: one unevaluatable form means the bounce
+                        # risk was not determined, and "some of the answers looked
+                        # safe" is not a finding.
+                        _bl_worst="no"
+                        for _bl_addr in $_bl_cans; do
+                            _bl_verdict=$(_bl_mask_admits "$_bl_addr" "$_bl_mask") || _bl_verdict="unknown"
+                            case "$_bl_verdict" in
+                                yes)     _bl_worst="yes"; break ;;
+                                unknown) _bl_worst="unknown" ;;
+                            esac
+                        done
+                        case "$_bl_worst" in
                             yes)
-                                test_fail "dnsbl health: ${_bl_zone} answers ${_bl_cans} for the must-be-clean vector AND that address satisfies the configured mask ${_bl_mask} — every sender is being rejected on a constant answer (#871)" ;;
+                                test_fail "dnsbl health: ${_bl_zone} answers ${_bl_cans} for the must-be-clean vector AND an address in that answer satisfies the configured mask ${_bl_mask} — every sender is being rejected on a constant answer (#871)" ;;
                             no)
-                                test_warn "dnsbl health: ${_bl_zone} answers a constant ${_bl_cans} to both test vectors and cannot filter anything; mask ${_bl_mask} excludes that address, so no mail is bounced — but this DNSBL is INERT, not working (#871)" ;;
+                                test_warn "dnsbl health: ${_bl_zone} answers a constant ${_bl_cans} to both test vectors and cannot filter anything; mask ${_bl_mask} excludes every address in that answer, so no mail is bounced — but this DNSBL is INERT, not working (#871)" ;;
                             *)
                                 test_warn "dnsbl health: ${_bl_zone} answers a constant ${_bl_cans} to both test vectors; its mask ${_bl_mask} is in a form this check cannot evaluate, so whether mail is being bounced was NOT determined (#871)" ;;
                         esac
