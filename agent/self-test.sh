@@ -414,7 +414,107 @@ else
     done
 fi
 
-# ─── 1i. process-substitution producers that fail silently ───────────────────
+# ─── 1i. weekly-analytics fallback/success shape parity ──────────────────────
+# `_claude_usage()` emits one object on success and a hand-written zero object
+# on the failure/empty paths. Those two shapes must carry the same keys: a
+# consumer reading a field that only the success shape defines gets `null`
+# instead of 0, and nothing downstream distinguishes "no runs" from "key was
+# never there". This is not hypothetical — both fallback literals had already
+# drifted from the jq object, omitting total_prompt_chars and
+# total_output_chars, and the drift was invisible because the fallback only
+# renders on an I/O fault. Collapsed to a single `_zero_claude_usage()`; this
+# asserts it stays in step as fields are added to the jq block.
+#
+# Extract the functions from the script rather than sourcing it (the script
+# runs its whole pipeline at import) and read them via `dirname $0`, NOT
+# MARVIN_DIR — a branch-authored test that resolves through MARVIN_DIR asserts
+# against the deployed main copy and would pass while the branch regressed.
+
+marvin_log "INFO" "Self-test: checking weekly-analytics claude-usage shape parity"
+
+_wa_script="$(dirname "$0")/weekly-analytics.sh"
+if [[ -r "$_wa_script" ]]; then
+    # Slices one function out of weekly-analytics.sh: matches its opening
+    # `fn() {` and stops at the first `}` in column 0.
+    #
+    # That terminator is a structural ASSUMPTION about the source file, not
+    # something the source file enforces. Every brace inside the three
+    # functions extracted here — including the multi-line jq literal — is
+    # indented today; a future reformat leaving a closing `}` at column 0
+    # mid-body would truncate the slice. It fails safe rather than silently
+    # passing: a truncated function is unbalanced bash, `eval` rejects it, and
+    # the `|| exit 3` / `declare -F` guards below render that as test_warn
+    # ("could not run"), never test_pass. Recorded so the next reader knows
+    # the assumption is deliberate and what to re-check if it spreads.
+    _wa_extract() {
+        awk -v fn="$1" '$0 ~ "^"fn"\\(\\) \\{" {p=1} p {print} p && /^\}$/ {exit}' "$_wa_script"
+    }
+    # Subshell: the extracted functions and the METRICS_DIR override must not
+    # leak into the rest of the suite.
+    #
+    # `|| _shape_rc=$?` rather than a bare assignment read by `$?` on the next
+    # line: this file runs under `set -euo pipefail` with `trap
+    # marvin_error_trap ERR`, so an assignment from a subshell that exits
+    # non-zero is a failing simple command, and the suite ABORTS — reporting a
+    # crash — at the exact moment this check finds the drift it exists to
+    # find. Demonstrated after the fact: with a field deleted from
+    # `_zero_claude_usage()`, the previous spelling fired the ERR trap and
+    # exited 1 with no `test_fail` line at all; the entry above claims this
+    # negative control "fails with both key lists printed", and it did not.
+    # As part of an OR-list the assignment is exempt from both errexit and the
+    # trap. (Same defect, same shape, found the same way in #862's §9g.)
+    _shape_rc=0
+    _shape_result=$(
+        set +e
+        _wa_tmp=$(mktemp -d) || exit 3
+        trap 'rm -rf "$_wa_tmp"' EXIT
+        # Read by the _claude_usage extracted below; shellcheck cannot see
+        # through the eval, hence the disable rather than a spurious export.
+        # shellcheck disable=SC2034
+        METRICS_DIR="$_wa_tmp"
+        _wa_day=$(date -u +%Y-%m-%d)
+        printf '{"task":"selftest","duration_s":1,"prompt_chars":1,"output_chars":1,"exit_code":0}\n' \
+            > "${_wa_tmp}/claude-usage-${_wa_day}.jsonl" || exit 3
+        # `eval` is on the guideline's security red-flag list, so the trust
+        # boundary is worth stating rather than leaving to inference: the text
+        # evaluated here is sliced from agent/weekly-analytics.sh, a file
+        # tracked in this same repo and already executed as root by cron. It is
+        # never runtime input, never peer- or user-supplied, and never leaves
+        # this subshell. Anyone who can change what this evaluates can already
+        # change what the daily job runs.
+        eval "$(_wa_extract _dates_in_range)" 2>/dev/null || exit 3
+        eval "$(_wa_extract _zero_claude_usage)" 2>/dev/null || exit 3
+        eval "$(_wa_extract _claude_usage)" 2>/dev/null || exit 3
+        # All three, not just one. `eval ""` on a failed extraction succeeds, so
+        # `|| exit 3` above cannot catch an extractor miss — only this can. And a
+        # missing `_dates_in_range` specifically produces a FALSE PASS, not a
+        # crash: it is called from `< <(_dates_in_range …)`, whose command-not-
+        # found never reaches `_claude_usage`'s exit status, so `files` comes back
+        # empty and `_claude_usage` returns `_zero_claude_usage` — the check then
+        # compares the fallback shape against itself and reports test_pass having
+        # asserted nothing. Demonstrated: extracting only the other two functions
+        # exits 0 today. (#867 — an assertion that cannot fail.)
+        declare -F _dates_in_range _zero_claude_usage _claude_usage >/dev/null || exit 3
+        _ok=$(_claude_usage "$_wa_day" "$_wa_day" | jq -r 'keys|join(",")' 2>/dev/null) || exit 3
+        _zero=$(_zero_claude_usage | jq -r 'keys|join(",")' 2>/dev/null) || exit 3
+        [[ -n "$_ok" && -n "$_zero" ]] || exit 3
+        [[ "$_ok" == "$_zero" ]] && exit 0
+        printf 'success=[%s] fallback=[%s]' "$_ok" "$_zero"
+        exit 1
+    ) || _shape_rc=$?
+    case "$_shape_rc" in
+        0) test_pass "weekly-analytics: claude-usage fallback shape matches success shape" ;;
+        1) test_fail "weekly-analytics: claude-usage fallback shape drifted — ${_shape_result}" ;;
+        # Exit 3 is "could not run the check", kept distinct from a clean pass —
+        # the §1h lesson from #858: a harness that collapses "did not run" into
+        # "found nothing" reports green for a test that never executed.
+        *) test_warn "weekly-analytics: claude-usage shape check could not run (extract/jq failure)" ;;
+    esac
+else
+    test_warn "weekly-analytics: claude-usage shape check skipped — script not readable"
+fi
+
+# ─── 1j. process-substitution producers that fail silently ───────────────────
 # `set -euo pipefail` and the ERR trap do NOT reach inside `< <(...)`. If the
 # producer dies, the loop body simply never runs and the script continues at
 # exit 0 — a step that FAILED is indistinguishable from a step that found
@@ -456,8 +556,28 @@ marvin_log "INFO" "Self-test: checking process-substitution producers for silent
 # flags and PASSES — a check reporting clean because it could not run. NOT
 # fixed here (it is another branch's code and this one already carries three
 # fixes) and NOT yet tracked in an issue — recorded at the baseline itself so
-# the next person to trip §1i finds the reason rather than an unexplained 26.
-_PROCSUB_BASELINE=26
+# the next person to trip §1j finds the reason rather than an unexplained 26.
+#
+# 26 → 27 on the SECOND merge of main (eba2aad), and this one had already gone
+# red: the branch as pushed reported `27 unguarded … baseline 26 — a new one was
+# added` when run against its own tree, and 28 against `main`. A ratchet that
+# fails on the branch introducing it is not a ratchet, it is a broken build that
+# happens to be about correctness, so the accounting is written down here in the
+# same shape as the 24 → 26 note above. Net +1, from two arrivals and one
+# departure, all three from other PRs:
+#   security-scan.sh:284  `printf … | tr ',:'`        — arrived with #879 (UFW audit)
+#   security-scan.sh:288  `printf … | awk … | sort`   — arrived with #879 (UFW audit)
+#   security-scan.sh:483  `echo … | tail -n +2`       — GONE with #884, which
+#       replaced the outbound loop's producer with `marvin_outbound_classify
+#       <<< "$outbound_output"` — a herestring into a function, no pipeline and
+#       no jq, so the scan does not classify it as failure-capable. Counted as a
+#       departure, not as a fix: nothing was guarded, the site simply stopped
+#       matching the scope. Worth knowing, because a baseline can fall for that
+#       reason too and "the number went down" is not by itself progress.
+# Verified by scanning four trees with this same section and diffing per file:
+# df6690d (26, PASS), this branch (27), `main` (28 — the extra is the
+# network-discovery.sh:133 site this PR fixes), and the deployed tree (29).
+_PROCSUB_BASELINE=27
 
 # Walks each `done < <(` site to its matching close paren so multi-line
 # producers are classified on their whole text — the §1d site above pipes on a
@@ -507,7 +627,7 @@ END { if (collecting) print startfile ":" startline ":" buf }
         }
         next
     }
-    # A comment that *documents* the pattern is not a site. The §1i commentary
+    # A comment that *documents* the pattern is not a site. The §1j commentary
     # below quotes the construct verbatim and the scanner duly counted its own
     # documentation (58 blocks → 59). Benign here (no jq, no pipe, so it never
     # reached the baseline), but a comment citing a jq producer would have
@@ -532,7 +652,14 @@ END { if (collecting) print startfile ":" startline ":" buf }
 }
 '
 
-_ps_files=$(find "${MARVIN_DIR}/agent" -name '*.sh' -type f 2>/dev/null) || _ps_files=""
+# `dirname "$0"`, not `${MARVIN_DIR}` — the same rule §1i states two sections
+# up and for the same reason. `common.sh` hardcodes MARVIN_DIR to the live tree
+# and overrides an inherited environment, so a MARVIN_DIR-resolved ratchet
+# measures whatever is DEPLOYED and not what the branch ships. That is not
+# theoretical here: run from this worktree, the baseline check reported 29
+# against the deployed tree while the branch's own tree holds 27. The number a
+# reviewer sees has to be the number they are reviewing.
+_ps_files=$(find "$(dirname "$0")" -name '*.sh' -type f 2>/dev/null) || _ps_files=""
 if [[ -z "$_ps_files" ]]; then
     test_fail "procsub scan: could not enumerate agent scripts — scan did NOT run"
 else

@@ -182,7 +182,7 @@ if [[ -f "$PEERS_FILE" && "$BEACON_ONLY" != true ]]; then
     done < <(jq -r '.peers[] | (.url // ((.domain // "") | select(. != "") | "https://" + .))' "$PEERS_FILE" 2>/dev/null)
 
     # procsub-guarded (#873) — the marker must sit within a few lines of the
-    # `done` it vouches for; §1i only trusts a guard it can see from the site.
+    # `done` it vouches for; §1j only trusts a guard it can see from the site.
     #
     # The guard the 126-day outage needed: peers exist but none produced a
     # pingable address ⇒ the producer matched nothing. Zero iterations is
