@@ -770,6 +770,49 @@ else
         if [[ -n "$_si_new" ]]; then
             test_warn "section inventory: $(printf '%s\n' "$_si_new" | grep -c .) section(s) not yet recorded — add to lib/self-test-sections.txt: $(printf '%s' "$_si_new" | tr '\n' '|')"
         fi
+
+        # ── No two sections may claim the same letter (#904) ──────────────────
+        # The arms above answer "did a section vanish?". This one answers the
+        # other half of #891: "is this letter already taken?" Three collisions
+        # landed in this file before noon on 2026-07-27 (#895 vs #874's §1j,
+        # #890 vs #884's §9j, and §9m picked by hand-scanning the open-PR set),
+        # because choosing a letter no *open PR* is using is unsound by
+        # construction — that set changes underneath you whenever one merges.
+        #
+        # Two mechanisms, and this is only the second of them. Both branches
+        # inserting their manifest line at the same position makes git raise a
+        # one-line conflict at the point of allocation — cheap, obvious, and
+        # exactly where the decision is being made, instead of a 188-line
+        # conflict in code git can silently resolve in favour of whichever side
+        # it happened to prefer. That is how #889 deleted a regression guard
+        # with no warning at all. But when the two insertions are far enough
+        # apart to auto-merge, nothing objects: the tree ends up with two §9k
+        # blocks and a manifest that records both. This FAILs on exactly that.
+        #
+        # Scanned from the FILE, not the deduped title set: two sections with
+        # byte-identical headers collapse under `sort -u` and would otherwise be
+        # invisible here. Unlettered headers (e.g. "Test helpers") are skipped
+        # by the pattern rather than by a rule — but extracting zero letters
+        # from a file that visibly has them means the header format moved, so
+        # that case is a FAIL naming "did not run", never a quiet pass.
+        _si_letters=$(grep -oE '^# ─── [0-9]+[a-z]?\.' "$_si_self" | sed 's/^# ─── //; s/\.$//') || _si_letters=""
+
+        if [[ -z "$_si_letters" ]]; then
+            test_fail "section inventory: extracted ZERO section letters from ${_si_self} — the header format changed and the letter-collision arm DID NOT RUN (#904)"
+        else
+            _si_dupes=$(printf '%s\n' "$_si_letters" | sort | uniq -d) || _si_dupes=""
+            if [[ -n "$_si_dupes" ]]; then
+                _si_dupehdrs=""
+                while IFS= read -r _si_l; do
+                    [[ -z "$_si_l" ]] && continue
+                    _si_dupehdrs+="$(grep -oE "^# ─── ${_si_l}\.[^─]*" "$_si_self" | sed 's/^# ─── //; s/ *$//' | paste -sd '/' -)"
+                    _si_dupehdrs+="; "
+                done <<< "$_si_dupes"
+                test_fail "section inventory: $(printf '%s\n' "$_si_dupes" | grep -c .) section letter(s) claimed twice in self-test.sh — two branches picked the same letter and the merge kept both, so one section's guarantee now depends on which copy runs (#904): ${_si_dupehdrs}"
+            else
+                test_pass "section inventory: all $(printf '%s\n' "$_si_letters" | grep -c .) section letters are unique"
+            fi
+        fi
     fi
 fi
 
