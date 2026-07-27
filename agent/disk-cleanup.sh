@@ -249,11 +249,19 @@ _tmp_paths_in_use() {
     return 0
 }
 
+# Prefix for the one thing this function reports that is not a collectable
+# path. It cannot call marvin_log: that logs via `tee`, which writes to stdout,
+# and stdout here is the path stream the caller feeds to `rm -rf`. A log line
+# would arrive as a candidate for deletion. Every real line is an absolute
+# path under <root>, so a leading `!` is unambiguous.
+_STALE_TMP_UNREADABLE='!unreadable:'
+
 # Directories directly under <root> that are safe to collect: root-owned, not
 # on the skip list, not in use, and with nothing in the subtree newer than
 # <age_days>. Takes the root as an argument rather than hardcoding /tmp so the
 # selection can be exercised against a fixture tree without risking the real
-# one. Prints one path per line.
+# one. Prints one collectable path per line, plus a `!unreadable:<path>` line
+# for any directory whose subtree could not be walked (skipped, not collected).
 _stale_tmp_dirs() {
     local root="$1" age_days="$2" in_use="$3"
     local d base newest cutoff
@@ -289,7 +297,33 @@ _stale_tmp_dirs() {
         # Newest mtime anywhere in the subtree, including the directory itself.
         # This is the point of the section: the directory's own mtime lies,
         # because section 6 keeps resetting it.
-        newest=$(find "$d" -printf '%T@\n' 2>/dev/null | cut -d. -f1 | sort -rn | head -1)
+        #
+        # Deliberately not `sort -rn | head -1`. head exits after one line, so
+        # on a subtree big enough to push sort's output past the pipe buffer
+        # (~6.5k files here) sort dies of SIGPIPE, 141. Under `pipefail` that
+        # is the assignment's status, and `set -e` then kills this function --
+        # which runs inside a process substitution, so the caller's read loop
+        # just sees EOF. Every directory find had not yet reached is dropped,
+        # and a truncated sweep is indistinguishable from a complete one that
+        # found nothing. A big *ineligible* directory is enough to trigger it;
+        # it is read before the staleness test that would have skipped it, so
+        # one 20k-file tree anywhere in /tmp silences the whole section (#909).
+        #
+        # awk takes the max in a single pass and never exits early, so there is
+        # no reader to close the pipe. No `cut` either: %T@ compares correctly
+        # as a float, and %d truncates to whole seconds exactly as cut -d. did.
+        #
+        # find's own status is checked rather than discarded. A subtree it
+        # could only partly walk yields a maximum that is too old, and on a
+        # delete path "too old" means "collect it" -- the one direction this
+        # must never fail in. Unreadable means skipped, and skipped is said
+        # out loud, because silence here looks exactly like "not stale".
+        if ! newest=$(find "$d" -printf '%T@\n' 2>/dev/null |
+                          awk '{ if ($1 + 0 > m) m = $1 + 0 }
+                               END { if (NR) printf "%d\n", m }'); then
+            printf '%s%s\n' "$_STALE_TMP_UNREADABLE" "$d"
+            continue
+        fi
         [[ -n "$newest" ]] || continue
         [[ "$newest" -lt "$cutoff" ]] || continue
 
@@ -301,8 +335,24 @@ tmpdir_size=0
 tmpdir_count=0
 if _in_use=$(_tmp_paths_in_use); then
     _in_use_rc=0
+    tmpdir_unreadable=0
     while IFS= read -r d; do
         [[ -n "$d" ]] || continue
+
+        # Not a candidate: a subtree whose age could not be established. Said
+        # out loud, because a directory skipped for this reason looks exactly
+        # like one that was examined and found fresh.
+        if [[ "$d" == "${_STALE_TMP_UNREADABLE}"* ]]; then
+            tmpdir_unreadable=$((tmpdir_unreadable + 1))
+            marvin_log "WARN" "could not walk ${d#"${_STALE_TMP_UNREADABLE}"} to establish its newest mtime — skipped rather than assuming it is stale, since a partial walk reports an age that is too old and this is a delete path (#909)"
+            continue
+        fi
+
+        # Belt and braces: only ever delete an absolute path. If a future
+        # marker is added and this loop is not taught about it, it must not
+        # reach rm -rf.
+        [[ "$d" == /* ]] || continue
+
         dsize=$(du -sb "$d" 2>/dev/null | cut -f1) || dsize=0
         [[ "$dsize" =~ ^[0-9]+$ ]] || dsize=0
         tmpdir_size=$((tmpdir_size + dsize))
