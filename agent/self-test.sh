@@ -3350,6 +3350,182 @@ else
     fi
 fi
 
+# ─── 9t. Configured DNSBLs must distinguish a listed host from a clean one ────
+# postfix rejects mail on the strength of a DNSBL answer, and a DNSBL that has
+# stopped answering *truthfully* is indistinguishable from one that works: both
+# return an A record in 127.0.0.0/8, and a bare `reject_rbl_client` treats any
+# address in that block as "listed".
+#
+# Not hypothetical here. For five days `zen.spamhaus.org` answered 127.0.0.1 —
+# Spamhaus's "your resolver is refused" sentinel, not a listing code — to every
+# query, and postfix read it as a listing. 52 legitimate messages were bounced
+# with 554, every one of them a GitHub notification from noreply@github.com, and
+# zero spam was blocked, because a list that answers "listed" to everything is
+# not filtering anything (#871). Nothing noticed for five days. The only symptom
+# was mail that failed to arrive, which looks exactly like nobody sending any.
+#
+# Every DNSBL publishes the same two test vectors for precisely this purpose, so
+# this needs no spam, no live sender, and no waiting for a victim:
+#
+#   2.0.0.127.<zone>  MUST be listed      (NOERROR + a 127.0.0.0/8 answer)
+#   1.0.0.127.<zone>  MUST NOT be listed  (NXDOMAIN)
+#
+# A zone answering both identically cannot tell the two apart, and whatever it
+# is doing, it is not what the config claims it does.
+#
+# Severity is decided by the `=mask` argument, because that is the difference
+# between a list that bounces real mail and one that is merely inert:
+#
+#   no mask       → FAIL. Any 127.0.0.0/8 answer counts as a listing, so a
+#                   constant answer rejects every sender. This is #871 exactly.
+#   mask, matched → FAIL. Same outcome; the mask admits the constant.
+#   mask, missed  → WARN. The constant falls outside the accepted codes, so the
+#                   rule is inert: it bounces nobody and blocks nobody. Safe, but
+#                   the config promises filtering it is not delivering — and it
+#                   self-heals into a PASS if the zone ever recovers.
+#
+# `postconf` is resolved by explicit path BEFORE PATH: it lives in /usr/sbin,
+# which is not on cron's default PATH of /usr/bin:/bin, and this suite runs from
+# cron. Swallowing that would report "no DNSBLs configured" — a clean bill of
+# health from a check that never ran.
+#
+# Every lookup failure is a WARN that says DID NOT RUN, never a pass, and the DNS
+# *status code* is what is read here rather than the emptiness of the answer:
+# `dig +short` prints nothing and exits 0 both for a correct NXDOMAIN and for a
+# zone that does not exist at all, which is the one distinction this section
+# exists to make.
+
+marvin_log "INFO" "Self-test: checking configured DNSBLs can still tell listed from clean"
+
+_bl_postconf=""
+if [[ -x /usr/sbin/postconf ]]; then
+    _bl_postconf="/usr/sbin/postconf"
+elif command -v postconf >/dev/null 2>&1; then
+    _bl_postconf="$(command -v postconf)"
+fi
+
+_bl_dig=""
+if command -v dig >/dev/null 2>&1; then
+    _bl_dig="$(command -v dig)"
+fi
+
+# Emits "STATUS|answers" for one DNSBL lookup. No marvin_log inside: this
+# function's stdout is a value, and marvin_log tees to stdout, so a log line here
+# would be read back by the caller as a DNS answer.
+_bl_probe() {
+    local _fqdn="$1" _raw="" _st="" _ans=""
+    _raw=$("$_bl_dig" +time=3 +tries=1 "$_fqdn" A 2>/dev/null) || _raw=""
+    _st=$(printf '%s\n' "$_raw" | sed -n 's/.*status: \([A-Z][A-Z]*\).*/\1/p' | sed -n '1p')
+    _ans=$(printf '%s\n' "$_raw" | sed -n 's/^[^;].*[[:space:]]IN[[:space:]][[:space:]]*A[[:space:]][[:space:]]*\([0-9.][0-9.]*\).*/\1/p' | sort -u | tr '\n' ' ')
+    printf '%s|%s' "${_st:-LOOKUP_FAILED}" "${_ans% }"
+}
+
+# Would postfix treat address $1 as a listing under mask $2? Understands the two
+# forms postfix documents and this host uses: a literal address, and an octet
+# range `A.B.C.[X..Y]`. Anything else emits `unknown` rather than a guess — an
+# unrecognised mask must not be scored as "safe". Octets are compared with an
+# explicit 10# radix: a leading zero would otherwise be parsed as octal and abort
+# the whole suite under set -e.
+_bl_mask_admits() {
+    local _addr="$1" _mask="$2" _norm="" _i _oct _f _lo _hi
+    _norm=$(printf '%s' "$_mask" | sed 's/\.\./-/g')
+    local -a _a=() _m=()
+    IFS='.' read -r -a _a <<< "$_addr"
+    IFS='.' read -r -a _m <<< "$_norm"
+    if [[ "${#_a[@]}" -ne 4 || "${#_m[@]}" -ne 4 ]]; then
+        printf 'unknown'; return 0
+    fi
+    for _i in 0 1 2 3; do
+        _oct="${_a[$_i]}"; _f="${_m[$_i]}"
+        [[ "$_oct" =~ ^[0-9]+$ ]] || { printf 'unknown'; return 0; }
+        if [[ "$_f" =~ ^[0-9]+$ ]]; then
+            [[ "$_oct" == "$_f" ]] || { printf 'no'; return 0; }
+        elif [[ "$_f" =~ ^\[([0-9]+)-([0-9]+)\]$ ]]; then
+            _lo="${BASH_REMATCH[1]}"; _hi="${BASH_REMATCH[2]}"
+            if (( 10#$_oct < 10#$_lo || 10#$_oct > 10#$_hi )); then
+                printf 'no'; return 0
+            fi
+        else
+            printf 'unknown'; return 0
+        fi
+    done
+    printf 'yes'
+}
+
+if [[ -z "$_bl_postconf" ]]; then
+    test_warn "dnsbl health: postconf not found in /usr/sbin or on PATH — the DNSBL test-vector check DID NOT RUN, which is not the same as finding every DNSBL healthy (#871)"
+elif [[ -z "$_bl_dig" ]]; then
+    test_warn "dnsbl health: dig not found — the DNSBL test-vector check DID NOT RUN (#871)"
+else
+    _bl_restr=$("$_bl_postconf" -h smtpd_recipient_restrictions 2>/dev/null) || _bl_restr="__PC_FAIL__"
+
+    if [[ "$_bl_restr" == "__PC_FAIL__" ]]; then
+        test_warn "dnsbl health: '${_bl_postconf} -h smtpd_recipient_restrictions' failed — no DNSBL was verified (#871)"
+    elif ! printf '%s' "$_bl_restr" | grep -q 'reject_rbl_client'; then
+        test_pass "dnsbl health: postfix configures no reject_rbl_client entries — nothing to verify"
+    else
+        # sed -n 's///p' rather than grep|sed: grep exits 1 on no match, and the
+        # `reject_rbl_client` presence test above has already established there
+        # IS a match, so an empty result here means the parser broke, not that
+        # the config is empty. That case is a FAIL below, never a silent pass.
+        _bl_entries=$(printf '%s' "$_bl_restr" | tr ',' '\n' \
+            | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+            | sed -n 's/^reject_rbl_client[[:space:]][[:space:]]*//p') || _bl_entries=""
+
+        if [[ -z "$_bl_entries" ]]; then
+            test_fail "dnsbl health: reject_rbl_client is configured but no zone could be extracted — the parser broke and NO DNSBL was verified (#871)"
+        else
+            _bl_checked=0
+            # Here-string, not a pipe: the loop must run in this shell or
+            # _bl_checked would reset and the zero-iteration guard below could
+            # never fire (#874 — a liveness loop yielded nothing for 126 days).
+            while IFS= read -r _bl_entry; do
+                [[ -z "$_bl_entry" ]] && continue
+                _bl_zone="${_bl_entry%%=*}"
+                _bl_mask=""
+                [[ "$_bl_entry" == *=* ]] && _bl_mask="${_bl_entry#*=}"
+                _bl_checked=$((_bl_checked + 1))
+
+                _bl_listed=$(_bl_probe "2.0.0.127.${_bl_zone}") || _bl_listed="LOOKUP_FAILED|"
+                _bl_clean=$(_bl_probe "1.0.0.127.${_bl_zone}") || _bl_clean="LOOKUP_FAILED|"
+                _bl_lst="${_bl_listed%%|*}"; _bl_lans="${_bl_listed#*|}"
+                _bl_cst="${_bl_clean%%|*}";  _bl_cans="${_bl_clean#*|}"
+
+                if [[ "$_bl_lst" == "LOOKUP_FAILED" || "$_bl_cst" == "LOOKUP_FAILED" \
+                   || "$_bl_lst" == "SERVFAIL"      || "$_bl_cst" == "SERVFAIL" ]]; then
+                    test_warn "dnsbl health: ${_bl_zone} did not answer the test vectors (listed=${_bl_lst}, clean=${_bl_cst}) — this DNSBL was NOT verified, which is not evidence that it works (#871)"
+                elif [[ "$_bl_cst" == "NOERROR" && -n "$_bl_cans" ]]; then
+                    # 1.0.0.127 must never be listed, and it is. The zone cannot
+                    # distinguish a listed host from a clean one.
+                    if [[ -z "$_bl_mask" ]]; then
+                        test_fail "dnsbl health: ${_bl_zone} answers ${_bl_cans} for 1.0.0.127, which MUST be unlisted — it cannot tell a listed host from a clean one, and with no =mask postfix counts any 127.0.0.0/8 answer as a listing, so this rejects EVERY sender (#871)"
+                    else
+                        _bl_verdict=$(_bl_mask_admits "${_bl_cans%% *}" "$_bl_mask") || _bl_verdict="unknown"
+                        case "$_bl_verdict" in
+                            yes)
+                                test_fail "dnsbl health: ${_bl_zone} answers ${_bl_cans} for the must-be-clean vector AND that address satisfies the configured mask ${_bl_mask} — every sender is being rejected on a constant answer (#871)" ;;
+                            no)
+                                test_warn "dnsbl health: ${_bl_zone} answers a constant ${_bl_cans} to both test vectors and cannot filter anything; mask ${_bl_mask} excludes that address, so no mail is bounced — but this DNSBL is INERT, not working (#871)" ;;
+                            *)
+                                test_warn "dnsbl health: ${_bl_zone} answers a constant ${_bl_cans} to both test vectors; its mask ${_bl_mask} is in a form this check cannot evaluate, so whether mail is being bounced was NOT determined (#871)" ;;
+                        esac
+                    fi
+                elif [[ "$_bl_lst" == "NXDOMAIN" ]]; then
+                    test_warn "dnsbl health: ${_bl_zone} does not list 2.0.0.127, the vector every DNSBL is required to list — the zone is dead, delisted, or not answering this resolver, so it contributes no filtering (#871)"
+                elif [[ "$_bl_lst" == "NOERROR" && "$_bl_cst" == "NXDOMAIN" && -n "$_bl_lans" ]]; then
+                    test_pass "dnsbl health: ${_bl_zone} answers both test vectors correctly (2.0.0.127 → ${_bl_lans}, 1.0.0.127 → NXDOMAIN)"
+                else
+                    test_warn "dnsbl health: ${_bl_zone} answered in a shape this check does not recognise (listed=${_bl_lst}/${_bl_lans:-none}, clean=${_bl_cst}/${_bl_cans:-none}) — treat as UNVERIFIED (#871)"
+                fi
+            done <<< "$_bl_entries"
+
+            if [[ "$_bl_checked" -eq 0 ]]; then
+                test_fail "dnsbl health: the entry loop ran zero times despite reject_rbl_client being configured — NO DNSBL was verified (#871)"
+            fi
+        fi
+    fi
+fi
+
 # ─── 10. Security scoring system ──────────────────────────────────────────────
 # Grades the server A-F across multiple security dimensions
 
