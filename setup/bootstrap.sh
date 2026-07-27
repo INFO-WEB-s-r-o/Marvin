@@ -115,8 +115,6 @@ ufw default allow outgoing
 ufw allow ssh
 ufw allow http
 ufw allow https
-# Allow the AI communication port
-ufw allow 8042/tcp comment "Marvin AI comm port"
 echo "y" | ufw enable
 log "Firewall configured."
 
@@ -456,7 +454,6 @@ cat > "${MARVIN_DIR}/data/comms/identity.json" << EOF
   "born": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "host": "${SERVER_IP}",
   "status_url": "http://${SERVER_IP}/",
-  "comm_port": 8042,
   "capabilities": ["system-management", "self-enhancement", "communication", "log-analysis", "protocol-negotiation", "github-integration"],
   "github": "https://github.com/INFO-WEB-s-r-o/Marvin",
   "gpg_public_key": "/.well-known/marvin-gpg.asc",

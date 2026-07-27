@@ -163,6 +163,10 @@ INTEREST_PATTERNS=(
     'protocol'
     'negotiate'
     'echo.*signal'
+    # Retained after #849 withdrew the port. Nothing listens on 8042 and the
+    # beacon no longer advertises it, which makes a hit here more interesting
+    # than it was when the port was open — it means a peer is working from a
+    # cached beacon, or something is scanning.
     ':8042'
     'POST /.well-known'
     'POST /api/.*negotiate'
