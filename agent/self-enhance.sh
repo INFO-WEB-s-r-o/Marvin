@@ -190,6 +190,16 @@ fi
 
 # Resolve basenames to real files, dropping anything already dumped in full
 # above. Emits "<size>\t<relpath>" so the caller can order and budget.
+#
+# `wc -m` (characters), NOT `wc -c` (bytes). The budget these sizes are spent
+# against is built from `${#var}`, and run_claude's own ceiling test is
+# `${#full_prompt}` — both of which count CHARACTERS under this host's
+# C.UTF-8 locale. Mixing the two units is not academic here: the em-dashes and
+# accented text throughout these scripts make `self-test.sh` 73,503 bytes but
+# 70,667 characters. `wc -c` overstates every candidate by ~4%, which biases
+# toward refusing a script that would in fact have fitted — the precise
+# outcome this whole section exists to prevent. Under a C/POSIX locale the two
+# coincide, so this is correct either way rather than locale-dependent.
 _rank_scripts() {
     local base path rel
     for base in $1; do
@@ -197,7 +207,7 @@ _rank_scripts() {
             [[ -f "$path" ]] || continue
             rel="${path#"${MARVIN_DIR}"/}"
             [[ "$rel" == "agent/common.sh" || "$rel" == "agent/lib/github.sh" ]] && continue
-            printf '%s\t%s\n' "$(wc -c < "$path")" "$rel"
+            printf '%s\t%s\n' "$(wc -m < "$path")" "$rel"
         done
     done | sort -n -u
 }
@@ -277,7 +287,7 @@ $(cat "${MARVIN_DIR}/${_rel}")
         _budget=$(( _budget - _size - 40 ))
         _included=$(( _included + 1 ))
     else
-        _omitted+="${_omitted:+, }${_rel} (${_size} bytes)"
+        _omitted+="${_omitted:+, }${_rel} (${_size} chars)"
     fi
 done <<< "$_ranked"
 
