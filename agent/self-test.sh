@@ -3427,16 +3427,30 @@ _bl_probe() {
     printf '%s|%s' "${_st:-LOOKUP_FAILED}" "${_ans% }"
 }
 
-# Would postfix treat address $1 as a listing under mask $2? Understands the two
-# forms postfix documents and this host uses: a literal address, and an octet
-# range `A.B.C.[X..Y]`. Anything else emits `unknown` rather than a guess — an
-# unrecognised mask must not be scored as "safe". Octets are compared with an
-# explicit 10# radix: a leading zero would otherwise be parsed as octal and abort
-# the whole suite under set -e.
+# Would postfix treat address $1 as a listing under mask $2? The grammar is not
+# guessed from the two spellings this host happens to use; it is the one
+# postconf(5) states verbatim under reject_rbl_client:
+#
+#   Each "d" is a number, or a pattern inside "[]" that contains one or more
+#   ";"-separated numbers or number..number ranges (Postfix 2.8 and later).
+#
+# So a bracket holds a LIST — `[2;4]`, `[2..4;10]` — not the single `[X..Y]` this
+# first parsed. A mask it cannot read emits `unknown` rather than a guess: an
+# unrecognised mask must not be scored as "safe". Every octet comparison is
+# numeric with an explicit 10# radix, on both sides and in every branch — a
+# leading zero (`=127.0.0.02`) would otherwise be parsed as octal and abort the
+# whole suite under set -e, and comparing it as a string quietly mismatches an
+# equal address, downgrading a real FAIL to "inert".
+#
+# The bracket body's full shape, after `..` has been normalised to `-` so the
+# range separator survives splitting on `.`. Held in a variable because an
+# unquoted `;` inside [[ =~ ]] is a parsing hazard worth not re-litigating.
+_BL_MASK_LIST_RE='^[0-9]+(-[0-9]+)?(;[0-9]+(-[0-9]+)?)*$'
+
 _bl_mask_admits() {
-    local _addr="$1" _mask="$2" _norm="" _i _oct _f _lo _hi
+    local _addr="$1" _mask="$2" _norm="" _i _oct _f _body _item _lo _hi _hit
     _norm=$(printf '%s' "$_mask" | sed 's/\.\./-/g')
-    local -a _a=() _m=()
+    local -a _a=() _m=() _items=()
     IFS='.' read -r -a _a <<< "$_addr"
     IFS='.' read -r -a _m <<< "$_norm"
     if [[ "${#_a[@]}" -ne 4 || "${#_m[@]}" -ne 4 ]]; then
@@ -3446,12 +3460,33 @@ _bl_mask_admits() {
         _oct="${_a[$_i]}"; _f="${_m[$_i]}"
         [[ "$_oct" =~ ^[0-9]+$ ]] || { printf 'unknown'; return 0; }
         if [[ "$_f" =~ ^[0-9]+$ ]]; then
-            [[ "$_oct" == "$_f" ]] || { printf 'no'; return 0; }
-        elif [[ "$_f" =~ ^\[([0-9]+)-([0-9]+)\]$ ]]; then
-            _lo="${BASH_REMATCH[1]}"; _hi="${BASH_REMATCH[2]}"
-            if (( 10#$_oct < 10#$_lo || 10#$_oct > 10#$_hi )); then
-                printf 'no'; return 0
+            (( 10#$_oct == 10#$_f )) || { printf 'no'; return 0; }
+        elif [[ "$_f" =~ ^\[(.+)\]$ ]]; then
+            _body="${BASH_REMATCH[1]}"
+            # Validate the WHOLE list before scoring any of it. `read -a` discards
+            # a trailing empty field, so `[2;]` would otherwise split to just (2),
+            # hiding the malformed member and scoring a partial list as if it were
+            # the whole one — #915's failure shape, inside the fix for it.
+            if [[ ! "$_body" =~ $_BL_MASK_LIST_RE ]]; then
+                printf 'unknown'; return 0
             fi
+            _hit=0
+            _items=()
+            IFS=';' read -r -a _items <<< "$_body"
+            for _item in "${_items[@]}"; do
+                if [[ "$_item" =~ ^[0-9]+$ ]]; then
+                    if (( 10#$_oct == 10#$_item )); then _hit=1; fi
+                elif [[ "$_item" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+                    _lo="${BASH_REMATCH[1]}"; _hi="${BASH_REMATCH[2]}"
+                    if (( 10#$_oct >= 10#$_lo && 10#$_oct <= 10#$_hi )); then _hit=1; fi
+                else
+                    # One unreadable member makes the whole mask unreadable. A
+                    # partial score over the members we happened to parse is the
+                    # exact failure this section exists to refuse (#915).
+                    printf 'unknown'; return 0
+                fi
+            done
+            (( _hit == 1 )) || { printf 'no'; return 0; }
         else
             printf 'unknown'; return 0
         fi
@@ -3476,11 +3511,12 @@ else
     # it cannot rot against a postfix that adds one. An empty enumeration means
     # the query broke, never that postfix has no restriction classes.
     _bl_restr=""
+    _bl_enum_ok=1
     _bl_classes=$("$_bl_postconf" -d 2>/dev/null | sed -n 's/^\(smtpd_[a-z_]*restrictions\) *=.*/\1/p' | sort -u) || _bl_classes=""
 
     if [[ -z "$_bl_classes" ]]; then
         test_warn "dnsbl health: could not enumerate smtpd restriction classes from '${_bl_postconf} -d' — NO DNSBL was verified (#871, #914)"
-        _bl_restr="__PC_FAIL__"
+        _bl_enum_ok=0
     else
         _bl_pcfail=0
         _bl_failed=""
@@ -3498,7 +3534,7 @@ else
         fi
     fi
 
-    if [[ "$_bl_restr" == "__PC_FAIL__" ]]; then
+    if [[ "${_bl_enum_ok:-1}" -eq 0 ]]; then
         : # already reported above; do not also emit a misleading verdict
     elif ! printf '%s' "$_bl_restr" | grep -q 'reject_rbl_client'; then
         # A partial read must not produce "nothing to verify" (#915). The classes
