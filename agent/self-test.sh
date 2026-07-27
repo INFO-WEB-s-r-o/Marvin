@@ -36,6 +36,38 @@ test_warn() {
     RESULTS+=("  WARN: $1")
 }
 
+# _code_only <file>
+#   Echo <file> with full-line comments blanked out, so that an assertion about
+#   a construct cannot be satisfied by prose *describing* that construct.
+#
+#   This is the third time this class has been reintroduced by code written to
+#   prevent it (#858, #887, #890 §9k), and the nearest instance — §9f below —
+#   sat four lines from the comment stating the rule. network-discovery.sh:209
+#   is a comment reading "`.marvin_health_probe == true` happens to land on one
+#   physical line today"; the runtime gate it describes is at line 219. Grep the
+#   raw file and deleting 219 leaves §9f green. A guard that cannot tell a fix
+#   from a description of a fix is worse than no guard, because it reports a
+#   specific green.
+#
+#   Fails (returns 1, echoes nothing) when the file is unreadable or contains no
+#   code at all, so that callers can distinguish "the marker is missing" from
+#   "the scan never ran" instead of collapsing both into a silent pass. Callers
+#   MUST check the exit status; `x=$(_code_only f) || true` reintroduces exactly
+#   the bug this exists to close.
+#
+#   Deliberately only strips *full-line* comments: a trailing `# ...` on a line
+#   of real code cannot make an absent construct look present, and stripping it
+#   correctly would require parsing quote state, which has already false-FAILed
+#   twice here (#875, #887).
+_code_only() {
+    local _co_file="$1" _co_out
+    [[ -r "$_co_file" ]] || return 1
+    _co_out=$(sed 's/^[[:space:]]*#.*$//' "$_co_file" 2>/dev/null) || return 1
+    # A file of nothing but comments normalizes to whitespace, not to "".
+    [[ -n "${_co_out//[[:space:]]/}" ]] || return 1
+    printf '%s\n' "$_co_out"
+}
+
 # ─── 1. Bash syntax check for all agent scripts ──────────────────────────────
 
 marvin_log "INFO" "Self-test: checking bash script syntax"
@@ -702,6 +734,120 @@ else
     fi
 fi
 
+# ─── 1k. self-test section inventory — sections may be removed, not vanish ───
+# `self-test.sh` is the file that catches regressions in everything else, and
+# until now nothing caught regressions in it. Sections have vanished twice
+# without anyone deciding to remove them:
+#
+#   #889 — §9i (the #877 guard) was deleted by a `git merge main`, not an edit.
+#          The section landed on main from #878 while the branch was open, at
+#          the same line range the branch had filled with a new section, and git
+#          resolved the overlapping hunk in favour of the branch. No conflict.
+#   #892 — §1i's weekly-analytics shape-parity check was written over by an
+#          unrelated new check that took the same letter. Same header, different
+#          body, no mention anywhere.
+#
+# Both were caught by a human reading a diff, and in both cases the CHANGELOG
+# went on describing a test that no longer existed, because prose and code merge
+# independently. Three of the four open PRs edit this file concurrently and all
+# of them append to the same regions, so the exposure is not hypothetical.
+#
+# TITLES, not just section letters. #892 kept the letter and replaced what was
+# under it; an inventory of letters would have called that file complete.
+#
+# Not a freeze: a section may be removed by deleting its line from the manifest
+# in the same commit, which is a visible, reviewable diff instead of a silent
+# hunk resolution. A section present in the file but absent from the manifest is
+# a WARN naming the line to add, never a FAIL — an open PR must not be able to
+# turn main red by being the first to merge.
+#
+# Resolved via `dirname "$0"`, not ${MARVIN_DIR}: a branch-authored check that
+# resolves through MARVIN_DIR asserts against the DEPLOYED tree and passes while
+# the branch it ships with is broken (#855, and again in #874's §1j this same
+# day). And every "could not look" path below is a FAIL that says so, rather
+# than a pass by absence of evidence — a section inventory that reports clean
+# because it could not read the file would be the thing it is guarding against.
+
+marvin_log "INFO" "Self-test: checking no self-test section has silently disappeared"
+
+_si_self="$(dirname "$0")/self-test.sh"
+_si_manifest="$(dirname "$0")/lib/self-test-sections.txt"
+
+if [[ ! -r "$_si_self" ]]; then
+    test_fail "section inventory: cannot read ${_si_self} — the inventory was NOT checked (a check that could not run, not a clean tree)"
+elif [[ ! -r "$_si_manifest" ]]; then
+    test_fail "section inventory: cannot read ${_si_manifest} — the manifest is missing or unreadable, so no section can be reported as lost (#891)"
+else
+    # Command substitution, which DOES propagate exit codes, and empty output is
+    # treated as failure on both sides: headers always exist and the manifest is
+    # never legitimately empty, so "found nothing" means the extraction broke.
+    _si_present=$(grep -oE '^# ─── [^─]+' "$_si_self" | sed 's/^# ─── //; s/ *$//' | sort -u) || _si_present=""
+    _si_expected=$(grep -vE '^[[:space:]]*(#|$)' "$_si_manifest" | sed 's/ *$//' | sort -u) || _si_expected=""
+
+    if [[ -z "$_si_present" ]]; then
+        test_fail "section inventory: extracted ZERO section headers from ${_si_self} — the header format changed or the scan broke; this assertion is inert and MUST be repaired (#891)"
+    elif [[ -z "$_si_expected" ]]; then
+        test_fail "section inventory: the manifest contains no entries — every section would look accounted for (#891)"
+    else
+        _si_missing=$(comm -23 <(printf '%s\n' "$_si_expected") <(printf '%s\n' "$_si_present"))
+        _si_new=$(comm -13 <(printf '%s\n' "$_si_expected") <(printf '%s\n' "$_si_present"))
+        _si_count=$(printf '%s\n' "$_si_present" | grep -c .)
+
+        if [[ -n "$_si_missing" ]]; then
+            test_fail "section inventory: $(printf '%s\n' "$_si_missing" | grep -c .) recorded section(s) have disappeared from self-test.sh — if the removal was deliberate, delete the line from lib/self-test-sections.txt in the same commit (#891): $(printf '%s' "$_si_missing" | tr '\n' '|')"
+        else
+            test_pass "section inventory: all $(printf '%s\n' "$_si_expected" | grep -c .) recorded sections still present (${_si_count} in file)"
+        fi
+
+        if [[ -n "$_si_new" ]]; then
+            test_warn "section inventory: $(printf '%s\n' "$_si_new" | grep -c .) section(s) not yet recorded — add to lib/self-test-sections.txt: $(printf '%s' "$_si_new" | tr '\n' '|')"
+        fi
+
+        # ── No two sections may claim the same letter (#904) ──────────────────
+        # The arms above answer "did a section vanish?". This one answers the
+        # other half of #891: "is this letter already taken?" Three collisions
+        # landed in this file before noon on 2026-07-27 (#895 vs #874's §1j,
+        # #890 vs #884's §9j, and §9m picked by hand-scanning the open-PR set),
+        # because choosing a letter no *open PR* is using is unsound by
+        # construction — that set changes underneath you whenever one merges.
+        #
+        # Two mechanisms, and this is only the second of them. Both branches
+        # inserting their manifest line at the same position makes git raise a
+        # one-line conflict at the point of allocation — cheap, obvious, and
+        # exactly where the decision is being made, instead of a 188-line
+        # conflict in code git can silently resolve in favour of whichever side
+        # it happened to prefer. That is how #889 deleted a regression guard
+        # with no warning at all. But when the two insertions are far enough
+        # apart to auto-merge, nothing objects: the tree ends up with two §9k
+        # blocks and a manifest that records both. This FAILs on exactly that.
+        #
+        # Scanned from the FILE, not the deduped title set: two sections with
+        # byte-identical headers collapse under `sort -u` and would otherwise be
+        # invisible here. Unlettered headers (e.g. "Test helpers") are skipped
+        # by the pattern rather than by a rule — but extracting zero letters
+        # from a file that visibly has them means the header format moved, so
+        # that case is a FAIL naming "did not run", never a quiet pass.
+        _si_letters=$(grep -oE '^# ─── [0-9]+[a-z]?\.' "$_si_self" | sed 's/^# ─── //; s/\.$//') || _si_letters=""
+
+        if [[ -z "$_si_letters" ]]; then
+            test_fail "section inventory: extracted ZERO section letters from ${_si_self} — the header format changed and the letter-collision arm DID NOT RUN (#904)"
+        else
+            _si_dupes=$(printf '%s\n' "$_si_letters" | sort | uniq -d) || _si_dupes=""
+            if [[ -n "$_si_dupes" ]]; then
+                _si_dupehdrs=""
+                while IFS= read -r _si_l; do
+                    [[ -z "$_si_l" ]] && continue
+                    _si_dupehdrs+="$(grep -oE "^# ─── ${_si_l}\.[^─]*" "$_si_self" | sed 's/^# ─── //; s/ *$//' | paste -sd '/' -)"
+                    _si_dupehdrs+="; "
+                done <<< "$_si_dupes"
+                test_fail "section inventory: $(printf '%s\n' "$_si_dupes" | grep -c .) section letter(s) claimed twice in self-test.sh — two branches picked the same letter and the merge kept both, so one section's guarantee now depends on which copy runs (#904): ${_si_dupehdrs}"
+            else
+                test_pass "section inventory: all $(printf '%s\n' "$_si_letters" | grep -c .) section letters are unique"
+            fi
+        fi
+    fi
+fi
+
 # ─── 2. JSON data file validation ────────────────────────────────────────────
 
 marvin_log "INFO" "Self-test: validating JSON data files"
@@ -1041,12 +1187,19 @@ fi
 # beacon, which a test suite has no business doing.
 _nd_script="${MARVIN_DIR}/agent/network-discovery.sh"
 if [[ -r "$_nd_script" ]]; then
+    # Comment-stripped, or the assertion is satisfied by the block of prose
+    # directly above the dispatch that explains what --beacon-only is for.
+    if ! _nd_code=$(_code_only "$_nd_script"); then
+        test_fail "beacon recovery: network-discovery.sh yielded no code to scan for flag handling — check could not run"
+        _nd_code=""
+    fi
     _nd_flags_checked=0
     _nd_flags_bad=0
     while IFS= read -r _nd_flag; do
         [[ -n "$_nd_flag" ]] || continue
+        [[ -n "$_nd_code" ]] || break
         _nd_flags_checked=$((_nd_flags_checked + 1))
-        if ! grep -q -- "\"${_nd_flag}\"" "$_nd_script"; then
+        if ! grep -q -- "\"${_nd_flag}\"" <<< "$_nd_code"; then
             test_fail "beacon recovery: callers pass network-discovery.sh ${_nd_flag}, but that flag is not handled there"
             _nd_flags_bad=$((_nd_flags_bad + 1))
         fi
@@ -1104,11 +1257,27 @@ if [[ -r "$_nd_file" && -r "$_nl_file" ]]; then
     # with the code it is guarding: strip full-line comments (so prose that
     # merely mentions the marker cannot satisfy it) then collapse whitespace
     # (so reflowing the multi-line jq expression is not a false positive).
-    _nl_norm=$(sed 's/^[[:space:]]*#.*$//' "$_nl_file" 2>/dev/null | tr -s '[:space:]' ' ') || _nl_norm=""
+    _nl_norm=""
+    _nl_scan_ok=1
+    if _nl_code=$(_code_only "$_nl_file"); then
+        _nl_norm=$(tr -s '[:space:]' ' ' <<< "$_nl_code")
+    else
+        _nl_scan_ok=0
+    fi
     # Does the gate still exist in network-discovery.sh at all? If someone drops
     # the pre-condition, the probe starts polluting the inbox again (#852) and
     # this test must not quietly keep passing on the listener half alone.
-    if ! grep -q 'marvin_health_probe == true' "$_nd_file" 2>/dev/null; then
+    #
+    # Comment-stripped for the same reason the listener half is, and it is not
+    # hypothetical here: network-discovery.sh:209 is a comment quoting this very
+    # marker while explaining the gate at line 219. Grepping the raw file, this
+    # assertion passes on a file whose runtime gate has been deleted (#899).
+    _nd_code=""
+    _nd_scan_ok=1
+    _nd_code=$(_code_only "$_nd_file") || _nd_scan_ok=0
+    if [[ "$_nd_scan_ok" -eq 0 || "$_nl_scan_ok" -eq 0 ]]; then
+        test_fail "beacon negotiate gate: could not extract code from network-discovery.sh and/or negotiate-listener.sh — check did not run, treat as unverified rather than green"
+    elif ! grep -q 'marvin_health_probe == true' <<< "$_nd_code"; then
         test_fail "beacon negotiate gate: network-discovery.sh no longer checks for the listener's health-probe marker — the daily probe would write a forged peer entry to the negotiate inbox (#852)"
     elif grep -q '\.marvin_health_probe == true' <<< "$_nl_norm"; then
         test_pass "beacon negotiate gate: listener implements the health-probe marker the beacon gate greps for"
