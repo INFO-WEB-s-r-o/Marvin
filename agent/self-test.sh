@@ -1841,6 +1841,72 @@ if [[ -d "$_inbox_dir" ]]; then
     fi
 fi
 
+# ─── 9n. Agent and setup scripts must stay executable in the index ────────────
+# Issue #910. Commit 8024ed9 restored §9k by rewriting agent/self-test.sh whole
+# instead of editing in place, so the new file landed at the umask default and
+# the mode went 100755 → 100644. Nothing noticed: file-integrity.sh baselines
+# sha256/size/mtime but not mode, self-test.sh had no permission assertion at
+# all, and the diff renders as `agent/self-test.sh | 0` with 0 insertions and 0
+# deletions — GitHub's file view shows literally nothing. There is also no
+# runtime symptom, because nothing invokes self-test.sh via its shebang; it is
+# run as `bash agent/self-test.sh`, and bash does not consult the exec bit.
+#
+# Section letter 9n: 9a–9k are live on main, 9l is claimed by the open #894 and
+# 9m by the open #902. Chosen to collide with neither (#904).
+#
+# Reads the git INDEX rather than the filesystem, which is the whole point: it
+# makes the assertion independent of the checkout's own permissions and pins
+# the mode that actually merges. A `chmod +x` in a dirty working tree must not
+# be able to turn this green.
+#
+# Scoped to *.sh directly in agent/ and setup/ — 39 + 5 files, all 100755 on
+# main with zero exceptions. agent/lib/ is deliberately excluded: the split
+# there is real (claude/logging/metrics/outbound/prompts are 644 and sourced;
+# github.sh and pipefail-scan.sh are 755 and run), so a blanket rule would be
+# wrong and would have to carry an exception list that rots.
+#
+# Resolved via `dirname "$0"`, not ${MARVIN_DIR}: the latter is hardcoded to
+# the deployed tree, so a branch-authored check would assert against main and
+# pass while the branch it ships with is broken (#855, #874, #890).
+
+marvin_log "INFO" "Self-test: checking agent/setup script mode bits in the git index"
+
+_mode_repo=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd) || _mode_repo=""
+
+if [[ -z "$_mode_repo" || ! -d "${_mode_repo}/.git" && ! -f "${_mode_repo}/.git" ]]; then
+    test_warn "script mode bits: could not resolve a git repo from \$0 — check skipped (#910)"
+else
+    # `git ls-files -s` emits "<mode> <sha> <stage>\t<path>". The pathspec globs
+    # would also match agent/lib/*.sh (git's `*` crosses `/`), so the top-level
+    # restriction is applied here, in awk, against the real path field.
+    #
+    # Exit status is captured explicitly rather than swallowed with `|| true`:
+    # a git failure and a clean tree must not produce the same verdict, or the
+    # check reports "clean" for a scan that never ran.
+    if _mode_raw=$(git -C "$_mode_repo" ls-files -s -- 'agent/*.sh' 'setup/*.sh' 2>/dev/null); then
+        _mode_git_ok=1
+    else
+        _mode_git_ok=0
+        _mode_raw=""
+    fi
+
+    _mode_top=$(awk -F'\t' 'NF==2 && $2 ~ /^(agent|setup)\/[^\/]+\.sh$/ { print }' <<< "$_mode_raw") || _mode_top=""
+    _mode_total=$(awk 'NF' <<< "$_mode_top" | wc -l) || _mode_total=0
+    _mode_bad=$(awk -F'\t' 'NF==2 { split($1, f, " "); if (f[1] != "100755") printf "%s (%s) ", $2, f[1] }' <<< "$_mode_top") || _mode_bad=""
+
+    if [[ "$_mode_git_ok" -ne 1 ]]; then
+        test_warn "script mode bits: git ls-files failed in ${_mode_repo} — check could not run (#910)"
+    elif [[ "$_mode_total" -eq 0 ]]; then
+        # Zero tracked scripts is not a pass. Either the pathspec stopped
+        # matching or the layout moved; both make every assertion below vacuous.
+        test_fail "script mode bits: no tracked *.sh found directly in agent/ or setup/ — the check matched nothing and cannot vouch for anything (#910)"
+    elif [[ -n "$_mode_bad" ]]; then
+        test_fail "script mode bits: ${_mode_bad% } is not 100755 in the index — a whole-file rewrite drops the exec bit invisibly (0 insertions, 0 deletions in the diff) (#910)"
+    else
+        test_pass "script mode bits: all ${_mode_total} tracked *.sh in agent/ and setup/ are 100755 in the index (#910)"
+    fi
+fi
+
 # ─── 10. Security scoring system ──────────────────────────────────────────────
 # Grades the server A-F across multiple security dimensions
 
