@@ -2068,10 +2068,64 @@ else
             # ── Auth posture: an auth_request-gated path must document its 401 ──
             # Presence-only comparison would call the /api/exports/ pair clean
             # while the spec published them as open. That was half of #883.
-            _od_authed_prefixes=$(printf '%s\n' "$_od_tls" | awk '
-                /^[[:space:]]*location[[:space:]]+[^~=]/ { p=$2 }
-                /auth_request/ { if (p != "") print p }
-            ' | sort -u) || _od_authed_prefixes=""
+            #
+            # Attribution is by brace DEPTH, not by a bare `}` reset (#903).
+            # A bare reset is what the report suggested and it is wrong here:
+            # literal-prefix location blocks in this very file wrap nested
+            # `if (...) { ... }` blocks (/.well-known/ai-negotiate has two),
+            # so the first inner `}` would clear the tracker while still
+            # inside the block and an auth_request further down would be
+            # attributed to nothing. That is the same silent miss #903
+            # reports, only narrower — so the sibling parser's idiom three
+            # blocks up is not the one to copy.
+            #
+            # Per-line NET brace counting is what keeps braces inside quoted
+            # strings from derailing the depth: the one such line in this
+            # config (the 401 return whose JSON body carries both braces) is
+            # self-balancing. A line that is NOT self-balancing surfaces as a
+            # final-depth mismatch, reported below as an explicit FAIL rather
+            # than a confident wrong answer.
+            _od_auth_raw=$(printf '%s\n' "$_od_tls" | awk '
+                {
+                    _l = $0
+                    _o = gsub(/\{/, "", _l)
+                    _c = gsub(/\}/, "", _l)
+
+                    if (depth == 0 && $0 ~ /^[[:space:]]*location[[:space:]]+/) {
+                        if ($2 == "=" || $2 == "~" || $2 == "~*" || $2 == "^~") {
+                            mod = $2; path = $3
+                        } else {
+                            mod = ""; path = $2
+                        }
+                        # `~`/`~*` are regexes and `@name` is a named block —
+                        # neither is a path prefix, so a documented endpoint
+                        # cannot be prefix-matched against it. Carried out as
+                        # `U` so an auth_request inside one gets REPORTED
+                        # instead of dropped on the floor.
+                        if (mod != "~" && mod != "~*" && path ~ /^\//) {
+                            p = path; u = ""
+                        } else {
+                            p = ""; u = (mod == "" ? path : mod " " path)
+                        }
+                    }
+
+                    # Count the openers on this line before testing, so a
+                    # single-line location-with-auth_request is still seen.
+                    depth += _o
+                    if (depth >= 1 && $0 ~ /auth_request/) {
+                        if (p != "")      print "P\t" p
+                        else if (u != "") print "U\t" u
+                    }
+                    depth -= _c
+                    if (depth <= 0) { p = ""; u = "" }
+                    if (depth < mind) mind = depth
+                }
+                END { print "D\t" depth "\t" mind }
+            ') || _od_auth_raw=""
+
+            _od_depth=$(printf '%s\n' "$_od_auth_raw" | awk -F'\t' '$1=="D"{print $2":"$3}') || _od_depth=""
+            _od_authed_prefixes=$(printf '%s\n' "$_od_auth_raw" | awk -F'\t' '$1=="P"{print $2}' | sort -u) || _od_authed_prefixes=""
+            _od_auth_unmatchable=$(printf '%s\n' "$_od_auth_raw" | awk -F'\t' '$1=="U"{print $2}' | sort -u) || _od_auth_unmatchable=""
 
             _od_authgap=""
             while IFS= read -r _od_pref; do
@@ -2091,12 +2145,29 @@ else
                 done <<< "$_od_doc_api"
             done <<< "$_od_authed_prefixes"
 
-            if [[ -n "$_od_authgap" ]]; then
+            # The extraction above strips the opening `server {` but keeps the
+            # matching closing brace, so a correctly-counted TLS block ends at
+            # depth -1 and never dips below it. Any other result means the
+            # brace accounting lost its place — an unbalanced brace inside a
+            # string, or a changed extraction — and every attribution built on
+            # top of it is untrustworthy. Say so; do not report a verdict.
+            if [[ "$_od_depth" != "-1:-1" ]]; then
+                test_fail "openapi drift: auth-posture arm did not run — nginx brace accounting ended at depth:min '${_od_depth:-unknown}', expected '-1:-1'; auth_request attribution cannot be trusted (#903)"
+            elif [[ -n "$_od_authgap" ]]; then
                 test_fail "openapi drift: endpoint(s) behind an nginx auth_request are documented WITHOUT a 401 response — the spec publishes an authenticated endpoint as open (#883): ${_od_authgap}"
             elif [[ -z "$_od_authed_prefixes" ]]; then
-                test_warn "openapi drift: no auth_request-gated location blocks found in nginx-site.conf — the auth-posture arm had nothing to check"
+                test_warn "openapi drift: no prefix-matchable auth_request-gated location blocks found in nginx-site.conf — the auth-posture arm had nothing to check"
             else
                 test_pass "openapi drift: every documented endpoint behind an auth_request declares a 401 response"
+            fi
+
+            # A regex or named location carrying an auth_request cannot be
+            # prefix-matched against a documented path, so this arm cannot
+            # judge it. Name it rather than skipping it silently — an
+            # unreported gate is how a newly-gated public endpoint would slip
+            # past the very check that exists to catch one (#903).
+            if [[ "$_od_depth" == "-1:-1" && -n "$_od_auth_unmatchable" ]]; then
+                test_warn "openapi drift: auth_request present in location block(s) this arm cannot prefix-match against a documented path — check their 401 documentation by hand (#903): $(printf '%s' "$_od_auth_unmatchable" | tr '\n' ' ')"
             fi
         fi
     fi
