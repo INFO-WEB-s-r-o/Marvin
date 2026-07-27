@@ -279,6 +279,19 @@ _tmp_paths_in_use() {
 
             # Only on the failure path, so the common case still costs one
             # subshell per entry. readlink is silent without -v.
+            #
+            # The match below is coreutils' own ENOENT text, and LC_ALL=C is
+            # what keeps it in English: with a coreutils .mo installed and the
+            # pin removed, this compares against a translated string and never
+            # matches. Defensive rather than load-bearing today — this box has
+            # no coreutils translations at all — but `apt install locales-all`
+            # or a language-pack would silently make it load-bearing, so treat
+            # the pin and the literal as one unit and change neither alone.
+            #
+            # If it does break, it breaks safely: an unrecognised message is
+            # counted (not excused), so the function returns 2 and the caller
+            # skips the sweep. Measured by mutating the literal to one that
+            # cannot match — rc 0 -> 2, sweep skipped, nothing deleted.
             err=$(LC_ALL=C readlink -v "$t" 2>&1 >/dev/null) || true
             if [[ "$err" != *"No such file or directory"* ]] && [[ -d "$p" ]]; then
                 unreadable=$((unreadable + 1))
