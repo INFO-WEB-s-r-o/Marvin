@@ -1,0 +1,57 @@
+# self-test.sh section inventory — the ratchet for #891.
+#
+# One line per `# ─── <title> ───` header in agent/self-test.sh, normalized to
+# the title text alone. §1k compares this list against the file and FAILS on any
+# entry that is present here and absent there.
+#
+# It exists because sections have twice vanished without anyone deciding to
+# remove them: #889 (a `git merge main` resolved an overlapping hunk in favour
+# of the branch and deleted §9i, the #877 guard) and #892 (a new check was
+# written over §1i, deleting the weekly-analytics shape-parity comparison
+# outright). Both were caught by a human reading a diff. Neither was caught by
+# anything that runs.
+#
+# Titles, not just section letters, and that is deliberate: #892 kept the letter
+# §1i and replaced what was under it. An inventory of letters would have called
+# that file complete.
+#
+# Sections may be added and they may be REMOVED — this is not a freeze. It only
+# requires that a removal be a line deleted from this file, in the same commit,
+# visible in the same diff. Adding a section without recording it here is a WARN
+# naming the line to add, never a FAIL: an open PR must not be able to turn main
+# red by merging first.
+#
+# Lines starting with `#` and blank lines are ignored.
+
+Test helpers
+1. Bash syntax check for all agent scripts
+1a. Python syntax check for agent data-processing scripts
+1b. Merge conflict marker check
+1c. ShellCheck static analysis
+1d. run_claude call-site exit-code capture
+1e. negotiate-listener handler: reachable, and answers valid JSON
+1f. negotiate health probe is side-effect-free (#852)
+1g. github.sh label normalization (issue #850)
+1h. pipefail double-JSON-document detector (#855)
+1i. weekly-analytics fallback/success shape parity
+1k. self-test section inventory — sections may be removed, not vanish
+2. JSON data file validation
+3. Critical service checks
+4. Metric assertion tests
+5. health-monitor.sh produces valid JSON
+6. Claude CLI availability
+7. Web dashboard exists
+7b. Web build artifact ownership
+8. Git repo health
+9. Cron job health verification
+9b. log-analysis daily output freshness
+9c. Runtime JSON file integrity sweep
+9e. Public beacon content freshness
+9f. Beacon negotiate gate ⇆ listener marker agreement
+9i. --beacon-only reports failure when the beacon was discarded
+9j. Outbound egress sampling is wired, running, and reaches the score
+9z. Stale GPG home in project tree (issue #737)
+9d. Source ⇆ live config drift detection
+9h. nginx must not retain raw request bodies in the negotiate inbox
+10. Security scoring system
+Report
