@@ -200,6 +200,23 @@ fi
 # toward refusing a script that would in fact have fitted — the precise
 # outcome this whole section exists to prevent. Under a C/POSIX locale the two
 # coincide, so this is correct either way rather than locale-dependent.
+#
+# The sort is `-s -t $'\t' -k1,1n` and deliberately NOT `-n -u` (#897). With
+# `-n` active and no explicit key, GNU sort compares — and therefore dedupes —
+# on the leading numeric field alone, so two DIFFERENT scripts with the same
+# `wc -m` count are "duplicates" and one is discarded:
+#
+#   $ printf '100\tA.sh\n100\tB.sh\n' | sort -n -u   →   only 100<TAB>A.sh
+#
+# The loser vanished before the budgeting loop ever saw it, so it appeared
+# neither in the prompt nor in `_omitted` (that notice is built only from what
+# survives into `_ranked`) — a silent drop of an implicated script, in the code
+# whose entire purpose is to have no silent drops. `-u` was never needed:
+# within one call each base yields at most one real path per candidate
+# directory, and cross-tier repeats are deduped downstream by
+# `awk '!seen[$2]++'` on the full relative path. `-k1,1n` confines the numeric
+# comparison to the size field, and `-s` keeps ties in input order so the
+# ranking is reproducible run to run.
 _rank_scripts() {
     local base path rel
     for base in $1; do
@@ -209,7 +226,7 @@ _rank_scripts() {
             [[ "$rel" == "agent/common.sh" || "$rel" == "agent/lib/github.sh" ]] && continue
             printf '%s\t%s\n' "$(wc -m < "$path")" "$rel"
         done
-    done | sort -n -u
+    done | sort -s -t $'\t' -k1,1n
 }
 # ERROR/CRITICAL tier first, then WARN; awk drops a script already ranked in
 # the higher tier so it keeps its stronger claim on the budget.
