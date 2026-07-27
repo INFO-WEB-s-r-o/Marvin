@@ -2013,6 +2013,83 @@ else
                 test_pass "openapi drift: all $(printf '%s\n' "$_od_served" | wc -l) allowlisted /api/ endpoints are documented in openapi.yaml"
             fi
 
+    # ── Shared: attribute a directive to its enclosing location block ────────
+    # Both the direction-B arm and the auth-posture arm need the same thing —
+    # "which location block is this line inside?" — and until #906 they answered
+    # it two different ways. #903 fixed the auth parser to track brace DEPTH;
+    # direction B kept the bare `}` reset that #903 had just condemned, so the
+    # bug class was repaired in one sibling and left standing in the other. One
+    # implementation now, called twice, so that cannot happen a third time.
+    #
+    # Why depth and not a bare `}` reset: literal-prefix location blocks in this
+    # very file wrap nested `if (...) { ... }` blocks (/.well-known/ai-negotiate
+    # has two), so the first inner `}` clears a naive tracker while still inside
+    # the outer block, and a directive below it is attributed to nothing at all.
+    # For direction B that is a silent OPEN failure: a `deny all` after a nested
+    # `if` would go unrecorded, the denied prefix would be emitted as serving,
+    # and a documented endpoint nginx actually blocks would PASS.
+    #
+    # Per-line NET brace counting is what keeps braces inside quoted strings
+    # from derailing the depth: the one such line in this config (the 401 return
+    # whose JSON body carries both) is self-balancing. A line that is NOT
+    # self-balancing surfaces as a final-depth mismatch, which each caller
+    # reports as an explicit FAIL rather than a confident wrong answer.
+    #
+    # Reads the server-block text on stdin. $1 is an ERE matched per line.
+    # Emits, tab-separated:
+    #   L <path>            a literal-prefix or exact (`=`) location block
+    #   P <path>            the directive, inside one of those
+    #   U <mod path>        the directive, inside a regex (~, ~*) or named block
+    #   D <depth> <mind>    final brace accounting, for the caller's did-not-run
+    #                       guard. `_od_tls` is the INSIDE of the server block —
+    #                       opener stripped, closer kept — so well-formed is -1:-1.
+    #
+    # Exact `= /path` blocks count as literal: they carry a perfectly usable
+    # path and were silently dropped by the old `[^~=]` guard (#903). No `/api/`
+    # location in the current config uses `=`, so this changes nothing today.
+    _od_attribute() {
+        awk -v want="$1" '
+            {
+                _l = $0
+                _o = gsub(/\{/, "", _l)
+                _c = gsub(/\}/, "", _l)
+
+                if (depth == 0 && $0 ~ /^[[:space:]]*location[[:space:]]+/) {
+                    if ($2 == "=" || $2 == "~" || $2 == "~*" || $2 == "^~") {
+                        mod = $2; path = $3
+                    } else {
+                        mod = ""; path = $2
+                    }
+                    # `~`/`~*` are regexes and `@name` is a named block — neither
+                    # is a path prefix, so a documented endpoint cannot be
+                    # prefix-matched against it. Carried out as `U` so a match
+                    # inside one gets REPORTED instead of dropped on the floor.
+                    if (mod != "~" && mod != "~*" && path ~ /^\//) {
+                        p = path; u = ""; print "L\t" p
+                    } else {
+                        p = ""; u = (mod == "" ? path : mod " " path)
+                    }
+                }
+
+                # Count the openers on this line before testing, so a
+                # single-line `location /x { directive; }` is still seen.
+                depth += _o
+                if (depth >= 1 && $0 ~ want) {
+                    if (p != "")      print "P\t" p
+                    else if (u != "") print "U\t" u
+                }
+                depth -= _c
+                if (depth <= 0) { p = ""; u = "" }
+                if (depth < mind) mind = depth
+            }
+            # mind stays unassigned when depth never goes negative, and an
+            # unassigned awk variable prints as the empty string — a mismatch
+            # message reading "0:" rather than "0:0". Normalised here so the
+            # did-not-run FAIL states a number the reader can compare.
+            END { print "D\t" depth "\t" (mind == "" ? 0 : mind) }
+        '
+    }
+
             # ── Direction B: documented but not served ──
             # A documented path counts as served if it is in the allowlist, or if
             # a dedicated prefix `location` block covers it and that block does
@@ -2027,20 +2104,18 @@ else
             # deleted peers-public.json from the allowlist while leaving it
             # documented still reported PASS — caught by mutation-testing the
             # arm, not by reading it.
-            _od_serving_prefixes=$(printf '%s\n' "$_od_tls" | awk '
-                /^[[:space:]]*location[[:space:]]+/ {
-                    inloc = 0
-                    if ($2 ~ /^\//) { p = $2; inloc = 1; seen[p] = 1 } else { p = "" }
-                    next
-                }
-                /^[[:space:]]*}[[:space:]]*$/ { inloc = 0; p = ""; next }
-                inloc && /deny all|return 403/ { denied[p] = 1 }
-                END {
-                    for (k in seen)
-                        if (!(k in denied) && index(k, "/api/") == 1 && k != "/api/")
-                            print k
-                }
-            ') || _od_serving_prefixes=""
+            _od_serve_raw=$(printf '%s\n' "$_od_tls" | _od_attribute 'deny all|return 403') || _od_serve_raw=""
+            _od_serve_depth=$(printf '%s\n' "$_od_serve_raw" | awk -F'\t' '$1=="D"{print $2":"$3}') || _od_serve_depth=""
+
+            # Serving = every literal location seen, minus the ones that deny.
+            # Restricted to prefixes strictly below /api/ for the reason above.
+            # A denial inside a regex or named block comes back as `U` and is
+            # ignored here: such a block is not in the `L` set either, so it can
+            # neither add nor remove coverage.
+            _od_serving_prefixes=$(comm -23 \
+                <(printf '%s\n' "$_od_serve_raw" | awk -F'\t' '$1=="L"{print $2}' | sort -u) \
+                <(printf '%s\n' "$_od_serve_raw" | awk -F'\t' '$1=="P"{print $2}' | sort -u) \
+                | awk 'index($0, "/api/") == 1 && $0 != "/api/"') || _od_serving_prefixes=""
 
             _od_unserved=""
             while IFS= read -r _od_p; do
@@ -2059,7 +2134,13 @@ else
                 [[ "$_od_covered" -eq 0 ]] && _od_unserved+="${_od_p} "
             done <<< "$_od_doc_api"
 
-            if [[ -n "$_od_unserved" ]]; then
+            # Same did-not-run guard the auth arm carries: if the brace
+            # accounting did not end where a well-formed block must, every
+            # location attribution above is untrustworthy and the coverage set
+            # may be over-broad — which for this direction means a wrong PASS.
+            if [[ "$_od_serve_depth" != "-1:-1" ]]; then
+                test_fail "openapi drift: direction-B parser brace accounting ended at depth:min '${_od_serve_depth:-unknown}', expected '-1:-1' — location attribution cannot be trusted and this arm DID NOT RUN (#906)"
+            elif [[ -n "$_od_unserved" ]]; then
                 test_fail "openapi drift: documented endpoint(s) are neither in the /api/ allowlist nor covered by a serving location block — anyone building against the published spec gets 403/404 (#883): ${_od_unserved}"
             else
                 test_pass "openapi drift: every documented /api/ endpoint is either allowlisted or covered by a dedicated serving location block"
@@ -2069,59 +2150,9 @@ else
             # Presence-only comparison would call the /api/exports/ pair clean
             # while the spec published them as open. That was half of #883.
             #
-            # Attribution is by brace DEPTH, not by a bare `}` reset (#903).
-            # A bare reset is what the report suggested and it is wrong here:
-            # literal-prefix location blocks in this very file wrap nested
-            # `if (...) { ... }` blocks (/.well-known/ai-negotiate has two),
-            # so the first inner `}` would clear the tracker while still
-            # inside the block and an auth_request further down would be
-            # attributed to nothing. That is the same silent miss #903
-            # reports, only narrower — so the sibling parser's idiom three
-            # blocks up is not the one to copy.
-            #
-            # Per-line NET brace counting is what keeps braces inside quoted
-            # strings from derailing the depth: the one such line in this
-            # config (the 401 return whose JSON body carries both braces) is
-            # self-balancing. A line that is NOT self-balancing surfaces as a
-            # final-depth mismatch, reported below as an explicit FAIL rather
-            # than a confident wrong answer.
-            _od_auth_raw=$(printf '%s\n' "$_od_tls" | awk '
-                {
-                    _l = $0
-                    _o = gsub(/\{/, "", _l)
-                    _c = gsub(/\}/, "", _l)
-
-                    if (depth == 0 && $0 ~ /^[[:space:]]*location[[:space:]]+/) {
-                        if ($2 == "=" || $2 == "~" || $2 == "~*" || $2 == "^~") {
-                            mod = $2; path = $3
-                        } else {
-                            mod = ""; path = $2
-                        }
-                        # `~`/`~*` are regexes and `@name` is a named block —
-                        # neither is a path prefix, so a documented endpoint
-                        # cannot be prefix-matched against it. Carried out as
-                        # `U` so an auth_request inside one gets REPORTED
-                        # instead of dropped on the floor.
-                        if (mod != "~" && mod != "~*" && path ~ /^\//) {
-                            p = path; u = ""
-                        } else {
-                            p = ""; u = (mod == "" ? path : mod " " path)
-                        }
-                    }
-
-                    # Count the openers on this line before testing, so a
-                    # single-line location-with-auth_request is still seen.
-                    depth += _o
-                    if (depth >= 1 && $0 ~ /auth_request/) {
-                        if (p != "")      print "P\t" p
-                        else if (u != "") print "U\t" u
-                    }
-                    depth -= _c
-                    if (depth <= 0) { p = ""; u = "" }
-                    if (depth < mind) mind = depth
-                }
-                END { print "D\t" depth "\t" mind }
-            ') || _od_auth_raw=""
+            # Attribution is by brace DEPTH, not by a bare `}` reset (#903) —
+            # see _od_attribute above, which both arms now share (#906).
+            _od_auth_raw=$(printf '%s\n' "$_od_tls" | _od_attribute 'auth_request') || _od_auth_raw=""
 
             _od_depth=$(printf '%s\n' "$_od_auth_raw" | awk -F'\t' '$1=="D"{print $2":"$3}') || _od_depth=""
             _od_authed_prefixes=$(printf '%s\n' "$_od_auth_raw" | awk -F'\t' '$1=="P"{print $2}' | sort -u) || _od_authed_prefixes=""
