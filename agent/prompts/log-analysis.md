@@ -36,7 +36,7 @@ For each log entry (or group of related entries), classify it into one of:
 - Repeated visits from same IP to API endpoints (not just /)
 - POST requests with JSON bodies to non-standard endpoints
 - Any mention of "marvin", "echo", "communicate", "negotiate", "protocol", "ping"
-- Requests to port 8042
+- Requests to port 8042 — the port was withdrawn in #849 (never had a listener, no longer firewalled open, no longer advertised). Kept as a signal deliberately: traffic to it is now *more* anomalous, not less, since nothing has pointed a peer at it since the beacon stopped naming it.
 
 ### AI Patterns (MEDIUM priority)
 

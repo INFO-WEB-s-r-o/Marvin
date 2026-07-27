@@ -115,8 +115,6 @@ ufw default allow outgoing
 ufw allow ssh
 ufw allow http
 ufw allow https
-# Allow the AI communication port
-ufw allow 8042/tcp comment "Marvin AI comm port"
 echo "y" | ufw enable
 log "Firewall configured."
 
@@ -343,12 +341,20 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
     
-    # API endpoints (generated JSON files)
-    location /api/ {
-        alias ${MARVIN_DIR}/data/;
+    # API endpoints (generated JSON files) — ALLOWLIST, not a denylist.
+    # A bare `alias ${MARVIN_DIR}/data/` here publishes all of data/, including
+    # security/, email/ and comms/, which the post-certbot site config denies.
+    # This block is written by bootstrap, so a re-run must not silently reinstate
+    # a wider surface than setup/nginx-site.conf serves. Keep the two in sync.
+    location ~ ^/api/((?:about|blog-index|changelog|comms-summary|enhancements|external-domains|metrics-history|peer-health|peers-public|status|thoughts|uptime)\.json|(?:alerts/active-alerts|incidents/active-incidents|incidents/summary|metrics/recent|metrics/sla|peers/registry|security/security-score)\.json|reports/weekly-card-latest\.svg)\$ {
+        alias ${MARVIN_DIR}/data/\$1;
         default_type application/json;
         add_header Access-Control-Allow-Origin "*";
         add_header Cache-Control "no-cache";
+    }
+
+    location /api/ {
+        return 403;
     }
 
     # Export API — BLOCKED on plaintext HTTP (defense in depth)
@@ -392,13 +398,12 @@ server {
             return 405;
         }
         
-        # Write request body to inbox
-        client_body_temp_path ${MARVIN_DIR}/data/comms/negotiate-inbox;
-        client_body_in_file_only on;
-        
-        # Use lua or a simple proxy to save — fallback: use a tiny CGI
-        # For now, proxy to a simple shell-based handler via a named pipe
-        # We'll use a simpler approach: nginx upload module or just log and process
+        # Deliberately NO client_body_temp_path / client_body_in_file_only
+        # (issue #854): negotiate-listener.sh reads the body from stdin, so
+        # nginx writing it into the handler's inbox fed nothing — and
+        # \`in_file_only on\` never removes the file, so every public POST
+        # left a permanent raw body there. Keep this block in step with
+        # setup/nginx-site.conf, which self-test §9d diffs against live.
         proxy_pass http://127.0.0.1:8043;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Request-Id \$request_id;
@@ -448,7 +453,6 @@ cat > "${MARVIN_DIR}/data/comms/identity.json" << EOF
   "born": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "host": "${SERVER_IP}",
   "status_url": "http://${SERVER_IP}/",
-  "comm_port": 8042,
   "capabilities": ["system-management", "self-enhancement", "communication", "log-analysis", "protocol-negotiation", "github-integration"],
   "github": "https://github.com/INFO-WEB-s-r-o/Marvin",
   "gpg_public_key": "/.well-known/marvin-gpg.asc",

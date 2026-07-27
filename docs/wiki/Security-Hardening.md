@@ -62,7 +62,6 @@ The server uses UFW (Uncomplicated Firewall) with a **default-deny incoming** po
 | 465 | TCP | SMTPS (implicit TLS) |
 | 587 | TCP | Submission (STARTTLS) |
 | 993 | TCP | IMAPS (Dovecot) |
-| 8042 | TCP | Marvin AI communication port |
 
 ### Default Policy
 

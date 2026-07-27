@@ -197,6 +197,111 @@ if [[ "$unexpected_count" -gt 0 ]]; then
     marvin_log "WARN" "Found ${unexpected_count} unexpected listening port(s): ${unexpected_ports}"
 fi
 
+# ─── Ingress permitted for a port nothing is expected to serve (issue #849) ────
+# The loop above finds listeners without permission. This one finds the inverse:
+# permission without a listener. Both directions matter, and only one was
+# checked — which is how `ufw allow 8042/tcp` sat open to the whole internet,
+# on both address families, for 154 days for a service that was never built.
+# The arrangement was exactly backwards: the firewall let the world in while
+# EXPECTED_PORTS was configured to raise an alarm the moment anything answered.
+#
+# Keyed off EXPECTED_PORTS, not off what happens to be listening right now. A
+# rule whose service is merely stopped this second is not the finding; a rule
+# for a port this host has no business serving at all is. That also keeps the
+# check from flapping during a restart.
+#
+# App-profile rules (`OpenSSH`) are skipped deliberately: they are names, not
+# numbers, and resolve to ports already covered by the numeric rules beside
+# them. Skipping them is stated in the summary so a profile that ever did open
+# something unexpected cannot hide behind a silent `continue`.
+ufw_unexpected=""
+ufw_unexpected_count=0
+ufw_profile_rules=0
+ufw_scan_ok=true
+# Initialised FALSE on purpose. `true` on this variable must mean "observed
+# `Status: active` with my own eyes", never "nothing has told me otherwise".
+# It previously defaulted to true, so the three paths where the audit never
+# ran at all — ufw absent from PATH, `ufw status` non-zero, empty output —
+# published `"ufw_firewall_active": true` in the JSON report: a consumer
+# reading that field alone would see a firewall confirmed up on a host where
+# nothing was ever checked. Same silent-absence shape as #881, one field over.
+ufw_firewall_active=false
+
+if command -v ufw >/dev/null 2>&1; then
+    # Assignment fallback rather than `|| true` on the pipeline: `x=$(scan) || true`
+    # collapses "the scanner broke" into "the scanner found nothing", and this
+    # whole check exists because an absence went unnoticed for five months.
+    ufw_raw=$(ufw status 2>/dev/null) || ufw_scan_ok=false
+    if [[ "$ufw_scan_ok" == true && -n "$ufw_raw" ]]; then
+        # An INACTIVE firewall has no ALLOW lines at all, so the loop below
+        # would find nothing and the audit would report "clean" for a host with
+        # no packet filtering whatsoever (#881, from this PR's review). That is
+        # the identical silent-absence shape this check was written to close,
+        # reproduced inside the check itself — an empty result meaning "nothing
+        # to permit" and "everything is permitted" at the same time. Must be
+        # read before the rules are parsed, not after.
+        if ! printf '%s\n' "$ufw_raw" | grep -qE '^Status: active'; then
+            ufw_firewall_active=false
+        else
+            ufw_firewall_active=true
+        fi
+
+        if [[ "$ufw_firewall_active" != true ]]; then
+            ufw_scan_ok=false
+            marvin_log "CRITICAL" "UFW reports the firewall is NOT active — every port is open and the ingress audit below is meaningless; this is not a clean result (#881)"
+        else
+            # Field 1 is the "To" column: `22/tcp`, `443`, `8042/tcp (v6)`,
+            # `OpenSSH`, and multi-port/range forms like `80,443/tcp` or
+            # `6000:6010/tcp`. v4 and v6 rules for one port collapse to a single
+            # finding via sort -u.
+            while read -r _ufw_to; do
+                [[ -n "$_ufw_to" ]] || continue
+                # Strip the optional protocol suffix once, then decide. A
+                # multi-port rule used to fall through to the `else` and be
+                # counted as an "app-profile rule" (#879 review) — a silent
+                # mislabel that would hide a genuinely unexpected opening
+                # behind a benign-sounding skip count.
+                _ufw_spec="${_ufw_to%/tcp}"
+                _ufw_spec="${_ufw_spec%/udp}"
+                if [[ "$_ufw_spec" =~ ^[0-9]+([,:][0-9]+)*$ ]]; then
+                    # Ranges (`6000:6010`) are expanded to their endpoints only:
+                    # reporting the boundaries is enough to identify the rule,
+                    # and enumerating a 10k-port range into the log is not.
+                    # Stated plainly so this is not later mistaken for full
+                    # coverage: the INTERIOR ports of a range are NOT checked
+                    # individually. A range whose two endpoints both appear in
+                    # EXPECTED_PORTS passes silently even if everything between
+                    # them is unexpected. Deliberate tradeoff, and a real gap —
+                    # this host currently has no range rules, so it costs
+                    # nothing today; revisit if one is ever added.
+                    while read -r _ufw_port; do
+                        [[ -n "$_ufw_port" ]] || continue
+                        if ! echo "$EXPECTED_PORTS" | grep -qw "$_ufw_port"; then
+                            ufw_unexpected="${ufw_unexpected}${ufw_unexpected:+, }${_ufw_port}"
+                            ufw_unexpected_count=$((ufw_unexpected_count + 1))
+                            marvin_log "WARN" "UFW permits ingress on port ${_ufw_port} (rule '${_ufw_to}') but it is absent from EXPECTED_PORTS — a pre-authorised opening for whatever binds it next (#849)"
+                        fi
+                    done < <(printf '%s\n' "$_ufw_spec" | tr ',:' '\n\n')
+                else
+                    ufw_profile_rules=$((ufw_profile_rules + 1))
+                fi
+            done < <(printf '%s\n' "$ufw_raw" | awk '/ALLOW/ {print $1}' | sort -u)
+        fi
+    else
+        ufw_scan_ok=false
+    fi
+else
+    ufw_scan_ok=false
+fi
+
+if [[ "$ufw_scan_ok" != true ]]; then
+    # Distinct from "found nothing", and deliberately not silent: a check that
+    # could not run must not report clean.
+    marvin_log "WARN" "UFW rule audit could not run or could not be trusted (ufw absent, status unreadable, or firewall inactive) — ingress rules NOT verified this scan (#849)"
+elif [[ "$ufw_unexpected_count" -gt 0 ]]; then
+    marvin_log "WARN" "Found ${ufw_unexpected_count} UFW ingress rule(s) with no EXPECTED_PORTS entry: ${ufw_unexpected} (${ufw_profile_rules} app-profile rule(s) skipped)"
+fi
+
 # Save port inventory for trending
 PORT_INVENTORY="${SECURITY_DIR}/port-inventory.json"
 port_list_json=$(echo "$active_ports" | jq -Rn '[inputs | select(. != "") | tonumber]' 2>/dev/null || echo "[]")
@@ -864,6 +969,11 @@ cat > "$REPORT_FILE" << EOF
     "unexpected_ports": ${unexpected_count},
     "unexpected_port_list": "${unexpected_ports}",
     "unexpected_port_details": ${unexpected_details_json},
+    "ufw_audit_ran": ${ufw_scan_ok},
+    "ufw_firewall_active": ${ufw_firewall_active},
+    "ufw_unexpected_rules": ${ufw_unexpected_count},
+    "ufw_unexpected_rule_list": "${ufw_unexpected}",
+    "ufw_profile_rules_skipped": ${ufw_profile_rules},
     "established_connections": ${established_count},
     "suspicious_connections": $(echo "$suspicious_conns" | jq 'length' 2>/dev/null || echo 0),
     "high_rate_ips": ${high_rate_count},

@@ -414,6 +414,106 @@ else
     done
 fi
 
+# ─── 1i. weekly-analytics fallback/success shape parity ──────────────────────
+# `_claude_usage()` emits one object on success and a hand-written zero object
+# on the failure/empty paths. Those two shapes must carry the same keys: a
+# consumer reading a field that only the success shape defines gets `null`
+# instead of 0, and nothing downstream distinguishes "no runs" from "key was
+# never there". This is not hypothetical — both fallback literals had already
+# drifted from the jq object, omitting total_prompt_chars and
+# total_output_chars, and the drift was invisible because the fallback only
+# renders on an I/O fault. Collapsed to a single `_zero_claude_usage()`; this
+# asserts it stays in step as fields are added to the jq block.
+#
+# Extract the functions from the script rather than sourcing it (the script
+# runs its whole pipeline at import) and read them via `dirname $0`, NOT
+# MARVIN_DIR — a branch-authored test that resolves through MARVIN_DIR asserts
+# against the deployed main copy and would pass while the branch regressed.
+
+marvin_log "INFO" "Self-test: checking weekly-analytics claude-usage shape parity"
+
+_wa_script="$(dirname "$0")/weekly-analytics.sh"
+if [[ -r "$_wa_script" ]]; then
+    # Slices one function out of weekly-analytics.sh: matches its opening
+    # `fn() {` and stops at the first `}` in column 0.
+    #
+    # That terminator is a structural ASSUMPTION about the source file, not
+    # something the source file enforces. Every brace inside the three
+    # functions extracted here — including the multi-line jq literal — is
+    # indented today; a future reformat leaving a closing `}` at column 0
+    # mid-body would truncate the slice. It fails safe rather than silently
+    # passing: a truncated function is unbalanced bash, `eval` rejects it, and
+    # the `|| exit 3` / `declare -F` guards below render that as test_warn
+    # ("could not run"), never test_pass. Recorded so the next reader knows
+    # the assumption is deliberate and what to re-check if it spreads.
+    _wa_extract() {
+        awk -v fn="$1" '$0 ~ "^"fn"\\(\\) \\{" {p=1} p {print} p && /^\}$/ {exit}' "$_wa_script"
+    }
+    # Subshell: the extracted functions and the METRICS_DIR override must not
+    # leak into the rest of the suite.
+    #
+    # `|| _shape_rc=$?` rather than a bare assignment read by `$?` on the next
+    # line: this file runs under `set -euo pipefail` with `trap
+    # marvin_error_trap ERR`, so an assignment from a subshell that exits
+    # non-zero is a failing simple command, and the suite ABORTS — reporting a
+    # crash — at the exact moment this check finds the drift it exists to
+    # find. Demonstrated after the fact: with a field deleted from
+    # `_zero_claude_usage()`, the previous spelling fired the ERR trap and
+    # exited 1 with no `test_fail` line at all; the entry above claims this
+    # negative control "fails with both key lists printed", and it did not.
+    # As part of an OR-list the assignment is exempt from both errexit and the
+    # trap. (Same defect, same shape, found the same way in #862's §9g.)
+    _shape_rc=0
+    _shape_result=$(
+        set +e
+        _wa_tmp=$(mktemp -d) || exit 3
+        trap 'rm -rf "$_wa_tmp"' EXIT
+        # Read by the _claude_usage extracted below; shellcheck cannot see
+        # through the eval, hence the disable rather than a spurious export.
+        # shellcheck disable=SC2034
+        METRICS_DIR="$_wa_tmp"
+        _wa_day=$(date -u +%Y-%m-%d)
+        printf '{"task":"selftest","duration_s":1,"prompt_chars":1,"output_chars":1,"exit_code":0}\n' \
+            > "${_wa_tmp}/claude-usage-${_wa_day}.jsonl" || exit 3
+        # `eval` is on the guideline's security red-flag list, so the trust
+        # boundary is worth stating rather than leaving to inference: the text
+        # evaluated here is sliced from agent/weekly-analytics.sh, a file
+        # tracked in this same repo and already executed as root by cron. It is
+        # never runtime input, never peer- or user-supplied, and never leaves
+        # this subshell. Anyone who can change what this evaluates can already
+        # change what the daily job runs.
+        eval "$(_wa_extract _dates_in_range)" 2>/dev/null || exit 3
+        eval "$(_wa_extract _zero_claude_usage)" 2>/dev/null || exit 3
+        eval "$(_wa_extract _claude_usage)" 2>/dev/null || exit 3
+        # All three, not just one. `eval ""` on a failed extraction succeeds, so
+        # `|| exit 3` above cannot catch an extractor miss — only this can. And a
+        # missing `_dates_in_range` specifically produces a FALSE PASS, not a
+        # crash: it is called from `< <(_dates_in_range …)`, whose command-not-
+        # found never reaches `_claude_usage`'s exit status, so `files` comes back
+        # empty and `_claude_usage` returns `_zero_claude_usage` — the check then
+        # compares the fallback shape against itself and reports test_pass having
+        # asserted nothing. Demonstrated: extracting only the other two functions
+        # exits 0 today. (#867 — an assertion that cannot fail.)
+        declare -F _dates_in_range _zero_claude_usage _claude_usage >/dev/null || exit 3
+        _ok=$(_claude_usage "$_wa_day" "$_wa_day" | jq -r 'keys|join(",")' 2>/dev/null) || exit 3
+        _zero=$(_zero_claude_usage | jq -r 'keys|join(",")' 2>/dev/null) || exit 3
+        [[ -n "$_ok" && -n "$_zero" ]] || exit 3
+        [[ "$_ok" == "$_zero" ]] && exit 0
+        printf 'success=[%s] fallback=[%s]' "$_ok" "$_zero"
+        exit 1
+    ) || _shape_rc=$?
+    case "$_shape_rc" in
+        0) test_pass "weekly-analytics: claude-usage fallback shape matches success shape" ;;
+        1) test_fail "weekly-analytics: claude-usage fallback shape drifted — ${_shape_result}" ;;
+        # Exit 3 is "could not run the check", kept distinct from a clean pass —
+        # the §1h lesson from #858: a harness that collapses "did not run" into
+        # "found nothing" reports green for a test that never executed.
+        *) test_warn "weekly-analytics: claude-usage shape check could not run (extract/jq failure)" ;;
+    esac
+else
+    test_warn "weekly-analytics: claude-usage shape check skipped — script not readable"
+fi
+
 # ─── 2. JSON data file validation ────────────────────────────────────────────
 
 marvin_log "INFO" "Self-test: validating JSON data files"
@@ -1046,6 +1146,77 @@ else
         test_pass "config in sync: cron (setup-cron.sh ⇆ /etc/cron.d/marvin)"
     else
         test_warn "config drift: cron — setup-cron.sh would not reproduce live /etc/cron.d/marvin (a bootstrap re-run could drop or revert active jobs)"
+    fi
+fi
+
+# ─── 9h. nginx must not retain raw request bodies in the negotiate inbox ──────
+# Issue #854. `client_body_in_file_only on` in the /.well-known/ai-negotiate
+# location made nginx keep every request body forever, as a raw
+# attacker-controlled file inside the very directory negotiate-handler.sh globs
+# for proposals. It survived because the glob is `*.json` and nginx's temp files
+# have no extension — one character of luck between "inert" and "the public
+# endpoint feeds the handler unsanitized input".
+#
+# Lives in the §9 config family rather than §1 because it is the same shape as
+# §9d: an assertion about configuration, not about script syntax. Sources are
+# FAIL (the repo is what a rebuild reads); the live copy is WARN, because
+# reconciling it is a deploy step and §9d already tracks that drift. Checked in
+# BOTH tracked sources — nginx-site.conf and bootstrap.sh's heredoc — since only
+# the former is diffed against live, so a bootstrap re-run was free to reinstate
+# what a fix to the other one removed.
+
+marvin_log "INFO" "Self-test: checking nginx does not retain raw negotiate bodies"
+
+# Two distinct invariants, deliberately not merged into one regex — the review of
+# #856 was right that `client_body_in_file_only clean` does NOT retain (nginx
+# removes the file after the request), so banning it under a "retains" message
+# would fail a future legitimate config with a factually false reason.
+#
+#   RETAIN — `in_file_only on` is the one value that never removes the file.
+#   INBOX  — a client_body_temp_path under the project data dir puts a raw,
+#            caller-controlled body inside the directory negotiate-handler.sh
+#            globs, which is the actual defect. This one catches `clean` too:
+#            transient or not, untrusted input does not belong in the inbox.
+#
+# So `clean` with a temp path outside the project tree stays legal, and both
+# messages state something true.
+_body_retain_re='^[[:space:]]*client_body_in_file_only[[:space:]]+on([[:space:]]|;)'
+_body_inbox_re='^[[:space:]]*client_body_temp_path[[:space:]]+[^;]*(negotiate-inbox|data/comms)'
+_body_retain_fails=0
+for _brs in "${MARVIN_DIR}/setup/nginx-site.conf" "${MARVIN_DIR}/setup/bootstrap.sh"; do
+    [[ -r "$_brs" ]] || continue
+    if grep -qE "$_body_retain_re" "$_brs" 2>/dev/null; then
+        test_fail "nginx source never removes request-body temp files (client_body_in_file_only on): $(basename "$_brs")"
+        _body_retain_fails=$((_body_retain_fails + 1))
+    fi
+    if grep -qE "$_body_inbox_re" "$_brs" 2>/dev/null; then
+        test_fail "nginx source writes raw request bodies into the handler's inbox (client_body_temp_path): $(basename "$_brs")"
+        _body_retain_fails=$((_body_retain_fails + 1))
+    fi
+done
+if [[ "$_body_retain_fails" -eq 0 ]]; then
+    test_pass "nginx sources do not deposit raw request bodies in the negotiate inbox"
+fi
+
+_nginx_live_site="/etc/nginx/sites-available/marvin"
+if [[ -r "$_nginx_live_site" ]] \
+    && grep -qE "$_body_retain_re|$_body_inbox_re" "$_nginx_live_site" 2>/dev/null; then
+    test_warn "live nginx config still deposits raw request bodies in the negotiate inbox — reload after deploying the fixed nginx-site.conf (#854)"
+fi
+
+# Residue: nginx temp bodies are extension-less numeric names, so any non-*.json
+# file in the inbox is either retained-body leftovers or something stranger.
+# WARN-only — the handler ignores them, and deleting evidence is not a test's job.
+_inbox_dir="${COMMS_DIR}/negotiate-inbox"
+if [[ -d "$_inbox_dir" ]]; then
+    # Assignment fallback, not `|| echo` — a bare `$(find | wc)` under
+    # `set -euo pipefail` + the ERR trap would abort the whole suite if the dir
+    # were ever unreadable (the §1d crash class, and the #841 fallback shape).
+    _inbox_residue=$(find "$_inbox_dir" -maxdepth 1 -type f ! -name '*.json' 2>/dev/null | wc -l) || _inbox_residue=0
+    if [[ "${_inbox_residue:-0}" -gt 0 ]]; then
+        test_warn "negotiate inbox holds ${_inbox_residue} non-JSON file(s) — retained nginx request bodies (#854)"
+    else
+        test_pass "negotiate inbox holds no retained request bodies"
     fi
 fi
 
