@@ -123,6 +123,13 @@ done
 # unquoted `#` that begins a word — so a trailing comment is ignored while
 # `(#882)` is not mistaken for one.
 #
+# A word begins after whitespace OR after an unquoted shell metacharacter, so
+# `false;# it'"'"'s fine` and `foo |# note` are recognised as comments too. Checking
+# only for whitespace (as the first version of this scan did) left an apostrophe
+# inside such a comment free to flip quote state — #887 one delimiter over. `{`
+# is deliberately NOT in the set: `${#arr[@]}` and `${var#pfx}` are parameter
+# expansions, not comments.
+#
 # Limitation, deliberately left: the word-start test looks one character back in
 # the ACCUMULATED buffer, not in the original physical line. A backslash-
 # continued line whose continuation begins with `#` has that `#` preceded by the
@@ -146,7 +153,8 @@ function sq_open(s,   i, c, p, in_s, in_d, L) {
     if (c == "\"" && !in_s) { in_d = !in_d; continue }
     if (c == "#" && !in_s && !in_d) {
       p = (i == 1) ? " " : substr(s, i - 1, 1)
-      if (p == " " || p == "\t") break
+      if (p == " " || p == "\t" || p == ";" || p == "|" ||
+          p == "&" || p == "(" || p == ")") break
     }
   }
   return in_s
@@ -192,6 +200,7 @@ crontab -l | awk '
 echo one \
   two
 echo hi   # doesn't matter
+false;# it doesn't need a space in front
 echo tail
 _PFSC_FIXTURE
     ) || return 1
@@ -201,7 +210,8 @@ _PFSC_FIXTURE
 3:crontab -l | awk ' { print $1 } ' | wc -l
 6:echo one two
 8:echo hi # doesn't matter
-9:echo tail
+9:false;# it doesn't need a space in front
+10:echo tail
 _PFSC_EXPECT
     ) || return 1
     if [[ "$_got" != "$_want" ]]; then
