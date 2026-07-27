@@ -2171,6 +2171,92 @@ else
             fi
         fi
     fi
+
+    # ── Arm 4: an apiKey security scheme must name a header nginx actually reads ──
+    # #905: the ExportKey scheme shipped as `name: X-Export-Key` while the gate is
+    # `map $http_x_api_key $export_api_key_header` — nginx never looks at an
+    # X-Export-Key header. Arm 3 above cannot catch this: it asserts that a gated
+    # path declares a 401, not that the scheme that path points at names the right
+    # header. A consumer following the published contract sends the documented
+    # header, receives 401, and the spec gives no way to discover why — the #883
+    # failure mode relocated from "which paths are documented" to "which header
+    # authenticates them".
+    #
+    # Deliberately outside the allowlist-parse branches above: this arm needs
+    # neither the allowlist nor the path sets, so a config-shape change that stops
+    # arms 1–3 must not silently take this one with it.
+    #
+    # The map lives at http level in nginx.conf, generated from setup/bootstrap.sh,
+    # so both sources are scanned. Comments are stripped first — nginx-site.conf
+    # mentions $http_x_api_key ONLY in a comment, and a check satisfiable by prose
+    # passes for any header name someone happens to have written in a comment
+    # (#889/#892 class).
+    _od_boot="$(dirname "$0")/../setup/bootstrap.sh"
+    _od_hdr_src=""
+    _od_hdr_read=0
+    _od_hdr_err=""
+    for _od_f in "$_od_conf" "$_od_boot"; do
+        if [[ ! -r "$_od_f" ]]; then
+            _od_hdr_err+="$(basename "$_od_f") "
+            continue
+        fi
+        _od_rc=0
+        _od_stripped=$(grep -vE '^[[:space:]]*#' "$_od_f") || _od_rc=$?
+        # grep exit 1 means "file was all comments" — legitimate. Exit >1 is a
+        # scanner failure and must not be laundered into "no header found".
+        if [[ "$_od_rc" -gt 1 ]]; then
+            _od_hdr_err+="$(basename "$_od_f") "
+            continue
+        fi
+        _od_hdr_read=$((_od_hdr_read + 1))
+        _od_hdr_src+="${_od_stripped}"$'\n'
+    done
+
+    # Every request header nginx reads, as declared variables: $http_x_api_key →
+    # X-Api-Key. Used both to test the documented names and to name the real ones
+    # in the failure message, so the fix is readable off the failure.
+    _od_nginx_vars=$(printf '%s\n' "$_od_hdr_src" | grep -oE '\$http_[a-z0-9_]+' | sort -u) || _od_nginx_vars=""
+
+    # apiKey-in-header schemes declared by the spec, as "<scheme>\t<header>".
+    _od_apikeys=$(awk '
+        function flush() {
+            if (sch != "" && ty == "apiKey" && loc == "header" && nm != "") print sch "\t" nm
+            sch=""; ty=""; loc=""; nm=""
+        }
+        /^  securitySchemes:[[:space:]]*$/ { in_ss=1; next }
+        in_ss && /^  [^[:space:]]/ { flush(); in_ss=0; next }
+        in_ss && /^    [A-Za-z0-9_.-]+:[[:space:]]*$/ { flush(); sch=$1; sub(/:$/, "", sch); next }
+        in_ss && /^      type:[[:space:]]/ { ty=$2 }
+        in_ss && /^      in:[[:space:]]/   { loc=$2 }
+        in_ss && /^      name:[[:space:]]/ { nm=$2 }
+        END { if (in_ss) flush() }
+    ' "$_od_spec") || _od_apikeys=""
+
+    _od_hdrgap=""
+    while IFS=$'\t' read -r _od_sch _od_hname; do
+        [[ -z "$_od_hname" ]] && continue
+        _od_var="http_$(printf '%s' "$_od_hname" | tr 'A-Z-' 'a-z_')"
+        printf '%s\n' "$_od_nginx_vars" | grep -qxF "\$${_od_var}" \
+            || _od_hdrgap+="${_od_sch}→${_od_hname} "
+    done <<< "$_od_apikeys"
+
+    if [[ -n "$_od_hdr_err" ]]; then
+        test_fail "openapi drift: security-scheme header arm could not read/scan ${_od_hdr_err}— it DID NOT RUN (this is not a clean result)"
+    elif [[ "$_od_hdr_read" -eq 0 ]]; then
+        test_fail "openapi drift: no nginx source readable for the security-scheme header arm — it DID NOT RUN"
+    elif [[ -z "$_od_nginx_vars" ]]; then
+        test_fail "openapi drift: nginx sources declare ZERO \$http_* request-header variables — the API-key map is gone or the parser can no longer read it; the security-scheme header arm DID NOT RUN (an empty set would call every documented header name wrong, or with the test inverted, right)"
+    elif [[ -z "$_od_apikeys" ]]; then
+        if grep -q '^  securitySchemes:' "$_od_spec"; then
+            test_fail "openapi drift: openapi.yaml has a securitySchemes block but the parser extracted ZERO apiKey-in-header schemes — the spec's shape changed; the header arm DID NOT RUN"
+        else
+            test_warn "openapi drift: openapi.yaml declares no apiKey security schemes — the security-scheme header arm had nothing to check"
+        fi
+    elif [[ -n "$_od_hdrgap" ]]; then
+        test_fail "openapi drift: security scheme(s) name a header nginx never reads — a consumer following the spec sends it and gets 401 with no way to find out why (#905): ${_od_hdrgap}| nginx actually reads: $(printf '%s' "$_od_nginx_vars" | tr '\n' ' ')"
+    else
+        test_pass "openapi drift: all $(printf '%s\n' "$_od_apikeys" | wc -l) apiKey security scheme(s) name a header nginx actually reads"
+    fi
 fi
 
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────

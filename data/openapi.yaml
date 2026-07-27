@@ -1109,7 +1109,9 @@ components:
     ExportKey:
       type: apiKey
       in: header
-      name: X-Export-Key
+      name: X-API-Key
       description: |
         Key validated by the nginx `auth_request` subrequest guarding
-        `/api/exports/`. Issued out of band; not self-service.
+        `/api/exports/`. The gate reads `$http_x_api_key`, and the 401 body
+        says "Use X-API-Key header" — this is that header, not a separate one.
+        Issued out of band; not self-service.
