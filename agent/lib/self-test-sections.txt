@@ -34,6 +34,7 @@ Test helpers
 1g. github.sh label normalization (issue #850)
 1h. pipefail double-JSON-document detector (#855)
 1i. weekly-analytics fallback/success shape parity
+1j. process-substitution producers that fail silently
 1k. self-test section inventory — sections may be removed, not vanish
 2. JSON data file validation
 3. Critical service checks

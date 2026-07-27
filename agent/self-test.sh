@@ -514,6 +514,194 @@ else
     test_warn "weekly-analytics: claude-usage shape check skipped — script not readable"
 fi
 
+# ─── 1j. process-substitution producers that fail silently ───────────────────
+# `set -euo pipefail` and the ERR trap do NOT reach inside `< <(...)`. If the
+# producer dies, the loop body simply never runs and the script continues at
+# exit 0 — a step that FAILED is indistinguishable from a step that found
+# NOTHING (#858, #866, #872, #873). The `2>/dev/null` on most of these sites
+# removes the last evidence.
+#
+# The live case that motivated this ratchet: network-discovery.sh pinged peers
+# from `.peers[].url`, but peers.json migrated to `.domain` around 2026-03-24.
+# jq stayed happy (valid file, valid query, empty result), so the loop ran zero
+# times and every run read exactly like "no peers configured" — for 126 days.
+# Note exit-code capture would NOT have caught it: jq exited 0. Only a
+# post-loop emptiness check does. That is what this section enforces.
+#
+# Scope: producers containing `jq` or a real pipeline. Plain `find` producers
+# (33 sites) fail rarely enough to deprioritise. Known gap: `git`-only
+# producers (fix-issues.sh:44,320) are failure-capable but not yet counted.
+#
+# This is a BASELINE RATCHET, not a clean-tree assertion: the count may fall,
+# never rise. Burn it down by adding a real post-loop emptiness check and
+# marking the site `# procsub-guarded`. The marker is opt-in and greppable so a
+# reviewer can see exactly which sites claim a guard.
+#
+# The scan deliberately uses command substitution (which DOES propagate exit
+# codes) rather than the construct it polices, and treats empty output as
+# FAILURE rather than success — blocks always exist, so "found nothing" means
+# the scan did not run. That is #858's exact defect, not repeated here.
+
+marvin_log "INFO" "Self-test: checking process-substitution producers for silent-zero risk"
+
+# 24 → 26 on merging main, and the two additions are named here rather than
+# quietly absorbed, because a baseline that rises without an explanation is how
+# a ratchet stops meaning anything. Neither came from this branch — verified by
+# scanning both trees and diffing per file, this branch's own site count is
+# unchanged:
+#   log-alerting.sh:208   `ls -1t ... | head -2`     — arrived with #841/#844
+#   self-test.sh:906      `grep -rhoE ... || true`   — arrived with #851 (§9f)
+# The second is a real instance of the class, not an artefact: `|| true` on a
+# producer IS the silent-zero idiom. If that grep ever breaks, §9f finds zero
+# flags and PASSES — a check reporting clean because it could not run. NOT
+# fixed here (it is another branch's code and this one already carries three
+# fixes) and NOT yet tracked in an issue — recorded at the baseline itself so
+# the next person to trip §1j finds the reason rather than an unexplained 26.
+#
+# 26 → 27 on the SECOND merge of main (eba2aad), and this one had already gone
+# red: the branch as pushed reported `27 unguarded … baseline 26 — a new one was
+# added` when run against its own tree, and 28 against `main`. A ratchet that
+# fails on the branch introducing it is not a ratchet, it is a broken build that
+# happens to be about correctness, so the accounting is written down here in the
+# same shape as the 24 → 26 note above. Net +1, from two arrivals and one
+# departure, all three from other PRs:
+#   security-scan.sh:284  `printf … | tr ',:'`        — arrived with #879 (UFW audit)
+#   security-scan.sh:288  `printf … | awk … | sort`   — arrived with #879 (UFW audit)
+#   security-scan.sh:483  `echo … | tail -n +2`       — GONE with #884, which
+#       replaced the outbound loop's producer with `marvin_outbound_classify
+#       <<< "$outbound_output"` — a herestring into a function, no pipeline and
+#       no jq, so the scan does not classify it as failure-capable. Counted as a
+#       departure, not as a fix: nothing was guarded, the site simply stopped
+#       matching the scope. Worth knowing, because a baseline can fall for that
+#       reason too and "the number went down" is not by itself progress.
+# Verified by scanning four trees with this same section and diffing per file:
+# df6690d (26, PASS), this branch (27), `main` (28 — the extra is the
+# network-discovery.sh:133 site this PR fixes), and the deployed tree (29).
+_PROCSUB_BASELINE=27
+
+# Walks each `done < <(` site to its matching close paren so multi-line
+# producers are classified on their whole text — the §1d site above pipes on a
+# continuation line, which a line-based grep scores safe and misses.
+# Algorithm, in three lines, because the per-branch rationale below is long and
+# a maintainer should not have to reconstruct the shape from it (review of #874):
+#   state machine over all agent/*.sh at once. On `done < <(`, start collecting
+#   and track paren depth; append each following line until depth hits 0, or the
+#   8-line runaway cap trips, or the file ends — flush and reset at every exit.
+# Every exit path PRINTS. A block that leaves without printing is a site the
+# scan silently lost, which is the one outcome this section must never produce.
+_ps_awk='
+function pcount(s,   i, c, d) {
+    d = 0
+    for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        if (c == "(") d++
+        else if (c == ")") d--
+    }
+    return d
+}
+# awk globals persist across files. A block that never balances (a stray paren
+# in a continuation comment) leaves `collecting` set, and since FNR resets per
+# file the 8-line runaway cap goes negative and never trips — so the leak eats
+# the NEXT file whole. Measured: a leaky file followed by a file containing one
+# obvious jq producer emitted zero blocks. A scanner for silent misses,
+# silently missing. Reset per file (#875).
+#
+# Flush, do not merely reset (#875, second half): a block still open at EOF has
+# never been printed, so a bare reset drops a real site silently and the
+# baseline quietly ratchets DOWN — the scanner under-reporting itself, which is
+# precisely the failure mode this section exists to prevent. The 8-line runaway
+# cap catches an unbalanced block mid-file, but not one that opens within 8
+# lines of EOF. Emit what was collected and classify it on the text so far.
+FNR == 1 {
+    if (collecting) print startfile ":" startline ":" buf
+    collecting = 0; depth = 0; buf = ""; startline = 0
+}
+END { if (collecting) print startfile ":" startline ":" buf }
+{
+    if (collecting) {
+        buf = buf " " $0
+        depth += pcount($0)
+        if (depth <= 0 || FNR - startline >= 8) {
+            print startfile ":" startline ":" buf
+            collecting = 0
+        }
+        next
+    }
+    # A comment that *documents* the pattern is not a site. The §1j commentary
+    # below quotes the construct verbatim and the scanner duly counted its own
+    # documentation (58 blocks → 59). Benign here (no jq, no pipe, so it never
+    # reached the baseline), but a comment citing a jq producer would have
+    # inflated the count. Only skip at block start — comment lines *inside* a
+    # collected block still carry parens that must be counted.
+    if ($0 ~ /done[ \t]*<[ \t]*<\(/ && $0 !~ /^[ \t]*#/) {
+        idx = index($0, "<(")
+        rest = substr($0, idx + 2)
+        depth = 1 + pcount(rest)
+        buf = rest
+        startline = FNR
+        # Record the owning file at block start. A flush running at the FNR==1
+        # of the NEXT file sees FILENAME already advanced, and would blame the
+        # dropped site on whichever innocent file happened to follow.
+        # (No apostrophes in this program: it is a single-quoted shell string,
+        # and one stray quote ends it mid-awk. Caught by bash -n, but only
+        # because the wreckage happened to be a syntax error.)
+        startfile = FILENAME
+        if (depth <= 0) print startfile ":" startline ":" buf
+        else collecting = 1
+    }
+}
+'
+
+# `dirname "$0"`, not `${MARVIN_DIR}` — the same rule §1i states two sections
+# up and for the same reason. `common.sh` hardcodes MARVIN_DIR to the live tree
+# and overrides an inherited environment, so a MARVIN_DIR-resolved ratchet
+# measures whatever is DEPLOYED and not what the branch ships. That is not
+# theoretical here: run from this worktree, the baseline check reported 29
+# against the deployed tree while the branch's own tree holds 27. The number a
+# reviewer sees has to be the number they are reviewing.
+_ps_files=$(find "$(dirname "$0")" -name '*.sh' -type f 2>/dev/null) || _ps_files=""
+if [[ -z "$_ps_files" ]]; then
+    test_fail "procsub scan: could not enumerate agent scripts — scan did NOT run"
+else
+    _ps_blocks=$(printf '%s\n' "$_ps_files" | xargs -d '\n' awk "$_ps_awk" 2>/dev/null) || _ps_blocks=""
+    if [[ -z "$_ps_blocks" ]]; then
+        test_fail "procsub scan: enumerator produced no output — scan did NOT run"
+    else
+        _ps_unguarded=0
+        _ps_sites=""
+        while IFS= read -r _ps_line; do
+            [[ -z "$_ps_line" ]] && continue
+            _ps_file="${_ps_line%%:*}"
+            _ps_rest="${_ps_line#*:}"
+            _ps_ln="${_ps_rest%%:*}"
+            _ps_prod="${_ps_rest#*:}"
+            # `|| true` / `|| echo` are not pipelines — drop `||` before looking
+            # for a pipe, or every guarded fallback reads as failure-capable.
+            _ps_nor="${_ps_prod//||/}"
+            if [[ "$_ps_nor" != *"|"* ]] && ! [[ "$_ps_prod" =~ (^|[^a-zA-Z0-9_])jq($|[^a-zA-Z0-9_]) ]]; then
+                continue
+            fi
+            # Guard marker may sit on the `done` line or just after the loop.
+            _ps_from=$(( _ps_ln > 1 ? _ps_ln - 1 : 1 ))
+            _ps_win=$(sed -n "${_ps_from},$((_ps_ln + 6))p" "$_ps_file" 2>/dev/null) || _ps_win=""
+            if [[ "$_ps_win" == *"procsub-guarded"* ]]; then
+                continue
+            fi
+            _ps_unguarded=$((_ps_unguarded + 1))
+            _ps_sites="${_ps_sites}  $(basename "$_ps_file"):${_ps_ln}"$'\n'
+        done <<< "$_ps_blocks"
+
+        if [[ "$_ps_unguarded" -gt "$_PROCSUB_BASELINE" ]]; then
+            test_fail "procsub: ${_ps_unguarded} unguarded failure-capable producers, baseline ${_PROCSUB_BASELINE} — a new one was added"
+            printf '%s' "$_ps_sites" >&2
+        elif [[ "$_ps_unguarded" -lt "$_PROCSUB_BASELINE" ]]; then
+            test_pass "procsub: ${_ps_unguarded} unguarded (baseline ${_PROCSUB_BASELINE}) — lower _PROCSUB_BASELINE to lock the win in"
+        else
+            test_pass "procsub: ${_ps_unguarded} unguarded, at baseline ${_PROCSUB_BASELINE}"
+        fi
+    fi
+fi
+
 # ─── 1k. self-test section inventory — sections may be removed, not vanish ───
 # `self-test.sh` is the file that catches regressions in everything else, and
 # until now nothing caught regressions in it. Sections have vanished twice
