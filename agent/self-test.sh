@@ -3505,7 +3505,7 @@ else
     # been invisible here — and invisible would have been reported as the PASS
     # "no reject_rbl_client entries configured": a clean bill of health for a
     # blocklist this section never looked at. That is the precise failure shape
-    # §9o exists to catch, which makes it a poor one to ship inside it.
+    # §9t exists to catch, which makes it a poor one to ship inside it.
     #
     # The class list is enumerated from `postconf -d` rather than hardcoded, so
     # it cannot rot against a postfix that adds one. An empty enumeration means
@@ -3521,6 +3521,43 @@ else
         _bl_pcfail=0
         _bl_failed=""
         _bl_read=0
+
+        # The built-in classes are only the half of the surface postfix names for
+        # you. `smtpd_restriction_classes` declares USER-DEFINED classes, whose
+        # bodies are ordinary main.cf parameters holding ordinary restriction
+        # lists — `reject_rbl_client` included. A built-in class then references
+        # such a class by name, so the DNSBL is live and enforced while the only
+        # token this section could see was the class name.
+        #
+        # That is #914 one level deeper, and with the same tell: invisible was
+        # reported as the PASS "no reject_rbl_client entries configured".
+        # Demonstrated against a copy of this host's own config, not argued —
+        # a class body carrying a DNSBL scored PASS before this loop existed.
+        #
+        # No recursion needed, and that is a property of postfix rather than an
+        # assumption: a class must be declared in `smtpd_restriction_classes`
+        # before it can be referenced anywhere, so reading every declared name
+        # covers every nesting depth by construction.
+        #
+        # A failure to read the declaration list is a failure to read a class:
+        # it lands in _bl_failed like any other, which suppresses the PASS
+        # below (#915). Empty is a legitimate answer here — most hosts define
+        # none, this one included — and is NOT an error, unlike the built-in
+        # enumeration where empty means the query broke.
+        _bl_userclasses=$("$_bl_postconf" -h smtpd_restriction_classes 2>/dev/null) || {
+            _bl_userclasses=""; _bl_pcfail=1; _bl_failed+="smtpd_restriction_classes "
+        }
+        for _bl_uc in ${_bl_userclasses//,/ }; do
+            # Shape-checked before use: postfix parameter names are
+            # [A-Za-z0-9_]+, and a token that is not one cannot be a class this
+            # run failed to read — it is a config the parser did not understand,
+            # which must be reported rather than skipped.
+            if [[ ! "$_bl_uc" =~ ^[A-Za-z0-9_]+$ ]]; then
+                _bl_pcfail=1; _bl_failed+="${_bl_uc}(malformed-name) "; continue
+            fi
+            _bl_classes+=$'\n'"$_bl_uc"
+        done
+
         while IFS= read -r _bl_class; do
             [[ -z "$_bl_class" ]] && continue
             _bl_one=$("$_bl_postconf" -h "$_bl_class" 2>/dev/null) || {
