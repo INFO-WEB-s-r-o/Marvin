@@ -1899,6 +1899,209 @@ else
     fi
 fi
 
+# ─── 9o. openapi.yaml must agree with the nginx /api/ allowlist (#883) ───────
+# Section letter 9o, not 9m: by the time this rebased onto main, 9m had been
+# taken by the morning-blog-blurb screening fix and 9n by the executable-bits
+# check. Picked against the set actually on main at rebase time, per the same
+# trap §9j's own comment warns about — a letter reserved against the *open* PR
+# set stops being true the moment one of those merges first.
+#
+# Issue #883: `data/openapi.yaml` is published at /.well-known/openapi.yaml as
+# this server's API contract, and nothing has ever compared it to what nginx
+# actually serves. It had drifted in BOTH directions at once — 10 endpoints
+# served by the #861 allowlist and absent from the spec, and 2 documented
+# endpoints (`/api/exports/`) published as open that answer 401 — while the spec
+# header claimed "all endpoints ... require no authentication".
+#
+# Both directions are checked, because they fail differently:
+#   A. served-but-undocumented — the public surface is larger than the published
+#      contract, so nobody reviewing the spec can see the real exposure.
+#   B. documented-but-unserved — worse for a consumer: they build against a path
+#      that does not exist, or one that silently needs a key.
+#
+# Everything here is resolved through `dirname "$0"`, NOT ${MARVIN_DIR}: the
+# latter is hardcoded to /home/marvin/git, so a branch that fixed the spec would
+# be graded against the deployed copy and pass (or fail) on the wrong file
+# entirely — the trap already recorded in #855/#874/#890.
+#
+# Comments are stripped from the nginx config before parsing. The explanatory
+# block above the allowlist names /api/blog-index.json and /api/security/... in
+# prose; a parser that reads prose invents endpoints nginx does not serve, which
+# is the same class of false result as #889/#892.
+
+marvin_log "INFO" "Self-test: checking openapi.yaml against the nginx /api/ allowlist"
+
+_od_conf="$(dirname "$0")/../setup/nginx-site.conf"
+_od_spec="$(dirname "$0")/../data/openapi.yaml"
+
+if [[ ! -r "$_od_conf" || ! -r "$_od_spec" ]]; then
+    test_fail "openapi drift: cannot read setup/nginx-site.conf and/or data/openapi.yaml — the contract check DID NOT RUN (this is not a clean result)"
+else
+    # Expand the allowlist regex into concrete paths. Handles the two shapes the
+    # config actually uses: (?:a|b|c)\.json groups, and bare literal alternatives.
+    # Deliberately narrow — an unrecognised shape must yield nothing and trip the
+    # emptiness check below rather than silently under-reporting the surface.
+    _od_expand() {
+        local b="$1" grp inner rest suffix alt
+        local -a alts
+        while [[ "$b" == *'(?:'* ]]; do
+            grp=${b#*\(\?:}; inner=${grp%%)*}; rest=${grp#*)}
+            suffix=""
+            # Consume the group's suffix as well as reading it: left in place it
+            # comes back around as a bare literal alternative and is emitted as
+            # the nonsense path /api/.json.
+            if [[ "$rest" == '\.json'* ]]; then
+                suffix=".json"; rest=${rest#\\.json}
+            fi
+            IFS='|' read -ra alts <<< "$inner"
+            for alt in "${alts[@]}"; do printf '/api/%s%s\n' "$alt" "$suffix"; done
+            b=$rest
+        done
+        b=${b//\\./.}
+        IFS='|' read -ra alts <<< "$b"
+        for alt in "${alts[@]}"; do
+            [[ "$alt" =~ ^[A-Za-z0-9_/.-]+$ ]] && printf '/api/%s\n' "$alt"
+        done
+    }
+
+    # Everything below is scoped to the TLS server block. openapi.yaml declares
+    # `servers: https://robot-marvin.cz`, so that block IS the contract. The
+    # port-80 block is defense-in-depth hardening with its own
+    # `location /api/exports/ { return 403; }`, and a whole-file parse reads that
+    # 403 as "exports is denied" and fails the direction-B arm on a pair of
+    # endpoints that are served perfectly well over HTTPS. Same server-block
+    # scoping trap as the ai-negotiate location.
+    _od_tls=$(awk '
+        /^server[[:space:]]*\{/ { n++; next }
+        n { buf[n] = buf[n] $0 "\n"; if ($0 ~ /listen[[:space:]]+(\[::\]:)?443/) tls[n] = 1 }
+        END { for (i = 1; i <= n; i++) if (i in tls) printf "%s", buf[i] }
+    ' "$_od_conf" | grep -vE '^[[:space:]]*#') || _od_tls=""
+
+    if [[ -z "$_od_tls" ]]; then
+        test_fail "openapi drift: could not isolate the TLS (443) server block in setup/nginx-site.conf — the contract check DID NOT RUN"
+        _od_locline=""
+        _od_skip=1
+    else
+        _od_skip=0
+        _od_locline=$(printf '%s\n' "$_od_tls" \
+                      | grep -oE 'location[[:space:]]+~[[:space:]]+\^/api/\(.*\)\$' \
+                      | head -1) || _od_locline=""
+    fi
+
+    if [[ "$_od_skip" -eq 1 ]]; then
+        : # already reported above; do not also emit a misleading pass
+    elif [[ -z "$_od_locline" ]]; then
+        test_fail "openapi drift: no regex /api/ allowlist found in setup/nginx-site.conf — either #861 was reverted (the /api/ surface is a denylist again) or the config shape changed and this check can no longer read it; either way it DID NOT RUN"
+    else
+        _od_body=${_od_locline#*^/api/(}
+        _od_body=${_od_body%)\$}
+        _od_served=$(_od_expand "$_od_body" | grep -vE '^/api/$|^$' | sort -u) || _od_served=""
+        _od_documented=$(grep -oE '^  (/[^ :]+):' "$_od_spec" | tr -d ' :' | sort -u) || _od_documented=""
+
+        if [[ -z "$_od_served" ]]; then
+            test_fail "openapi drift: the /api/ allowlist regex was found but expanded to ZERO paths — the parser no longer understands the config shape; it DID NOT RUN (an empty served-set would otherwise make every documented path look undocumented and vice versa)"
+        elif [[ -z "$_od_documented" ]]; then
+            test_fail "openapi drift: data/openapi.yaml yielded ZERO paths — the spec is empty or its shape changed; the check DID NOT RUN"
+        else
+            _od_doc_api=$(printf '%s\n' "$_od_documented" | grep '^/api/') || _od_doc_api=""
+
+            # ── Direction A: served but undocumented ──
+            _od_undoc=$(comm -23 <(printf '%s\n' "$_od_served") <(printf '%s\n' "$_od_doc_api")) || _od_undoc=""
+            if [[ -n "$_od_undoc" ]]; then
+                test_fail "openapi drift: $(printf '%s\n' "$_od_undoc" | wc -l) endpoint(s) are served by the nginx /api/ allowlist but absent from data/openapi.yaml — the published contract understates the real public surface (#883): $(printf '%s' "$_od_undoc" | tr '\n' ' ')"
+            else
+                test_pass "openapi drift: all $(printf '%s\n' "$_od_served" | wc -l) allowlisted /api/ endpoints are documented in openapi.yaml"
+            fi
+
+            # ── Direction B: documented but not served ──
+            # A documented path counts as served if it is in the allowlist, or if
+            # a dedicated prefix `location` block covers it and that block does
+            # not deny.
+            #
+            # Coverage is restricted to prefixes STRICTLY BELOW /api/ — i.e.
+            # longer than "/api/" itself. Two catch-alls would otherwise make this
+            # direction incapable of ever failing, which is worse than not having
+            # it: `location /api/` is the deny-all, and `location /` is the
+            # Next.js proxy that prefix-matches literally every path. The first
+            # draft of this section excluded only /api/, and a mutation that
+            # deleted peers-public.json from the allowlist while leaving it
+            # documented still reported PASS — caught by mutation-testing the
+            # arm, not by reading it.
+            _od_serving_prefixes=$(printf '%s\n' "$_od_tls" | awk '
+                /^[[:space:]]*location[[:space:]]+/ {
+                    inloc = 0
+                    if ($2 ~ /^\//) { p = $2; inloc = 1; seen[p] = 1 } else { p = "" }
+                    next
+                }
+                /^[[:space:]]*}[[:space:]]*$/ { inloc = 0; p = ""; next }
+                inloc && /deny all|return 403/ { denied[p] = 1 }
+                END {
+                    for (k in seen)
+                        if (!(k in denied) && index(k, "/api/") == 1 && k != "/api/")
+                            print k
+                }
+            ') || _od_serving_prefixes=""
+
+            _od_unserved=""
+            while IFS= read -r _od_p; do
+                [[ -z "$_od_p" ]] && continue
+                printf '%s\n' "$_od_served" | grep -qxF "$_od_p" && continue
+                _od_covered=0
+                while IFS= read -r _od_pref; do
+                    [[ -z "$_od_pref" ]] && continue
+                    # Fixed-string prefix test: a regex match here would fail OPEN
+                    # on a path containing regex metacharacters (the /api/exports/
+                    # {date}.json brace is exactly such a case).
+                    if awk -v s="$_od_p" -v pre="$_od_pref" 'BEGIN{exit !(index(s,pre)==1)}'; then
+                        _od_covered=1; break
+                    fi
+                done <<< "$_od_serving_prefixes"
+                [[ "$_od_covered" -eq 0 ]] && _od_unserved+="${_od_p} "
+            done <<< "$_od_doc_api"
+
+            if [[ -n "$_od_unserved" ]]; then
+                test_fail "openapi drift: documented endpoint(s) are neither in the /api/ allowlist nor covered by a serving location block — anyone building against the published spec gets 403/404 (#883): ${_od_unserved}"
+            else
+                test_pass "openapi drift: every documented /api/ endpoint is either allowlisted or covered by a dedicated serving location block"
+            fi
+
+            # ── Auth posture: an auth_request-gated path must document its 401 ──
+            # Presence-only comparison would call the /api/exports/ pair clean
+            # while the spec published them as open. That was half of #883.
+            _od_authed_prefixes=$(printf '%s\n' "$_od_tls" | awk '
+                /^[[:space:]]*location[[:space:]]+[^~=]/ { p=$2 }
+                /auth_request/ { if (p != "") print p }
+            ' | sort -u) || _od_authed_prefixes=""
+
+            _od_authgap=""
+            while IFS= read -r _od_pref; do
+                [[ -z "$_od_pref" ]] && continue
+                while IFS= read -r _od_p; do
+                    [[ -z "$_od_p" ]] && continue
+                    awk -v s="$_od_p" -v pre="$_od_pref" 'BEGIN{exit !(index(s,pre)==1)}' || continue
+                    # Does this path's own block in the spec declare a 401?
+                    if ! awk -v want="  ${_od_p}:" '
+                        $0 == want { inpath=1; next }
+                        inpath && /^  \// { exit }
+                        inpath && /^ *"401":/ { found=1; exit }
+                        END { exit !found }
+                    ' "$_od_spec"; then
+                        _od_authgap+="${_od_p} "
+                    fi
+                done <<< "$_od_doc_api"
+            done <<< "$_od_authed_prefixes"
+
+            if [[ -n "$_od_authgap" ]]; then
+                test_fail "openapi drift: endpoint(s) behind an nginx auth_request are documented WITHOUT a 401 response — the spec publishes an authenticated endpoint as open (#883): ${_od_authgap}"
+            elif [[ -z "$_od_authed_prefixes" ]]; then
+                test_warn "openapi drift: no auth_request-gated location blocks found in nginx-site.conf — the auth-posture arm had nothing to check"
+            else
+                test_pass "openapi drift: every documented endpoint behind an auth_request declares a 401 response"
+            fi
+        fi
+    fi
+fi
+
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
 # Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
 # artefact with byte-identical duplicates of the active /home/marvin/.gnupg/
