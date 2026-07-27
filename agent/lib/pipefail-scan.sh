@@ -105,21 +105,66 @@ done
 # Joins backslash-continuations AND multi-line single-quoted programs. The
 # latter is required, not a nicety: capability-inventory.sh's
 # `crontab | awk '…' | jq -s` spans 13 lines with the awk body unquoted across
-# them. Full-line comments are excluded from quote-parity counting so an
-# apostrophe in prose ("doesn't") can't start a runaway join; the 60-line cap is
-# the backstop.
+# them.
+#
+# Quote state is tracked by SCANNING the line, not by counting quote characters.
+# The counting version excluded only FULL-LINE comments, so an apostrophe inside
+# a double-quoted string — `test_fail "… the day'"'"'s egress answer"` — read as
+# an unterminated single quote and joined the next 60 lines into one statement.
+# That is not hypothetical: it was live on this branch, and the 60-line sweep
+# pulled in an unrelated `grep … | wc -l` pipeline and an unrelated `|| echo`,
+# satisfying all four conditions and FAILING the suite on a fabricated hit. A
+# detector for "a failure that produces a confident-looking wrong answer",
+# producing a confident-looking wrong answer.
+#
+# The scan tracks single- and double-quote state against each other (a `'"'"'`
+# inside `"…"` is literal, and vice versa), honours backslash escapes ONLY
+# outside single quotes (bash does not escape inside them), and stops at an
+# unquoted `#` that begins a word — so a trailing comment is ignored while
+# `(#882)` is not mistaken for one.
+#
+# A word begins after whitespace OR after an unquoted shell metacharacter, so
+# `false;# it'"'"'s fine` and `foo |# note` are recognised as comments too. Checking
+# only for whitespace (as the first version of this scan did) left an apostrophe
+# inside such a comment free to flip quote state — #887 one delimiter over. `{`
+# is deliberately NOT in the set: `${#arr[@]}` and `${var#pfx}` are parameter
+# expansions, not comments.
+#
+# Limitation, deliberately left: the word-start test looks one character back in
+# the ACCUMULATED buffer, not in the original physical line. A backslash-
+# continued line whose continuation begins with `#` has that `#` preceded by the
+# join's inserted space in the buffer but by a line break in the source, so the
+# two disagree at exactly that one position. It errs toward reading it as a
+# comment, i.e. toward NOT joining further — the same direction the counting
+# version's "only a full-line comment counts" limitation erred in, and the safe
+# one: an under-join splits one statement into two and at worst loses a hit,
+# whereas the over-join is what manufactured #887's fabricated one.
+#
+# The joiner asserts these properties against embedded fixtures on every run
+# (`_joiner_selfcheck` below) — a regression here exits 2 rather than scanning
+# with a broken parser and reporting whatever falls out.
 _JOIN_AWK='
+function sq_open(s,   i, c, p, in_s, in_d, L) {
+  in_s = 0; in_d = 0; L = length(s)
+  for (i = 1; i <= L; i++) {
+    c = substr(s, i, 1)
+    if (c == "\\" && !in_s) { i++; continue }
+    if (c == "'"'"'" && !in_d) { in_s = !in_s; continue }
+    if (c == "\"" && !in_s) { in_d = !in_d; continue }
+    if (c == "#" && !in_s && !in_d) {
+      p = (i == 1) ? " " : substr(s, i - 1, 1)
+      if (p == " " || p == "\t" || p == ";" || p == "|" ||
+          p == "&" || p == "(" || p == ")") break
+    }
+  }
+  return in_s
+}
 {
   line = $0; ln = NR; joined = 0
   while (joined < 60) {
-    probe = line
-    gsub(/\\'"'"'/, "", probe)
-    stripped = probe
-    sub(/^[[:space:]]*#.*$/, "", stripped)
-    n = gsub(/'"'"'/, "'"'"'", stripped)
-    odd = (n % 2)
+    unterminated_squote = sq_open(line)
     cont = (line ~ /\\[[:space:]]*$/)
-    if (!cont && !odd) break
+    if (!cont && !unterminated_squote) break
     if (getline nxt <= 0) break
     sub(/\\[[:space:]]*$/, "", line)
     line = line " " nxt
@@ -127,6 +172,73 @@ _JOIN_AWK='
   }
   print ln ":" line
 }'
+
+# The joiner is the component of this scanner that has now been wrong twice, and
+# both times it was wrong in the direction that MANUFACTURES a hit: naive paren
+# counting in the §1i scanner one file over (#875), naive quote counting here
+# (#887). Both were written to prevent exactly the class they then produced, and
+# both survived review because the logic reads correctly. So it is not trusted on
+# inspection — it is exercised against fixtures before any real file is read, and
+# a mis-parse exits 2 ("could not scan") rather than scanning with a broken
+# parser and reporting whatever falls out.
+#
+# #887 is pinned as an explicit negative: an apostrophe inside a double-quoted
+# string must NOT start a join. The positives sit beside it so the check cannot
+# pass by simply never joining anything — a genuine multi-line single-quoted awk
+# program and a backslash continuation must still join. The expectations are
+# written out by hand; comparing the joiner against a second copy of itself would
+# agree perfectly and prove nothing.
+_joiner_selfcheck() {
+    local _got _want _i _g _w
+    local -a _gl _wl
+    _got=$(awk "$_JOIN_AWK" <<'_PFSC_FIXTURE' | tr -s ' \t' ' '
+test_fail "outbound sampling is back to one sample as the day's answer (#882)"
+echo second
+crontab -l | awk '
+  { print $1 }
+' | wc -l
+echo one \
+  two
+echo hi   # doesn't matter
+false;# it doesn't need a space in front
+echo tail
+_PFSC_FIXTURE
+    ) || return 1
+    _want=$(cat <<'_PFSC_EXPECT'
+1:test_fail "outbound sampling is back to one sample as the day's answer (#882)"
+2:echo second
+3:crontab -l | awk ' { print $1 } ' | wc -l
+6:echo one two
+8:echo hi # doesn't matter
+9:false;# it doesn't need a space in front
+10:echo tail
+_PFSC_EXPECT
+    ) || return 1
+    if [[ "$_got" != "$_want" ]]; then
+        echo "pipefail-scan: line-joiner self-check FAILED — the joiner mis-parses its own fixtures, so no scan result from it can be trusted (#887)" >&2
+        # First mismatch only, truncated. §1h folds this stderr into a single
+        # FAIL line, and a full diff of a runaway join is unreadable there; the
+        # first divergence is what names the defect anyway.
+        mapfile -t _gl <<< "$_got"
+        mapfile -t _wl <<< "$_want"
+        _i=0
+        while [[ "$_i" -lt "${#_wl[@]}" || "$_i" -lt "${#_gl[@]}" ]]; do
+            _w="${_wl[$_i]:-<missing>}"
+            _g="${_gl[$_i]:-<missing>}"
+            if [[ "$_w" != "$_g" ]]; then
+                echo "pipefail-scan:   first mismatch at joined-output line $((_i + 1))" >&2
+                echo "pipefail-scan:   expected: ${_w:0:110}" >&2
+                echo "pipefail-scan:   got:      ${_g:0:110}" >&2
+                break
+            fi
+            _i=$((_i + 1))
+        done
+        return 1
+    fi
+}
+if ! _joiner_selfcheck; then
+    exit 2
+fi
 
 _tsv=false
 if [[ "${1:-}" == "--tsv" ]]; then

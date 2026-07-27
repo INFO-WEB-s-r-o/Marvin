@@ -67,12 +67,37 @@ if [[ "$BEACON_ONLY" != true ]]; then
 fi
 
 if [[ -f "$PEERS_FILE" && "$BEACON_ONLY" != true ]]; then
-    PEER_COUNT=$(jq '.peers | length' "$PEERS_FILE" 2>/dev/null || echo "0")
+    # `PEER_COUNT=$(jq ... || echo "0")` is the same silent-zero idiom one level
+    # up: on a corrupt peers.json jq fails, the count falls back to 0, and the
+    # emptiness guard below can never fire because it keys off PEER_COUNT > 0 —
+    # the run reports "0/0 peers pinged" and exits clean. Validate the file
+    # first so unreadable is distinguishable from empty (#873).
+    if jq empty "$PEERS_FILE" 2>/dev/null; then
+        PEERS_READABLE=1
+        PEER_COUNT=$(jq '.peers | length' "$PEERS_FILE" 2>/dev/null || echo "0")
+    else
+        PEERS_READABLE=0
+        PEER_COUNT=0
+        marvin_log "ERROR" "peers.json is not valid JSON — peer liveness checks cannot run"
+    fi
     marvin_log "INFO" "Known peers: ${PEER_COUNT}"
     
-    # Ping each known peer
+    # Ping each known peer.
+    #
+    # Two counters, because they answer two different questions and only the
+    # first one is about schema drift (#876):
+    #   _yielded_peers — candidate URLs the jq producer actually emitted
+    #   _pinged_peers  — peers that survived the SSRF/DNS gauntlet and got curled
+    # Every skip below `continue`s past the ping, so keying the drift guard off
+    # _pinged_peers alone reports "none yielded a pingable URL" when the producer
+    # yielded plenty and the filters rejected them all. Verified: 3 peers with
+    # private-IP domains logged three "Skipping peer" WARNs and then claimed
+    # "liveness checks did not run" — the checks ran, and refused every candidate.
+    _yielded_peers=0
+    _pinged_peers=0
     while IFS= read -r peer_url; do
         if [[ -n "$peer_url" && "$peer_url" != "null" ]]; then
+            _yielded_peers=$((_yielded_peers + 1))
             # SSRF / DNS rebinding protection: resolve hostname and reject private IPs
             # IPv6 bracket-notation needs dedicated extraction (#488):
             #   http://[2001:db8::1]:8080/path → 2001:db8::1
@@ -96,7 +121,16 @@ if [[ -f "$PEERS_FILE" && "$BEACON_ONLY" != true ]]; then
             if [[ "$peer_host_lower" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || _is_ipv6_address "$peer_host_lower"; then
                 resolved_ip="$peer_host_lower"
             else
-                resolved_ip=$(getent hosts "$peer_host_lower" 2>/dev/null | awk '{print $1; exit}')
+                # `|| resolved_ip=""` is load-bearing, not defensive noise: under
+                # `set -o pipefail` an unresolvable host makes getent exit 2, the
+                # pipeline inherits it, and `set -e` kills the whole run right
+                # here — the "skipping" branch below was unreachable dead code.
+                # Masked for 126 days because the producer never yielded a peer;
+                # resurrecting the loop (#873) arms it. One peer losing DNS would
+                # take out the broadcast, Last Ping check and trust scoring that
+                # follow, and the ERR trap would report it as a peer-loop error.
+                # Verified: unresolvable host exits 2 without this, 0 with it.
+                resolved_ip=$(getent hosts "$peer_host_lower" 2>/dev/null | awk '{print $1; exit}') || resolved_ip=""
                 if [[ -z "$resolved_ip" ]]; then
                     marvin_log "WARN" "Could not resolve peer hostname, skipping: ${peer_host_lower}"
                     continue
@@ -129,8 +163,66 @@ if [[ -f "$PEERS_FILE" && "$BEACON_ONLY" != true ]]; then
                 marvin_log "WARN" "Peer unreachable: ${peer_url} (HTTP ${STATUS_CODE})"
                 printf '%s\n' "[${NOW}] PEER_DEAD: ${peer_url} (HTTP ${STATUS_CODE})" | anonymize_ips >> "$COMM_LOG"
             fi
+            _pinged_peers=$((_pinged_peers + 1))
         fi
-    done < <(jq -r '.peers[].url // empty' "$PEERS_FILE" 2>/dev/null)
+    # Peers carry `.domain`, not `.url` — the `.url` field disappeared when
+    # peers.json stopped being tracked (#176, 2026-03-24) and the schema drifted;
+    # the rest of this file (trust registry, beacon updates) already reads
+    # `.domain`. This line was the last `.url` reader, and it silently matched
+    # nothing for 126 days: valid file, valid query, empty result, jq exit 0, no
+    # PEER_ALIVE/PEER_DEAD written since 2026-03-22. Prefer `.url` when a peer
+    # still carries one; otherwise derive https:// from `.domain`. Peers with a
+    # null domain are scanners/observers, not reachable hosts — skipped.
+    #
+    # Single generator, and `//` rather than `has("url")`: an explicit
+    # `"url": null` beside a valid `.domain` must still fall back. Keying the
+    # fallback on key *absence* would skip such a peer entirely — a milder
+    # rerun of the very outage this fixes (verified: 3 peers → 0 under the
+    # has()-form, 3 under this one).
+    done < <(jq -r '.peers[] | (.url // ((.domain // "") | select(. != "") | "https://" + .))' "$PEERS_FILE" 2>/dev/null)
+
+    # procsub-guarded (#873) — the marker must sit within a few lines of the
+    # `done` it vouches for; §1j only trusts a guard it can see from the site.
+    #
+    # The guard the 126-day outage needed: peers exist but none produced a
+    # pingable address ⇒ the producer matched nothing. Zero iterations is
+    # otherwise indistinguishable from "no peers configured" (#873).
+    if [[ "$PEERS_READABLE" -eq 0 ]]; then
+        : # already reported above — do not double-log
+    elif [[ "$PEER_COUNT" -gt 0 && "$_yielded_peers" -eq 0 ]]; then
+        # "Nothing yielded" still covers two causes, and the review was right
+        # that collapsing them rebuilds #876 one notch further along: today 3 of
+        # 16 peers carry an address and 13 are scanner/observer records with a
+        # null domain BY DESIGN. If those 3 were ever removed deliberately, a
+        # bare "schema drift" would send someone to audit a jq filter that is
+        # working perfectly — the exact wrong-root-cause failure this guard set
+        # out to fix. Split on key *presence*, which is the thing that actually
+        # differs: peers that carry a url/domain key but produced no URL means
+        # the producer is broken; no peer carrying either key means there is
+        # nothing to ping, or the schema moved again — and the message says both
+        # rather than picking one.
+        #
+        # Non-null value, not `has()`. The live file's 13 observer records omit
+        # the key entirely, so `has()` would have worked today — but an explicit
+        # `"domain": null` is a shape the producer deliberately skips, and
+        # counting it as "carries an address" would report drift for a peer that
+        # is behaving exactly as designed. Checked against the real file rather
+        # than assumed: 3 peers with a non-null domain, 13 with no key at all.
+        _peers_with_addr=$(jq '[.peers[] | select((.url // .domain) != null)] | length' "$PEERS_FILE" 2>/dev/null || echo "0")
+        if [[ "$_peers_with_addr" -gt 0 ]]; then
+            marvin_log "ERROR" "Peer schema drift: ${_peers_with_addr} of ${PEER_COUNT} peers in ${PEERS_FILE} carry a url/domain value but none yielded a pingable URL — the producer matched nothing; liveness checks did not run"
+        else
+            marvin_log "WARN" "Peer liveness: none of the ${PEER_COUNT} peers in ${PEERS_FILE} carry a url or domain value — either every entry is a scanner/observer record with no reachable address, or the schema moved again"
+        fi
+    elif [[ "$_yielded_peers" -gt 0 && "$_pinged_peers" -eq 0 ]]; then
+        # Producer fine, filters rejected everything. A different root cause than
+        # drift and it must not borrow drift's message (#876) — a future debugging
+        # session reading "schema drift" would go and audit the jq filter, which
+        # is working perfectly.
+        marvin_log "ERROR" "Peer liveness: ${_yielded_peers} candidate URLs from ${PEER_COUNT} peers were all rejected by SSRF/DNS protections — see preceding WARNs; producer is fine"
+    else
+        marvin_log "INFO" "Peer liveness checks completed: ${_pinged_peers}/${PEER_COUNT} peers pinged (${_yielded_peers} candidates yielded)"
+    fi
 fi
 
 # =============================================================================
@@ -537,7 +629,14 @@ if [[ -f "$PEERS_FILE" ]]; then
                 beacon_resolve_opt=()
                 resolved_ip=""
                 if [[ "$is_ip_peer" != "true" ]]; then
-                    resolved_ip=$(getent hosts "$peer_domain" 2>/dev/null | awk '{print $1}' | head -1)
+                    # Second site of the same pipefail landmine as the peer loop
+                    # above, and this one is live on main today: trust scoring
+                    # already reads `.domain`, so it runs every night. `head -1`
+                    # exits 0, but pipefail hands back getent exit 2 for an
+                    # unresolvable domain and set -e kills the run mid-scoring —
+                    # leaving a half-written trust registry. The "resolution
+                    # failed" branch below has never once executed.
+                    resolved_ip=$(getent hosts "$peer_domain" 2>/dev/null | awk '{print $1}' | head -1) || resolved_ip=""
                     if [[ -z "$resolved_ip" ]] || _is_private_ip "$resolved_ip"; then
                         marvin_log "WARN" "DNS rebinding blocked or resolution failed: ${peer_domain} (resolved: ${resolved_ip:-empty})"
                         beacon_blocked=true
