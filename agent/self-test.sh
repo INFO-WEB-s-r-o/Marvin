@@ -1941,6 +1941,21 @@ else
     # config actually uses: (?:a|b|c)\.json groups, and bare literal alternatives.
     # Deliberately narrow — an unrecognised shape must yield nothing and trip the
     # emptiness check below rather than silently under-reporting the surface.
+    #
+    # That promise held only when EVERY alternative was unrecognised (#902
+    # review). The trailing bare literals are filtered one at a time, so a single
+    # alternative outside the character class was dropped while its siblings kept
+    # the set non-empty — the emptiness guard never fired, and that path silently
+    # stopped being checked for direction A. An under-reported served set is the
+    # one failure this section cannot afford: a path missing from it is a path
+    # that cannot be reported as served-but-undocumented, which is #883 itself.
+    #
+    # So an unrecognised alternative is now emitted as a marker rather than
+    # dropped, and the caller FAILs on it. A marker, not a global counter: the
+    # caller reads this function through a command substitution, so a variable
+    # set here would be set in a subshell the parent never sees — the exact
+    # mechanism that made #908's fail-closed guard dead code.
+    _OD_UNPARSED='!unparsed-alt:'
     _od_expand() {
         local b="$1" grp inner rest suffix alt
         local -a alts
@@ -1960,7 +1975,15 @@ else
         b=${b//\\./.}
         IFS='|' read -ra alts <<< "$b"
         for alt in "${alts[@]}"; do
-            [[ "$alt" =~ ^[A-Za-z0-9_/.-]+$ ]] && printf '/api/%s\n' "$alt"
+            # An empty alternative is the ordinary residue of a regex that was
+            # entirely groups — `read -ra` yields one empty field for an empty
+            # string — not a shape this parser failed to read.
+            [[ -z "$alt" ]] && continue
+            if [[ "$alt" =~ ^[A-Za-z0-9_/.-]+$ ]]; then
+                printf '/api/%s\n' "$alt"
+            else
+                printf '%s%s\n' "$_OD_UNPARSED" "$alt"
+            fi
         done
     }
 
@@ -1995,10 +2018,15 @@ else
     else
         _od_body=${_od_locline#*^/api/(}
         _od_body=${_od_body%)\$}
-        _od_served=$(_od_expand "$_od_body" | grep -vE '^/api/$|^$' | sort -u) || _od_served=""
+        _od_raw=$(_od_expand "$_od_body" | grep -vE '^/api/$|^$' | sort -u) || _od_raw=""
+        _od_unparsed=$(printf '%s\n' "$_od_raw" | grep -F "$_OD_UNPARSED" \
+                       | sed "s|^${_OD_UNPARSED}||" | tr '\n' ' ') || _od_unparsed=""
+        _od_served=$(printf '%s\n' "$_od_raw" | grep -vF "$_OD_UNPARSED") || _od_served=""
         _od_documented=$(grep -oE '^  (/[^ :]+):' "$_od_spec" | tr -d ' :' | sort -u) || _od_documented=""
 
-        if [[ -z "$_od_served" ]]; then
+        if [[ -n "$_od_unparsed" ]]; then
+            test_fail "openapi drift: the /api/ allowlist regex contains alternative(s) this parser does not understand, so the served set is INCOMPLETE and neither direction can vouch for the surface — it DID NOT RUN (#902 review): ${_od_unparsed% }"
+        elif [[ -z "$_od_served" ]]; then
             test_fail "openapi drift: the /api/ allowlist regex was found but expanded to ZERO paths — the parser no longer understands the config shape; it DID NOT RUN (an empty served-set would otherwise make every documented path look undocumented and vice versa)"
         elif [[ -z "$_od_documented" ]]; then
             test_fail "openapi drift: data/openapi.yaml yielded ZERO paths — the spec is empty or its shape changed; the check DID NOT RUN"
