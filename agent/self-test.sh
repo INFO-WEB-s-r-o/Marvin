@@ -36,6 +36,38 @@ test_warn() {
     RESULTS+=("  WARN: $1")
 }
 
+# _code_only <file>
+#   Echo <file> with full-line comments blanked out, so that an assertion about
+#   a construct cannot be satisfied by prose *describing* that construct.
+#
+#   This is the third time this class has been reintroduced by code written to
+#   prevent it (#858, #887, #890 §9k), and the nearest instance — §9f below —
+#   sat four lines from the comment stating the rule. network-discovery.sh:209
+#   is a comment reading "`.marvin_health_probe == true` happens to land on one
+#   physical line today"; the runtime gate it describes is at line 219. Grep the
+#   raw file and deleting 219 leaves §9f green. A guard that cannot tell a fix
+#   from a description of a fix is worse than no guard, because it reports a
+#   specific green.
+#
+#   Fails (returns 1, echoes nothing) when the file is unreadable or contains no
+#   code at all, so that callers can distinguish "the marker is missing" from
+#   "the scan never ran" instead of collapsing both into a silent pass. Callers
+#   MUST check the exit status; `x=$(_code_only f) || true` reintroduces exactly
+#   the bug this exists to close.
+#
+#   Deliberately only strips *full-line* comments: a trailing `# ...` on a line
+#   of real code cannot make an absent construct look present, and stripping it
+#   correctly would require parsing quote state, which has already false-FAILed
+#   twice here (#875, #887).
+_code_only() {
+    local _co_file="$1" _co_out
+    [[ -r "$_co_file" ]] || return 1
+    _co_out=$(sed 's/^[[:space:]]*#.*$//' "$_co_file" 2>/dev/null) || return 1
+    # A file of nothing but comments normalizes to whitespace, not to "".
+    [[ -n "${_co_out//[[:space:]]/}" ]] || return 1
+    printf '%s\n' "$_co_out"
+}
+
 # ─── 1. Bash syntax check for all agent scripts ──────────────────────────────
 
 marvin_log "INFO" "Self-test: checking bash script syntax"
@@ -1155,12 +1187,19 @@ fi
 # beacon, which a test suite has no business doing.
 _nd_script="${MARVIN_DIR}/agent/network-discovery.sh"
 if [[ -r "$_nd_script" ]]; then
+    # Comment-stripped, or the assertion is satisfied by the block of prose
+    # directly above the dispatch that explains what --beacon-only is for.
+    if ! _nd_code=$(_code_only "$_nd_script"); then
+        test_fail "beacon recovery: network-discovery.sh yielded no code to scan for flag handling — check could not run"
+        _nd_code=""
+    fi
     _nd_flags_checked=0
     _nd_flags_bad=0
     while IFS= read -r _nd_flag; do
         [[ -n "$_nd_flag" ]] || continue
+        [[ -n "$_nd_code" ]] || break
         _nd_flags_checked=$((_nd_flags_checked + 1))
-        if ! grep -q -- "\"${_nd_flag}\"" "$_nd_script"; then
+        if ! grep -q -- "\"${_nd_flag}\"" <<< "$_nd_code"; then
             test_fail "beacon recovery: callers pass network-discovery.sh ${_nd_flag}, but that flag is not handled there"
             _nd_flags_bad=$((_nd_flags_bad + 1))
         fi
@@ -1218,11 +1257,27 @@ if [[ -r "$_nd_file" && -r "$_nl_file" ]]; then
     # with the code it is guarding: strip full-line comments (so prose that
     # merely mentions the marker cannot satisfy it) then collapse whitespace
     # (so reflowing the multi-line jq expression is not a false positive).
-    _nl_norm=$(sed 's/^[[:space:]]*#.*$//' "$_nl_file" 2>/dev/null | tr -s '[:space:]' ' ') || _nl_norm=""
+    _nl_norm=""
+    _nl_scan_ok=1
+    if _nl_code=$(_code_only "$_nl_file"); then
+        _nl_norm=$(tr -s '[:space:]' ' ' <<< "$_nl_code")
+    else
+        _nl_scan_ok=0
+    fi
     # Does the gate still exist in network-discovery.sh at all? If someone drops
     # the pre-condition, the probe starts polluting the inbox again (#852) and
     # this test must not quietly keep passing on the listener half alone.
-    if ! grep -q 'marvin_health_probe == true' "$_nd_file" 2>/dev/null; then
+    #
+    # Comment-stripped for the same reason the listener half is, and it is not
+    # hypothetical here: network-discovery.sh:209 is a comment quoting this very
+    # marker while explaining the gate at line 219. Grepping the raw file, this
+    # assertion passes on a file whose runtime gate has been deleted (#899).
+    _nd_code=""
+    _nd_scan_ok=1
+    _nd_code=$(_code_only "$_nd_file") || _nd_scan_ok=0
+    if [[ "$_nd_scan_ok" -eq 0 || "$_nl_scan_ok" -eq 0 ]]; then
+        test_fail "beacon negotiate gate: could not extract code from network-discovery.sh and/or negotiate-listener.sh — check did not run, treat as unverified rather than green"
+    elif ! grep -q 'marvin_health_probe == true' <<< "$_nd_code"; then
         test_fail "beacon negotiate gate: network-discovery.sh no longer checks for the listener's health-probe marker — the daily probe would write a forged peer entry to the negotiate inbox (#852)"
     elif grep -q '\.marvin_health_probe == true' <<< "$_nl_norm"; then
         test_pass "beacon negotiate gate: listener implements the health-probe marker the beacon gate greps for"
