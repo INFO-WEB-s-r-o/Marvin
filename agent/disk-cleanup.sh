@@ -137,6 +137,115 @@ while IFS= read -r -d '' f; do
 done < <(find "${METRICS_DIR}" "${LOGS_DIR}" -maxdepth 1 -type f \( "${_TS_JSONL_GZ_NAMES[@]}" \) -mtime +180 -print0 2>/dev/null)
 track_freed "Old time-series JSONL.gz (>180d)" "$metrics_size"
 
+# ─── 6a. Stale scratch directories in /tmp (#898) ───────────────────────────
+# Section 6 below is `-type f`, so directories have never been candidates and
+# every harness, worktree and fixture tree left in /tmp stays there forever —
+# 47 of them accumulated in two days. Three things make this more than a
+# one-character fix, and all three are why the sweep is written out longhand:
+#
+#   1. The obvious edit is the dangerous one. Every root-owned directory in
+#      /tmp currently older than 7 days is live system infrastructure —
+#      systemd-private-* service dirs and the .X11-unix/.ICE-unix/.XIM-unix/
+#      .font-unix socket dirs. A bare `-type d -mtime +7 | rm -rf` deletes
+#      exactly those and nothing else. Hence a *skip* list that is checked
+#      first and errs wide (anything dot-prefixed is untouchable outright).
+#
+#   2. Section 6 resets the clock on its own targets. Unlinking a file bumps
+#      the parent directory's mtime to now, so a directory empty since July
+#      reports as modified today and `-mtime +7` on the directory itself would
+#      miss it. Eligibility is therefore keyed on the newest mtime anywhere in
+#      the subtree, and 6a deliberately runs BEFORE section 6 so that within a
+#      single run the file sweep cannot destroy the evidence 6a reads.
+#
+#   3. A scratch directory in use by a running process looks identical to an
+#      abandoned one if you only look at timestamps. The in-use set is read
+#      from /proc first, and if that read fails the whole sweep is skipped —
+#      "could not determine what is in use" must not resolve to "nothing is".
+
+# Paths under /tmp currently referenced by a live process (cwd, exe or an open
+# fd). Prints one path per line; returns non-zero if /proc could not be read at
+# all, which the caller treats as "do not delete anything".
+_tmp_paths_in_use() {
+    local p t found=0
+    for p in /proc/[0-9]*; do
+        [[ -d "$p" ]] || continue
+        found=1
+        for t in "$p/cwd" "$p/exe" "$p/fd"/*; do
+            local target
+            target=$(readlink "$t" 2>/dev/null) || continue
+            [[ "$target" == /tmp/* ]] && printf '%s\n' "$target"
+        done
+    done
+    [[ "$found" -eq 1 ]] || return 1
+    return 0
+}
+
+# Directories directly under <root> that are safe to collect: root-owned, not
+# on the skip list, not in use, and with nothing in the subtree newer than
+# <age_days>. Takes the root as an argument rather than hardcoding /tmp so the
+# selection can be exercised against a fixture tree without risking the real
+# one. Prints one path per line.
+_stale_tmp_dirs() {
+    local root="$1" age_days="$2" in_use="$3"
+    local d base newest cutoff
+    cutoff=$(( $(date +%s) - age_days * 86400 ))
+
+    while IFS= read -r -d '' d; do
+        base="${d##*/}"
+
+        # Skip list, checked before anything else. Dot-prefixed names cover
+        # the X11/ICE/XIM/font socket directories and any other hidden state;
+        # the rest are service and session scratch owned by things that are
+        # still running.
+        case "$base" in
+            .*|systemd-private-*|snap-private-*|snap.*|pulse-*|tmux-*|ssh-*|\
+            vscode-*|dbus-*|Temp-*|hsperfdata_*) continue ;;
+        esac
+
+        # Refuse anything that is not a plain child of root — no traversal, no
+        # deleting the root itself.
+        [[ "$d" == "$root"/* && "$d" != *".."* && -n "$base" ]] || continue
+
+        # In use by a live process? Match the directory itself or anything
+        # beneath it, so an open fd on a file inside protects the parent.
+        # Compared as fixed strings via awk's index(), not a grep pattern: a
+        # /tmp name may legitimately contain regex metacharacters, and a path
+        # that failed to match because it contained a `[` would fail OPEN — it
+        # would read as "not in use" and the directory would be deleted.
+        if awk -v d="$d" 'index($0, d "/") == 1 || $0 == d { found = 1; exit }
+                          END { exit !found }' <<< "$in_use"; then
+            continue
+        fi
+
+        # Newest mtime anywhere in the subtree, including the directory itself.
+        # This is the point of the section: the directory's own mtime lies,
+        # because section 6 keeps resetting it.
+        newest=$(find "$d" -printf '%T@\n' 2>/dev/null | cut -d. -f1 | sort -rn | head -1)
+        [[ -n "$newest" ]] || continue
+        [[ "$newest" -lt "$cutoff" ]] || continue
+
+        printf '%s\n' "$d"
+    done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -user root -print0 2>/dev/null)
+}
+
+tmpdir_size=0
+tmpdir_count=0
+if _in_use=$(_tmp_paths_in_use); then
+    while IFS= read -r d; do
+        [[ -n "$d" ]] || continue
+        dsize=$(du -sb "$d" 2>/dev/null | cut -f1) || dsize=0
+        [[ "$dsize" =~ ^[0-9]+$ ]] || dsize=0
+        tmpdir_size=$((tmpdir_size + dsize))
+        tmpdir_count=$((tmpdir_count + 1))
+        marvin_is_dry_run || rm -rf -- "$d"
+    done < <(_stale_tmp_dirs /tmp 7 "$_in_use")
+    if [[ "$tmpdir_count" -gt 0 ]]; then
+        track_freed "Stale /tmp scratch directories (>7d, ${tmpdir_count})" "$tmpdir_size"
+    fi
+else
+    marvin_log "WARN" "could not read /proc to determine which /tmp directories are in use — skipping the stale-directory sweep rather than guessing (#898)"
+fi
+
 # ─── 6. Temp files ──────────────────────────────────────────────────────────
 
 tmp_size=0
