@@ -2047,6 +2047,26 @@ else
     # Exact `= /path` blocks count as literal: they carry a perfectly usable
     # path and were silently dropped by the old `[^~=]` guard (#903). No `/api/`
     # location in the current config uses `=`, so this changes nothing today.
+    #
+    # NOT handled: a `location` nested inside another `location`, which nginx
+    # does allow. The opener is only recognised at depth 0, so an inner block
+    # never becomes its own attribution unit — its directives fold into the
+    # enclosing one. Demonstrated rather than assumed: an `auth_request` inside
+    # `location /api/outer/inner/`, itself inside `location /api/outer/`, comes
+    # back as `L /api/outer/` + `P /api/outer/`, with `/api/outer/inner/` never
+    # emitted at all. Brace accounting stays well-formed (-1:-1), so neither
+    # caller's did-not-run guard fires — it is a quiet misattribution, not a
+    # detected one. The two arms fail in opposite directions on it: direction B
+    # would read a nested `deny all` as denying the whole outer prefix, which is
+    # over-broad and therefore lands on FAIL; the auth arm would credit a nested
+    # `auth_request` to the outer prefix and leave the inner path looking
+    # ungated, which is the silent-pass direction and the one that matters.
+    # Nothing in setup/nginx-site.conf nests a location today — all 25 blocks
+    # open at the same depth (checked by walking the file's brace depth, not by
+    # eye), and the only nesting inside them is `if (...)`, which depth tracking
+    # already handles. Stated here because the
+    # rest of this section documents its assumptions, and an undocumented one
+    # reads to the next editor as a handled case.
     _od_attribute() {
         awk -v want="$1" '
             {
