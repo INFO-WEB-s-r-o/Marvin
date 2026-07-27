@@ -165,6 +165,16 @@ track_freed "Old time-series JSONL.gz (>180d)" "$metrics_size"
 #      check tested whether /proc had *any* processes, which this script's own
 #      shell guarantees, rather than whether every entry it needed was actually
 #      readable. See _tmp_paths_in_use below.
+#
+#      The /proc snapshot is taken once, up front, and the deletions happen
+#      afterwards one directory at a time — so there is a TOCTOU window in
+#      which a process could start using a directory this run has already
+#      cleared. Accepted, not overlooked: nothing becomes a candidate until it
+#      has been untouched for 7 days, this runs once daily, and a process that
+#      adopts a week-dead scratch directory in the seconds between the scan and
+#      the unlink is not a case worth holding a lock for. Re-checking each path
+#      immediately before its rm would narrow the window without closing it,
+#      which buys the appearance of a guarantee rather than one.
 
 # Paths under /tmp currently referenced by a live process (cwd, exe or an open
 # fd). Prints one path per line. Returns non-zero when the scan could not be
@@ -205,6 +215,16 @@ track_freed "Old time-series JSONL.gz (>180d)" "$metrics_size"
 #   0  scan complete
 #   1  no processes found at all (/proc absent, unmounted, or hidden)
 #   2  one or more entries existed but could not be read
+#
+# Known and accepted gap: "in use" here means cwd, exe or an OPEN fd. A process
+# that mmap()'d a file under one of these directories and then closed the fd
+# holds no fd to find, and only /proc/N/maps would show it. Not read, because
+# the consequence is mild and the cost is not: unlinking a mapped file does not
+# disturb the mapping — the inode survives until the last reference drops, so
+# the process keeps reading and writing the file it already has, and only a
+# later open() by path fails. Reading maps for ~180 processes on every run to
+# catch that is the wrong trade. Recorded so the next reader knows the omission
+# was priced rather than missed.
 #
 # proc_root is an argument, not a constant, for the same reason _stale_tmp_dirs
 # takes its root as one: the classification above is exercised against a fixture
@@ -334,7 +354,6 @@ _stale_tmp_dirs() {
 tmpdir_size=0
 tmpdir_count=0
 if _in_use=$(_tmp_paths_in_use); then
-    _in_use_rc=0
     tmpdir_unreadable=0
     while IFS= read -r d; do
         [[ -n "$d" ]] || continue
