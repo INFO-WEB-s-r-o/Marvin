@@ -21,6 +21,17 @@ if ! declare -F marvin_log >/dev/null 2>&1; then
     return 1 2>/dev/null || exit 1
 fi
 
+# ─── Prompt size ceiling ─────────────────────────────────────────────────────
+# The single source of truth for how large a prompt run_claude() will accept
+# before it hard-truncates. Callers that assemble large prompts (self-enhance.sh)
+# budget against this so they can drop content deliberately — and SAY what they
+# dropped — instead of letting run_claude slice the tail off mid-file.
+#
+# `:=` so an operator can override it for a one-off run; unset behaves exactly
+# as the previous hardcoded 400000 did.
+: "${MARVIN_CLAUDE_MAX_PROMPT_CHARS:=400000}"
+export MARVIN_CLAUDE_MAX_PROMPT_CHARS
+
 # ─── Claude concurrency guard ────────────────────────────────────────────────
 # Only one Claude CLI process should run at a time on a 2 vCPU machine.
 # Concurrent Claude runs (from overlapping cron jobs) spike load to 9+ and
@@ -86,9 +97,19 @@ ${system_context}
 
 ${prompt}"
 
-    # Guard against context overflow: truncate if prompt exceeds ~400K chars (~100K tokens)
+    # Guard against context overflow: truncate if prompt exceeds ~400K chars (~100K tokens).
+    #
+    # This is a HARD BYTE CUT, not a considered selection: it slices mid-line,
+    # mid-file, mid-word, and everything after the boundary is gone with only a
+    # WARN to say so. A caller that assembles a large prompt must budget itself
+    # against this limit rather than discover it here — see self-enhance.sh,
+    # whose 2026-07-27 run was cut mid-`security-scan.sh` and silently lost the
+    # one script that had actually failed that day.
+    #
+    # Exported (rather than a `local`) so those callers can budget against the
+    # real number instead of hardcoding a second copy that drifts out of sync.
     local prompt_len=${#full_prompt}
-    local max_chars=400000
+    local max_chars="${MARVIN_CLAUDE_MAX_PROMPT_CHARS}"
     if [[ "$prompt_len" -gt "$max_chars" ]]; then
         marvin_log "WARN" "Prompt too large (${prompt_len} chars) — truncating to ${max_chars}" >&2
         full_prompt="${full_prompt:0:$max_chars}

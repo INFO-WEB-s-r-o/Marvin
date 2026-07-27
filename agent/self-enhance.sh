@@ -145,23 +145,65 @@ $(cat "$script")
     fi
 done
 
-# Include scripts that had errors today
-error_scripts=$(grep -oP '(?<=agent/)[a-z-]+\.sh' "${LOGS_DIR}/${TODAY}.log" 2>/dev/null | sort -u || echo "")
-for script_base in $error_scripts; do
-    script="${MARVIN_DIR}/agent/${script_base}"
-    if [[ -f "$script" ]]; then
-        script_name="${script#${MARVIN_DIR}/}"
-        # Skip if already included
-        if ! echo "$SCRIPTS_CONTEXT" | grep -q "### ${script_name}"; then
-            SCRIPTS_CONTEXT+="### ${script_name} (had errors today)
-\`\`\`bash
-$(cat "$script")
-\`\`\`
+# ─── Scripts implicated in today's failures ─────────────────────────────────
+# Selected here, but appended AFTER the rest of the prompt is assembled, so the
+# dump can be budgeted against real remaining headroom (see below).
+#
+# The previous selector was `grep -oP '(?<=agent/)[a-z-]+\.sh'` over the whole
+# log, and it never once did what its comment claimed. Two independent faults,
+# either of which alone would have broken it:
+#
+#   1. It required a literal `agent/` prefix, but marvin_error_trap logs the
+#      BASENAME (`self-test.sh:1279 — command failed`, lib/logging.sh:120).
+#      No ERR-trap line can match that lookbehind — structurally, not by bad
+#      luck. The selector could not see an error if it tried.
+#   2. It scanned every line at every level, so what it actually matched was
+#      whatever else happened to spell a path that day. On 2026-07-27 that was
+#      four INFO lines from file-integrity.sh ("git-synced — /home/…/agent/
+#      <name>.sh") — a monitored-path list with no relation to failure.
+#
+# So "scripts that had errors today" resolved to "scripts file-integrity
+# mentioned in passing", and each was then labelled "(had errors today)" in the
+# prompt — a false claim, not merely a miss. It pulled in 153,656 bytes of
+# unrelated source, which is what drove the prompt to 497,498 chars against
+# run_claude's 400,000 ceiling. The hard cut landed mid-`security-scan.sh` and
+# discarded `self-test.sh` — the ONE script that had genuinely failed that day,
+# and the whole reason this selector exists.
+#
+# Match basenames on failure lines only, and rank ERROR/CRITICAL above WARN so
+# that when the budget binds it drops the least-implicated script, not the most
+# (priority order: fix failures first).
+_failure_log="${LOGS_DIR}/${TODAY}.log"
+_selector_ran=true
+_err_bases=""
+_warn_bases=""
+if [[ -r "$_failure_log" ]]; then
+    _err_bases=$( { grep -E '\[(ERROR|CRITICAL)\]' "$_failure_log" 2>/dev/null || true; } \
+        | grep -oE '[A-Za-z0-9_.-]+\.sh' | sort -u ) || _err_bases=""
+    _warn_bases=$( { grep -E '\[WARN\]' "$_failure_log" 2>/dev/null || true; } \
+        | grep -oE '[A-Za-z0-9_.-]+\.sh' | sort -u ) || _warn_bases=""
+else
+    # A scan that could not run must not read as "nothing found".
+    _selector_ran=false
+    marvin_log "WARN" "Cannot read ${_failure_log} — failure-implicated scripts NOT selected this run"
+fi
 
-"
-        fi
-    fi
-done
+# Resolve basenames to real files, dropping anything already dumped in full
+# above. Emits "<size>\t<relpath>" so the caller can order and budget.
+_rank_scripts() {
+    local base path rel
+    for base in $1; do
+        for path in "${MARVIN_DIR}/agent/${base}" "${MARVIN_DIR}/agent/lib/${base}"; do
+            [[ -f "$path" ]] || continue
+            rel="${path#"${MARVIN_DIR}"/}"
+            [[ "$rel" == "agent/common.sh" || "$rel" == "agent/lib/github.sh" ]] && continue
+            printf '%s\t%s\n' "$(wc -c < "$path")" "$rel"
+        done
+    done | sort -n -u
+}
+# ERROR/CRITICAL tier first, then WARN; awk drops a script already ranked in
+# the higher tier so it keeps its stronger claim on the budget.
+_ranked=$( { _rank_scripts "$_err_bases"; _rank_scripts "$_warn_bases"; } | awk '!seen[$2]++' )
 
 # Claude can read additional scripts as needed using its Read tool
 
@@ -174,7 +216,13 @@ if [[ -x "$(dirname "$0")/lessons-learned.sh" ]]; then
     fi
 fi
 
-SELF_CONTEXT="${PREFLIGHT_DIVERGENCE:+## Pre-flight Warning: origin/main has moved since morning sync
+# ─── Prompt assembly, budgeted against run_claude's hard ceiling ────────────
+# run_claude truncates at MARVIN_CLAUDE_MAX_PROMPT_CHARS with a blunt byte cut
+# that slices mid-file and drops everything after it. Assemble the parts we
+# cannot do without first, measure what is left, and spend the remainder on
+# script bodies deliberately — naming whatever did not fit, rather than letting
+# the tail fall off in silence.
+SELF_CONTEXT_HEAD="${PREFLIGHT_DIVERGENCE:+## Pre-flight Warning: origin/main has moved since morning sync
 
 ${PREFLIGHT_DIVERGENCE}
 
@@ -184,8 +232,9 @@ ${ENHANCEMENTS}
 
 ## Current Marvin Codebase
 
-${SCRIPTS_CONTEXT}
+${SCRIPTS_CONTEXT}"
 
+SELF_CONTEXT_TAIL="
 ### Recent Enhancement History
 \`\`\`
 $(ls -la "${ENHANCE_DIR}/" 2>/dev/null | tail -20 || echo "No previous enhancements")
@@ -206,9 +255,57 @@ ${LESSONS_SUMMARY:+## Lessons Learned (avoid repeating these mistakes)
 ${LESSONS_SUMMARY}}
 "
 
+# Reserve room for run_claude's own preamble (system-state JSON, date and task
+# name, prepended inside run_claude and therefore invisible to the arithmetic
+# here) plus the omission notice this block may append.
+_PROMPT_RESERVE=8000
+_budget=$(( MARVIN_CLAUDE_MAX_PROMPT_CHARS - ${#ENHANCE_PROMPT} - ${#SELF_CONTEXT_HEAD} - ${#SELF_CONTEXT_TAIL} - _PROMPT_RESERVE ))
+
+FAILURE_SCRIPTS_BLOCK=""
+_included=0
+_omitted=""
+while IFS=$'\t' read -r _size _rel; do
+    [[ -n "$_rel" ]] || continue
+    # ~40 chars of heading and fence overhead per entry.
+    if [[ "$_budget" -gt $(( _size + 40 )) ]]; then
+        FAILURE_SCRIPTS_BLOCK+="### ${_rel} (implicated in today's failures)
+\`\`\`bash
+$(cat "${MARVIN_DIR}/${_rel}")
+\`\`\`
+
+"
+        _budget=$(( _budget - _size - 40 ))
+        _included=$(( _included + 1 ))
+    else
+        _omitted+="${_omitted:+, }${_rel} (${_size} bytes)"
+    fi
+done <<< "$_ranked"
+
+if [[ "$_selector_ran" != "true" ]]; then
+    FAILURE_SCRIPTS_BLOCK+="### Scripts implicated in today's failures: SELECTION FAILED
+
+Today's log could not be read, so this section is **not** empty-because-clean.
+It is empty because the scan did not run. Do not read it as an all-clear.
+
+"
+elif [[ -n "$_omitted" ]]; then
+    marvin_log "WARN" "Prompt budget exhausted — omitted failure-implicated script(s): ${_omitted}"
+    FAILURE_SCRIPTS_BLOCK+="### Omitted for prompt budget — read these yourself if relevant
+
+${_omitted}
+
+These scripts are implicated in today's failures but did not fit the prompt
+budget. They are NOT absent from the codebase and NOT irrelevant — open them
+with your Read tool before concluding anything about today's failures.
+
+"
+fi
+marvin_log "INFO" "Failure-implicated scripts: ${_included} included, ${_omitted:-none} omitted; ${_budget} chars of budget left"
+
 FULL_PROMPT="${ENHANCE_PROMPT}
 
-${SELF_CONTEXT}"
+${SELF_CONTEXT_HEAD}
+${FAILURE_SCRIPTS_BLOCK}${SELF_CONTEXT_TAIL}"
 
 # Run Claude for self-enhancement. Up to 2 retries on transient exit=1 with
 # escalating backoff — self-enhance runs once per day, so a single transient
