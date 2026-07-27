@@ -105,19 +105,42 @@ done
 # Joins backslash-continuations AND multi-line single-quoted programs. The
 # latter is required, not a nicety: capability-inventory.sh's
 # `crontab | awk '…' | jq -s` spans 13 lines with the awk body unquoted across
-# them. Full-line comments are excluded from quote-parity counting so an
-# apostrophe in prose ("doesn't") can't start a runaway join; the 60-line cap is
-# the backstop.
+# them.
+#
+# Quote state is tracked by SCANNING the line, not by counting quote characters.
+# The counting version excluded only FULL-LINE comments, so an apostrophe inside
+# a double-quoted string — `test_fail "… the day'"'"'s egress answer"` — read as
+# an unterminated single quote and joined the next 60 lines into one statement.
+# That is not hypothetical: it was live on this branch, and the 60-line sweep
+# pulled in an unrelated `grep … | wc -l` pipeline and an unrelated `|| echo`,
+# satisfying all four conditions and FAILING the suite on a fabricated hit. A
+# detector for "a failure that produces a confident-looking wrong answer",
+# producing a confident-looking wrong answer.
+#
+# The scan tracks single- and double-quote state against each other (a `'"'"'`
+# inside `"…"` is literal, and vice versa), honours backslash escapes ONLY
+# outside single quotes (bash does not escape inside them), and stops at an
+# unquoted `#` that begins a word — so a trailing comment is ignored while
+# `(#882)` is not mistaken for one.
 _JOIN_AWK='
+function sq_open(s,   i, c, p, in_s, in_d, L) {
+  in_s = 0; in_d = 0; L = length(s)
+  for (i = 1; i <= L; i++) {
+    c = substr(s, i, 1)
+    if (c == "\\" && !in_s) { i++; continue }
+    if (c == "'"'"'" && !in_d) { in_s = !in_s; continue }
+    if (c == "\"" && !in_s) { in_d = !in_d; continue }
+    if (c == "#" && !in_s && !in_d) {
+      p = (i == 1) ? " " : substr(s, i - 1, 1)
+      if (p == " " || p == "\t") break
+    }
+  }
+  return in_s
+}
 {
   line = $0; ln = NR; joined = 0
   while (joined < 60) {
-    probe = line
-    gsub(/\\'"'"'/, "", probe)
-    stripped = probe
-    sub(/^[[:space:]]*#.*$/, "", stripped)
-    n = gsub(/'"'"'/, "'"'"'", stripped)
-    odd = (n % 2)
+    odd = sq_open(line)
     cont = (line ~ /\\[[:space:]]*$/)
     if (!cont && !odd) break
     if (getline nxt <= 0) break
