@@ -175,6 +175,21 @@ track_freed "Old time-series JSONL.gz (>180d)" "$metrics_size"
 #      the unlink is not a case worth holding a lock for. Re-checking each path
 #      immediately before its rm would narrow the window without closing it,
 #      which buys the appearance of a guarantee rather than one.
+#
+#      What keeps that window narrow rather than merely small is the sticky bit
+#      on /tmp: without it any user can unlink a root-owned entry and put
+#      something of their own at that name between the scan and the rm. That is
+#      an OS default this section was silently inheriting, so it is now checked
+#      out loud (#901 review) — an unsticky /tmp skips the sweep entirely, on
+#      the same "a precondition that could not be confirmed is not satisfied"
+#      rule as the /proc read above.
+#
+#      Stating the residual exposure precisely rather than implying it is zero:
+#      even with the swap performed, `rm -rf -- /tmp/foo` on a symlink removes
+#      the symlink and does not traverse it (verified, not assumed: GNU rm
+#      leaves the target's contents intact when the operand itself is the
+#      link). So the sticky bit is what makes the swap impossible, not the only
+#      thing standing between this sweep and someone else's files.
 
 # Paths under /tmp currently referenced by a live process (cwd, exe or an open
 # fd). Prints one path per line. Returns non-zero when the scan could not be
@@ -353,7 +368,16 @@ _stale_tmp_dirs() {
 
 tmpdir_size=0
 tmpdir_count=0
-if _in_use=$(_tmp_paths_in_use); then
+if [[ ! -k /tmp ]]; then
+    # Not a theoretical hardening: /tmp is world-writable, so the sticky bit is
+    # the only thing preventing a non-root user from unlinking one of the
+    # root-owned directories this sweep has already selected and leaving
+    # something else at that path before the rm reaches it. Skipped rather than
+    # risked — a week of scratch files is cheaper than a delete aimed by
+    # somebody else.
+    marvin_log "WARN" "/tmp is not sticky — the stale-directory sweep's TOCTOU window depends on that bit to keep other users from swapping a selected path, so section 6a is skipped rather than run without it (#898, #901 review)"
+    ACTIONS+=("Stale /tmp scratch directories: SKIPPED (/tmp not sticky)")
+elif _in_use=$(_tmp_paths_in_use); then
     tmpdir_unreadable=0
     while IFS= read -r d; do
         [[ -n "$d" ]] || continue
@@ -380,6 +404,16 @@ if _in_use=$(_tmp_paths_in_use); then
     done < <(_stale_tmp_dirs /tmp 7 "$_in_use")
     if [[ "$tmpdir_count" -gt 0 ]]; then
         track_freed "Stale /tmp scratch directories (>7d, ${tmpdir_count})" "$tmpdir_size"
+    fi
+    # Surfaced in the summary, not only in the log (#901 review). track_freed
+    # cannot carry this — it is gated on bytes > 0, and a directory that was
+    # skipped freed nothing by definition. A run that examined 60 directories
+    # and could not read 12 of them is not the same run as one that examined
+    # 60, and the report is where that difference has to be visible; otherwise
+    # a sweep degrading toward "skips everything" reads as "found nothing",
+    # which is #898 over again.
+    if [[ "$tmpdir_unreadable" -gt 0 ]]; then
+        ACTIONS+=("Stale /tmp scratch directories: ${tmpdir_unreadable} skipped, subtree unreadable")
     fi
 else
     _in_use_rc=$?
