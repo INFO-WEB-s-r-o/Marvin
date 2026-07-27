@@ -986,6 +986,38 @@ else
     test_warn "--beacon-only exit status: network-discovery.sh not readable — check skipped"
 fi
 
+# ─── 9k. Hourly nginx error window must include the rotated log ──────────────
+# Issue #860. logrotate runs daily at 00:00 local; the 00:35 run's 65-minute
+# window opens at 23:30 the previous day, by which time those entries live in
+# error.log.1. Reading only the live log dropped that half-hour every night,
+# and dropped it invisibly — "no errors in the window" and "nobody read the
+# window" render identically in the report.
+#
+# Source-level, deliberately: the runtime symptom appears for one run a day, at
+# 00:35, and only when something was actually logged in that half-hour. A test
+# that waits for those three conditions to coincide reports clean almost every
+# time it runs, which is the property that let this survive undetected.
+_hc="${MARVIN_DIR}/agent/hourly-check.sh"
+if [[ -r "$_hc" ]]; then
+    if grep -q 'error\.log\.1' "$_hc"; then
+        test_pass "hourly nginx window: reads the rotated error.log.1, so the 23:30–00:00 span survives logrotate (#860)"
+    else
+        test_fail "hourly nginx window: hourly-check.sh never mentions error.log.1 — the 00:35 run's window opens at 23:30 inside a file it does not read, so that half-hour is dropped nightly (#860)"
+    fi
+
+    # The other half, from #866: an unreadable log must be reported as unread.
+    # A loop over two files sharing one status flag lets the readable file's
+    # success erase the unreadable one's failure, and the run then prints a
+    # short window with nothing saying half of it was never opened.
+    if grep -qE 'UNREAD|INCOMPLETE, not clean' "$_hc"; then
+        test_pass "hourly nginx window: a log it could not read is reported as unread rather than folded into an empty window (#866)"
+    else
+        test_fail "hourly nginx window: no unread-log reporting in hourly-check.sh — a log that cannot be opened is indistinguishable from a log with no errors (#866)"
+    fi
+else
+    test_warn "hourly nginx window: ${_hc} not readable — #860/#866 checks skipped"
+fi
+
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
 # Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
 # artefact with byte-identical duplicates of the active /home/marvin/.gnupg/
