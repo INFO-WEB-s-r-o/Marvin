@@ -327,35 +327,16 @@ marvin_validate_json_or_warn "$PORT_INVENTORY" "port-inventory" || true
 # once per run. Only skips subnets Docker actually uses, not the whole 172.16/12
 # range (fixes #591). Defined here (before 3b) rather than inside 3d so 3b can
 # reuse it — otherwise 3b flags the exact bridge traffic 3d correctly ignores.
-_docker_bridges=""
-if command -v docker &>/dev/null; then
-    _docker_bridges=$(docker network ls --format '{{.ID}}' 2>/dev/null \
-        | xargs -I{} docker network inspect {} --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null \
-        | tr ' ' '\n' | grep -E '^[0-9]+\.' | sort -u || true)
-fi
-
-# _ip_in_docker_cidr — check if an IP falls within any active Docker subnet
-# Uses bitwise arithmetic to support arbitrary prefix lengths (e.g. /16, /20, /24).
-_ip_in_docker_cidr() {
-    local IFS ip="$1" ip_a ip_b ip_c ip_d ip_int
-    # Guard: only process valid IPv4 addresses (reject IPv6, IPv4-mapped IPv6, malformed)
-    [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
-    IFS='.' read -r ip_a ip_b ip_c ip_d <<< "$ip"
-    ip_d=${ip_d:-0}
-    ip_int=$(( (ip_a << 24) | (ip_b << 16) | (ip_c << 8) | ip_d ))
-    IFS=$' \t\n'   # reset before iterating — IFS='.' from read persists in local scope
-    local cidr net mask net_a net_b net_c net_d net_int mask_int
-    for cidr in $_docker_bridges; do
-        IFS='/' read -r net mask <<< "$cidr"
-        [[ "$mask" =~ ^[0-9]+$ && "$mask" -ge 1 && "$mask" -le 32 ]] || continue
-        IFS='.' read -r net_a net_b net_c net_d <<< "$net"
-        net_d=${net_d:-0}
-        net_int=$(( (net_a << 24) | (net_b << 16) | (net_c << 8) | net_d ))
-        mask_int=$(( 0xFFFFFFFF << (32 - mask) & 0xFFFFFFFF ))
-        [[ $(( ip_int & mask_int )) -eq $(( net_int & mask_int )) ]] && return 0
-    done
-    return 1
-}
+#
+# MOVED (#882): _docker_bridges and _ip_in_docker_cidr now live in
+# agent/lib/outbound.sh, sourced via common.sh, because the new 5-minute
+# outbound sampler must use the SAME classifier as this scan. A second copy here
+# would let sampler and aggregator drift on what counts as outbound, producing
+# confidently wrong egress numbers — worse than no numbers at all.
+#
+# Still collected once per run: the probe inside the lib is lazy, so this call is
+# what pays for it and every later _ip_in_docker_cidr hit is free.
+marvin_outbound_bridges_init
 
 # ─── 3b. Active connection tracking & suspicious connection detection ─────────
 # Snapshot established connections and flag unusual destinations
@@ -404,7 +385,9 @@ if [[ -n "$established_output" ]]; then
         # an outbound destination worth flagging. Mirrors the 3d outbound-audit
         # skip; without it, ports like 4317 (OTEL-gRPC) and 3100 (marvin-brain-mcp)
         # on 172.18/172.19 produce false-positive "unusual remote ports" WARNs.
-        if [[ -n "$_docker_bridges" ]] && _ip_in_docker_cidr "$remote_ip"; then
+        # The emptiness guard is gone: _ip_in_docker_cidr self-initialises and
+        # returns 1 when no bridges exist (#882).
+        if _ip_in_docker_cidr "$remote_ip"; then
             continue
         fi
 
@@ -517,6 +500,24 @@ marvin_log "INFO" "Connection rate analysis: ${high_rate_count} high-rate IP(s) 
 # Track what this server connects to externally. Provides visibility into
 # outbound traffic: package managers, DNS, NTP, email relays, GitHub API, etc.
 # Flags unexpected outbound destinations that could indicate compromise.
+#
+# REWRITTEN (#882). This section used to BE the whole control: one instantaneous
+# `ss` at 04:00 local — the deadest minute on this box — written out as the day's
+# answer. It reported zero outbound connections on 30 of 31 retained scans. The
+# filters were never wrong; it just never looked. On 2026-07-26, 704 MB left this
+# interface (19.5σ over a 21-day mean) and this control had no record of it and
+# never could have.
+#
+# Now: the 5-minute health-monitor tick records samples (agent/lib/outbound.sh),
+# and this section AGGREGATES them. The instantaneous sample is retained — it is
+# still a real observation and other consumers read those fields — but it is one
+# of 288, not the answer.
+#
+# The two claims are reported separately and never merged:
+#   - what was observed (destinations, processes, unexpected ports)
+#   - whether the sampler actually looked (coverage_status)
+# A day with no samples reports "absent" and raises a warning. It does NOT report
+# zero connections. That distinction is the entire fix.
 
 marvin_log "INFO" "Auditing outbound connections..."
 
@@ -525,49 +526,17 @@ outbound_count=0
 outbound_unexpected=0
 outbound_unexpected_json="[]"
 
-# Known safe outbound destinations (by remote port)
-# 22=SSH, 25/465/587=email relay, 53=DNS, 80/443=HTTP/S, 123=NTP, 11371=keyserver
-SAFE_OUTBOUND_PORTS="22 25 53 80 123 443 465 587 11371"
+# Port lists + classification live in agent/lib/outbound.sh so the sampler and
+# this aggregator cannot disagree about what "outbound" means.
+SAFE_OUTBOUND_PORTS="$MARVIN_SAFE_OUTBOUND_PORTS"
 
-# Known service ports on this server (inbound connections to exclude)
-LOCAL_SERVICE_PORTS="22 25 80 443 465 587 993 3000 6379 8043 11332 11333 11334"
-
+# ── Instantaneous sample (one data point, no longer the verdict) ──
 outbound_output=$(ss -tnp state established 2>/dev/null || echo "")
 
-# Docker bridge detection (_docker_bridges + _ip_in_docker_cidr) is defined
-# once, before section 3b, and shared by both connection checks (fixes #591).
-
 if [[ -n "$outbound_output" ]]; then
-    # Build outbound connection inventory: connections FROM this server TO remote hosts
-    # Filter: local port must NOT be a known service port (those are inbound)
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        local_addr=$(echo "$line" | awk '{print $3}')
-        remote_addr=$(echo "$line" | awk '{print $4}')
-        local_port=$(echo "$local_addr" | grep -oP ':\K[0-9]+$' || echo "")
-        remote_port=$(echo "$remote_addr" | grep -oP ':\K[0-9]+$' || echo "")
-        remote_ip=$(echo "$remote_addr" | sed 's/:[0-9]*$//')
-        proc_info=$(echo "$line" | awk '{for(i=5;i<=NF;i++) printf "%s ", $i; print ""}' | sed 's/ *$//')
-
-        # Skip inbound connections (local port is a service port)
-        if echo "$LOCAL_SERVICE_PORTS" | grep -qw "$local_port" 2>/dev/null; then
-            continue
-        fi
-
-        # Skip loopback
-        case "$remote_ip" in
-            127.*|::1|0.0.0.0) continue ;;
-        esac
-
-        # Skip traffic to active Docker bridge subnets (narrowed from blanket 172.16/12)
-        if [[ -n "$_docker_bridges" ]] && _ip_in_docker_cidr "$remote_ip"; then
-            continue
-        fi
-
+    while IFS=$'\t' read -r remote_ip remote_port local_port proc_name; do
+        [[ -z "$remote_ip" ]] && continue
         outbound_count=$((outbound_count + 1))
-
-        # Resolve process name from proc_info (e.g., users:(("curl",pid=123,fd=4)))
-        proc_name=$(echo "$proc_info" | grep -oP '"\K[^"]+' | head -1 || echo "unknown")
 
         outbound_conns_json=$(echo "$outbound_conns_json" | jq \
             --arg rip "$remote_ip" --arg rport "$remote_port" \
@@ -575,7 +544,6 @@ if [[ -n "$outbound_output" ]]; then
             '. + [{"remote_ip": $rip, "remote_port": ($rport | tonumber), "local_port": ($lport | tonumber), "process": $proc}]' \
             2>/dev/null || echo "$outbound_conns_json")
 
-        # Flag if remote port is not in the safe list
         if ! echo "$SAFE_OUTBOUND_PORTS" | grep -qw "$remote_port" 2>/dev/null; then
             outbound_unexpected=$((outbound_unexpected + 1))
             outbound_unexpected_json=$(echo "$outbound_unexpected_json" | jq \
@@ -585,7 +553,7 @@ if [[ -n "$outbound_output" ]]; then
                 2>/dev/null || echo "$outbound_unexpected_json")
             marvin_log "WARN" "Unexpected outbound: ${proc_name} → ${remote_ip}:${remote_port}"
         fi
-    done < <(echo "$outbound_output" | tail -n +2)
+    done < <(marvin_outbound_classify <<< "$outbound_output")
 
     if [[ "$outbound_unexpected" -gt 0 ]]; then
         marvin_log "WARN" "Found ${outbound_unexpected} outbound connection(s) to unusual ports"
@@ -602,22 +570,141 @@ if [[ "$outbound_count" -gt 0 ]]; then
     ' 2>/dev/null || echo "[]")
 fi
 
+# ── Day aggregate over the retained 5-minute samples ──
+# Aggregates YESTERDAY (UTC): this scan runs at 02:00 UTC, so yesterday is the
+# only complete 288-sample window available. Today's partial day is summarised
+# separately for continuity rather than being compared against a 288 expectation
+# it cannot possibly meet at 02:00.
+OUTBOUND_AUDIT_DAY=$(date -u -d 'yesterday' +%Y-%m-%d 2>/dev/null || echo "$TODAY")
+outbound_day_json=$(marvin_outbound_day_summary "$OUTBOUND_AUDIT_DAY" \
+    "$MARVIN_OUTBOUND_SAMPLES_PER_DAY")
+
+# Partial day-so-far: expected = elapsed 5-minute ticks since 00:00 UTC.
+#
+# Derived from a single epoch reading, NOT from `$(date +%H) * 60 + $(date +%M)`
+# (#886). Two independent reasons, and the first one crashes:
+#
+#   1. Zero-padding is octal. `date -u +%H` yields `08`/`09` and bash reads a
+#      leading-zero literal as octal, where those are not valid digits:
+#      `bash: 08: value too great for base`. Under this file's `set -euo
+#      pipefail` + ERR trap that aborts the ENTIRE daily security scan, not just
+#      this section. The review that caught it judged the scheduled 02:00 run
+#      safe because minute `00` is valid octal — but §3d does not run at 02:00.
+#      rkhunter takes ~4m16s, so this line executes at **02:04** (02:04:17–02:04:21
+#      across 2026-07-22/24/26). The production run is four minutes of rkhunter
+#      drift away from aborting the whole scan, which makes this a live fault
+#      rather than an ad-hoc-invocation-only one.
+#   2. Two `date` calls can straddle a minute boundary: read `%H` at 02:59:59.99
+#      and `%M` in the next millisecond and you get hour 2 with minute 0 — 120
+#      instead of 180. Rare, silent, and wrong rather than loud.
+#
+# `%s % 86400` is immune to both: one reading, no padded fields, no parsing.
+# `_today_expected` is only ever a sample-count expectation, so integer minutes
+# are all it needs.
+_elapsed_min=$(( ($(date -u +%s) % 86400) / 60 ))
+_today_expected=$(( _elapsed_min / 5 ))
+[[ "$_today_expected" -lt 1 ]] && _today_expected=1
+outbound_today_json=$(marvin_outbound_day_summary "$TODAY" "$_today_expected")
+
+outbound_coverage_status=$(jq -r '.coverage_status' <<< "$outbound_day_json" 2>/dev/null || echo "unknown")
+outbound_coverage_pct=$(jq -r '.coverage_percent' <<< "$outbound_day_json" 2>/dev/null || echo "0")
+outbound_day_samples=$(jq -r '.samples_recorded' <<< "$outbound_day_json" 2>/dev/null || echo "0")
+outbound_day_failed=$(jq -r '.samples_failed' <<< "$outbound_day_json" 2>/dev/null || echo "0")
+outbound_day_malformed=$(jq -r '.samples_malformed // 0' <<< "$outbound_day_json" 2>/dev/null || echo "0")
+outbound_day_unexpected=$(jq -r '.unexpected_destinations | length' <<< "$outbound_day_json" 2>/dev/null || echo "0")
+outbound_day_distinct=$(jq -r '.distinct_destinations // 0' <<< "$outbound_day_json" 2>/dev/null || echo "0")
+outbound_day_peak=$(jq -r '.peak_concurrent // 0' <<< "$outbound_day_json" 2>/dev/null || echo "0")
+
+# Coverage is a first-class finding. "The sampler did not run" must never render
+# as "nothing left the box" — that equivalence is what made this control useless
+# for 30 days, and it is the same defect as a firewall audit that reads an absent
+# firewall as verified-clean (#881).
+case "$outbound_coverage_status" in
+    absent)
+        marvin_log "WARN" "Outbound audit: NO samples retained for ${OUTBOUND_AUDIT_DAY} — egress for that day is UNKNOWN, not clean. Is health-monitor.sh running?"
+        ;;
+    degraded)
+        marvin_log "WARN" "Outbound audit: only ${outbound_day_samples}/${MARVIN_OUTBOUND_SAMPLES_PER_DAY} samples (${outbound_coverage_pct}%) for ${OUTBOUND_AUDIT_DAY} — too sparse to attribute egress"
+        ;;
+    failing)
+        marvin_log "WARN" "Outbound audit: every retained sample for ${OUTBOUND_AUDIT_DAY} is an error or unparseable record (${outbound_day_failed} error, ${outbound_day_malformed} malformed) — the sampler ran and produced nothing usable"
+        ;;
+    aggregate-failed)
+        marvin_log "WARN" "Outbound audit: sample aggregation FAILED for ${OUTBOUND_AUDIT_DAY} — treat as no data"
+        ;;
+    path-unresolved)
+        marvin_log "WARN" "Outbound audit: could not resolve a sample directory (SECURITY_DIR/DATA_DIR/MARVIN_DIR all unset) — egress for ${OUTBOUND_AUDIT_DAY} is UNKNOWN"
+        ;;
+    ok)
+        marvin_log "INFO" "Outbound audit: ${outbound_day_samples} samples (${outbound_coverage_pct}%) for ${OUTBOUND_AUDIT_DAY}, ${outbound_day_distinct} distinct destination(s), peak ${outbound_day_peak} concurrent"
+        ;;
+    *)
+        # An unrecognised status still degrades overall_status below, but must
+        # not pass through the log in silence — a status nobody prints is a
+        # status nobody notices.
+        marvin_log "WARN" "Outbound audit: unrecognised coverage_status '${outbound_coverage_status}' for ${OUTBOUND_AUDIT_DAY} — treat as no data"
+        ;;
+esac
+
+if [[ "$outbound_day_failed" -gt 0 ]] 2>/dev/null; then
+    marvin_log "WARN" "Outbound audit: ${outbound_day_failed} sample(s) on ${OUTBOUND_AUDIT_DAY} recorded an error — gaps in the egress history"
+fi
+
+# Malformed lines are skipped rather than fatal (the day still aggregates), so
+# they must be announced or the skip becomes a silent under-count.
+if [[ "$outbound_day_malformed" -gt 0 ]] 2>/dev/null; then
+    marvin_log "WARN" "Outbound audit: ${outbound_day_malformed} unparseable line(s) in the ${OUTBOUND_AUDIT_DAY} sample file — skipped, not counted; the rest of the day aggregated normally"
+fi
+
+if [[ "$outbound_day_unexpected" -gt 0 ]] 2>/dev/null; then
+    marvin_log "WARN" "Outbound audit: ${outbound_day_unexpected} unexpected destination(s) across ${OUTBOUND_AUDIT_DAY}"
+fi
+
 # Save outbound audit
 OUTBOUND_FILE="${SECURITY_DIR}/outbound-audit.json"
-cat > "$OUTBOUND_FILE" << OUTEOF
+# Written to a temp file, restricted, then mv'd into place — NOT `cat >` on the
+# destination followed by chmod (#885). Two reasons, both real here:
+#
+#   1. Permissions. `cat >` creates a missing file at the process umask (644 for
+#      root) and preserves the existing mode on a file that is already 644 — so
+#      the destination holds the new egress history world-readable until the
+#      chmod lands. Everything under data/ is HTTP-reachable until the /api/
+#      allowlist (#861) lands, so that window is genuinely reachable. Restrict
+#      first, rename second — the same ordering #636 established in
+#      file-integrity.sh, for the same reason.
+#   2. Atomicity. `cat >` truncates before it writes, so a reader arriving
+#      mid-write gets a partial document. mv on the same filesystem is atomic.
+#
+# 640, not the 644 the rest of data/security/ uses: this is a record of every
+# destination this host contacted, and that is not something to publish.
+_ob_tmp=$(mktemp "${OUTBOUND_FILE}.XXXXXX")
+chmod 640 "$_ob_tmp"
+cat > "$_ob_tmp" << OUTEOF
 {
   "timestamp": "${NOW}",
   "outbound_total": ${outbound_count},
   "outbound_unexpected": ${outbound_unexpected},
   "unexpected_connections": ${outbound_unexpected_json},
   "by_port": ${outbound_by_port},
-  "all_connections": ${outbound_conns_json}
+  "all_connections": ${outbound_conns_json},
+  "sampling_note": "outbound_total/outbound_unexpected above are ONE instantaneous sample taken at scan time. Use day_aggregate for the actual day; check its coverage_status before believing any count.",
+  "day_aggregate": ${outbound_day_json},
+  "today_partial": ${outbound_today_json}
 }
 OUTEOF
-chmod 644 "$OUTBOUND_FILE"
+# Validate BEFORE publishing: a malformed document must not replace a good one.
+if jq -e . "$_ob_tmp" >/dev/null 2>&1; then
+    mv -f "$_ob_tmp" "$OUTBOUND_FILE"
+    # Tighten a destination left at 644 by an older version of this code; the
+    # mv above already carries 640 for a newly-created file.
+    chmod 640 "$OUTBOUND_FILE"
+else
+    rm -f "$_ob_tmp"
+    marvin_log "WARN" "Outbound audit: generated document is not valid JSON — previous outbound-audit.json preserved"
+fi
 marvin_validate_json_or_warn "$OUTBOUND_FILE" "outbound-audit" || true
 
-marvin_log "INFO" "Outbound audit: ${outbound_count} connections, ${outbound_unexpected} to unusual ports"
+marvin_log "INFO" "Outbound audit: instantaneous sample ${outbound_count} connections, ${outbound_unexpected} to unusual ports; ${OUTBOUND_AUDIT_DAY} coverage ${outbound_coverage_status}"
 
 # ─── 3e. Geographic analysis of incoming connections ──────────────────────────
 # Uses geoiplookup (local GeoIP database) to map visitor IPs to countries.
@@ -837,12 +924,14 @@ if [[ "$rkhunter_status" == "infected" || "$chkrootkit_status" == "infected" ]];
     overall_status="infected"
 elif [[ "$fim_status" == "alert" ]]; then
     overall_status="alert"
-elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security_actionable" -gt 0 || "$unexpected_count" -gt 0 || "$suspicious_count" -gt 0 || "$high_rate_count" -gt 0 || "$outbound_unexpected" -gt 0 || "$ufw_unexpected_count" -gt 0 || "$ufw_scan_ok" != true ]]; then
-    # `ufw_scan_ok != true` is a warning in its own right (#880/#881): an
-    # ingress audit that could not run — or ran against an inactive
-    # firewall — must not leave overall_status at "clean", or the one
-    # field the dashboard and incident-report actually read would call a
-    # host with no packet filtering healthy.
+elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security_actionable" -gt 0 || "$unexpected_count" -gt 0 || "$suspicious_count" -gt 0 || "$high_rate_count" -gt 0 || "$outbound_unexpected" -gt 0 || "$outbound_day_unexpected" -gt 0 ]]; then
+    overall_status="warnings"
+# A control that could not look must not be scored as a control that looked and
+# found nothing (#882, same defect class as #881). Absent/degraded/failed egress
+# coverage is itself a warning: it means this scan cannot speak to what left the
+# box, and 30 consecutive days of exactly that went unnoticed because it scored
+# "clean" every time.
+elif [[ "$outbound_coverage_status" != "ok" ]]; then
     overall_status="warnings"
 fi
 
@@ -891,6 +980,16 @@ cat > "$REPORT_FILE" << EOF
     "high_rate_threshold": ${HIGH_CONN_THRESHOLD},
     "outbound_total": ${outbound_count},
     "outbound_unexpected": ${outbound_unexpected},
+    "outbound_sample_scope": "instantaneous",
+    "outbound_day": "${OUTBOUND_AUDIT_DAY}",
+    "outbound_day_coverage_status": "${outbound_coverage_status}",
+    "outbound_day_coverage_percent": ${outbound_coverage_pct},
+    "outbound_day_samples": ${outbound_day_samples},
+    "outbound_day_samples_failed": ${outbound_day_failed},
+    "outbound_day_samples_malformed": ${outbound_day_malformed},
+    "outbound_day_distinct_destinations": ${outbound_day_distinct},
+    "outbound_day_peak_concurrent": ${outbound_day_peak},
+    "outbound_day_unexpected": ${outbound_day_unexpected},
     "geo_available": ${geo_available},
     "geo_unique_ips": ${geo_total_ips},
     "geo_countries": ${geo_country_count},
