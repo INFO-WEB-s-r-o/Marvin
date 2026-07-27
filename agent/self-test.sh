@@ -3483,20 +3483,33 @@ else
         _bl_restr="__PC_FAIL__"
     else
         _bl_pcfail=0
+        _bl_failed=""
+        _bl_read=0
         while IFS= read -r _bl_class; do
             [[ -z "$_bl_class" ]] && continue
-            _bl_one=$("$_bl_postconf" -h "$_bl_class" 2>/dev/null) || { _bl_pcfail=1; continue; }
+            _bl_one=$("$_bl_postconf" -h "$_bl_class" 2>/dev/null) || {
+                _bl_pcfail=1; _bl_failed+="${_bl_class} "; continue
+            }
+            _bl_read=$((_bl_read + 1))
             _bl_restr+="${_bl_one}, "
         done <<< "$_bl_classes"
         if [[ "$_bl_pcfail" -eq 1 ]]; then
-            test_warn "dnsbl health: '${_bl_postconf} -h' failed for at least one smtpd restriction class — any DNSBL configured there was NOT verified (#914)"
+            test_warn "dnsbl health: '${_bl_postconf} -h' failed for ${_bl_failed% } — any DNSBL configured there was NOT verified, so this run's coverage is incomplete (#914, #915)"
         fi
     fi
 
     if [[ "$_bl_restr" == "__PC_FAIL__" ]]; then
         : # already reported above; do not also emit a misleading verdict
     elif ! printf '%s' "$_bl_restr" | grep -q 'reject_rbl_client'; then
-        test_pass "dnsbl health: no reject_rbl_client in any of the $(printf '%s\n' "$_bl_classes" | grep -c .) smtpd restriction classes — nothing to verify"
+        # A partial read must not produce "nothing to verify" (#915). The classes
+        # that could not be read are exactly where an unprobed DNSBL would hide,
+        # so a PASS here would count classes this run never opened — a confident
+        # clean verdict sitting directly beneath a WARN saying coverage was
+        # incomplete. Same laundering as #913 and #914, and I shipped it while
+        # fixing them: the WARN above is the whole finding, and nothing is added.
+        if [[ "${_bl_pcfail:-0}" -eq 0 ]]; then
+            test_pass "dnsbl health: no reject_rbl_client in any of the ${_bl_read:-0} smtpd restriction classes read — nothing to verify"
+        fi
     else
         # sed -n 's///p' rather than grep|sed: grep exits 1 on no match, and the
         # `reject_rbl_client` presence test above has already established there
