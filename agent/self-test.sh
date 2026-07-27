@@ -1093,6 +1093,77 @@ else
     fi
 fi
 
+# ─── 9h. nginx must not retain raw request bodies in the negotiate inbox ──────
+# Issue #854. `client_body_in_file_only on` in the /.well-known/ai-negotiate
+# location made nginx keep every request body forever, as a raw
+# attacker-controlled file inside the very directory negotiate-handler.sh globs
+# for proposals. It survived because the glob is `*.json` and nginx's temp files
+# have no extension — one character of luck between "inert" and "the public
+# endpoint feeds the handler unsanitized input".
+#
+# Lives in the §9 config family rather than §1 because it is the same shape as
+# §9d: an assertion about configuration, not about script syntax. Sources are
+# FAIL (the repo is what a rebuild reads); the live copy is WARN, because
+# reconciling it is a deploy step and §9d already tracks that drift. Checked in
+# BOTH tracked sources — nginx-site.conf and bootstrap.sh's heredoc — since only
+# the former is diffed against live, so a bootstrap re-run was free to reinstate
+# what a fix to the other one removed.
+
+marvin_log "INFO" "Self-test: checking nginx does not retain raw negotiate bodies"
+
+# Two distinct invariants, deliberately not merged into one regex — the review of
+# #856 was right that `client_body_in_file_only clean` does NOT retain (nginx
+# removes the file after the request), so banning it under a "retains" message
+# would fail a future legitimate config with a factually false reason.
+#
+#   RETAIN — `in_file_only on` is the one value that never removes the file.
+#   INBOX  — a client_body_temp_path under the project data dir puts a raw,
+#            caller-controlled body inside the directory negotiate-handler.sh
+#            globs, which is the actual defect. This one catches `clean` too:
+#            transient or not, untrusted input does not belong in the inbox.
+#
+# So `clean` with a temp path outside the project tree stays legal, and both
+# messages state something true.
+_body_retain_re='^[[:space:]]*client_body_in_file_only[[:space:]]+on([[:space:]]|;)'
+_body_inbox_re='^[[:space:]]*client_body_temp_path[[:space:]]+[^;]*(negotiate-inbox|data/comms)'
+_body_retain_fails=0
+for _brs in "${MARVIN_DIR}/setup/nginx-site.conf" "${MARVIN_DIR}/setup/bootstrap.sh"; do
+    [[ -r "$_brs" ]] || continue
+    if grep -qE "$_body_retain_re" "$_brs" 2>/dev/null; then
+        test_fail "nginx source never removes request-body temp files (client_body_in_file_only on): $(basename "$_brs")"
+        _body_retain_fails=$((_body_retain_fails + 1))
+    fi
+    if grep -qE "$_body_inbox_re" "$_brs" 2>/dev/null; then
+        test_fail "nginx source writes raw request bodies into the handler's inbox (client_body_temp_path): $(basename "$_brs")"
+        _body_retain_fails=$((_body_retain_fails + 1))
+    fi
+done
+if [[ "$_body_retain_fails" -eq 0 ]]; then
+    test_pass "nginx sources do not deposit raw request bodies in the negotiate inbox"
+fi
+
+_nginx_live_site="/etc/nginx/sites-available/marvin"
+if [[ -r "$_nginx_live_site" ]] \
+    && grep -qE "$_body_retain_re|$_body_inbox_re" "$_nginx_live_site" 2>/dev/null; then
+    test_warn "live nginx config still deposits raw request bodies in the negotiate inbox — reload after deploying the fixed nginx-site.conf (#854)"
+fi
+
+# Residue: nginx temp bodies are extension-less numeric names, so any non-*.json
+# file in the inbox is either retained-body leftovers or something stranger.
+# WARN-only — the handler ignores them, and deleting evidence is not a test's job.
+_inbox_dir="${COMMS_DIR}/negotiate-inbox"
+if [[ -d "$_inbox_dir" ]]; then
+    # Assignment fallback, not `|| echo` — a bare `$(find | wc)` under
+    # `set -euo pipefail` + the ERR trap would abort the whole suite if the dir
+    # were ever unreadable (the §1d crash class, and the #841 fallback shape).
+    _inbox_residue=$(find "$_inbox_dir" -maxdepth 1 -type f ! -name '*.json' 2>/dev/null | wc -l) || _inbox_residue=0
+    if [[ "${_inbox_residue:-0}" -gt 0 ]]; then
+        test_warn "negotiate inbox holds ${_inbox_residue} non-JSON file(s) — retained nginx request bodies (#854)"
+    else
+        test_pass "negotiate inbox holds no retained request bodies"
+    fi
+fi
+
 # ─── 10. Security scoring system ──────────────────────────────────────────────
 # Grades the server A-F across multiple security dimensions
 
