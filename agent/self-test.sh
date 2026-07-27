@@ -1873,7 +1873,11 @@ marvin_log "INFO" "Self-test: checking agent/setup script mode bits in the git i
 
 _mode_repo=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd) || _mode_repo=""
 
-if [[ -z "$_mode_repo" || ! -d "${_mode_repo}/.git" && ! -f "${_mode_repo}/.git" ]]; then
+# Parenthesised deliberately (#911 review): `A || B && C` binds as `A || (B && C)`
+# in [[ ]], which is the intent here, but relying on that precedence silently is
+# how a guard comes to mean something other than it reads. `.git` is tested as
+# both a directory and a file so a worktree checkout (where it is a file) counts.
+if [[ -z "$_mode_repo" || ( ! -d "${_mode_repo}/.git" && ! -f "${_mode_repo}/.git" ) ]]; then
     test_warn "script mode bits: could not resolve a git repo from \$0 — check skipped (#910)"
 else
     # `git ls-files -s` emits "<mode> <sha> <stage>\t<path>". The pathspec globs
