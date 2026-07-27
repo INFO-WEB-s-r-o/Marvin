@@ -1314,6 +1314,61 @@ else
     fi
 fi
 
+# ─── 9k. Hourly nginx error window must include the rotated log ──────────────
+# Issue #860. logrotate runs daily at 00:00 local; the 00:35 run's 65-minute
+# window opens at 23:30 the previous day, by which time those entries live in
+# error.log.1. Reading only the live log dropped that half-hour every night,
+# and dropped it invisibly — "no errors in the window" and "nobody read the
+# window" render identically in the report.
+#
+# Source-level, deliberately: the runtime symptom appears for one run a day, at
+# 00:35, and only when something was actually logged in that half-hour. A test
+# that waits for those three conditions to coincide reports clean almost every
+# time it runs, which is the property that let this survive undetected.
+# Resolved via `dirname "$0"`, not ${MARVIN_DIR}: common.sh hardcodes the
+# latter to /home/marvin/git, so a branch-authored check spelled that way
+# asserts against what is *deployed* and reports on a tree this branch is
+# not (#855, and again in #874's §1j the same day). Shown: against the live
+# tree this section FAILs on its own branch, because main has no fix yet.
+_hc="$(dirname "$0")/hourly-check.sh"
+if [[ -r "$_hc" ]]; then
+    # Scanned inside _nginx_error_window's body with comment lines stripped,
+    # not across the whole file. The prose above the function names both
+    # `error.log.1` and `UNREAD` — matching the file at large would have gone
+    # on passing if the body were reverted and that comment block left behind,
+    # which is a test that asserts the fix was once described rather than that
+    # it is still wired in. Same defect as §9j's pre-#884 shape.
+    _hc_body=$(sed -n '/^_nginx_error_window()[[:space:]]*{/,/^}/p' "$_hc" \
+                 | grep -v '^[[:space:]]*#') || _hc_body=""
+
+    if [[ -z "$_hc_body" ]]; then
+        # Fail-closed: an extraction that silently yields nothing would make
+        # both checks below fail for the wrong reason, or — had they been
+        # written the other way round — pass for no reason at all.
+        test_fail "hourly nginx window: could not extract _nginx_error_window() from ${_hc} — the function was renamed or removed, so #860/#866 are unverified rather than clean"
+    else
+        # The loop must actually name the rotated log, not merely mention it.
+        if printf '%s\n' "$_hc_body" | grep -qE '^[[:space:]]*for .*error\.log\.1'; then
+            test_pass "hourly nginx window: the read loop names the rotated error.log.1, so the 23:30–00:00 span survives logrotate (#860)"
+        else
+            test_fail "hourly nginx window: _nginx_error_window() does not iterate over error.log.1 — the 00:35 run's window opens at 23:30 inside a file it does not read, so that half-hour is dropped nightly (#860)"
+        fi
+
+        # The other half, from #866: an unreadable log must be reported as
+        # unread. A loop over two files sharing one status flag lets the
+        # readable file's success erase the unreadable one's failure, and the
+        # run then prints a short window with nothing saying half of it was
+        # never opened. Asserted on the emitting printf, not on the word.
+        if printf '%s\n' "$_hc_body" | grep -qE 'printf.*UNREAD.*INCOMPLETE, not clean'; then
+            test_pass "hourly nginx window: a log it could not read is reported as unread rather than folded into an empty window (#866)"
+        else
+            test_fail "hourly nginx window: _nginx_error_window() emits no unread-log notice — a log that cannot be opened is indistinguishable from a log with no errors (#866)"
+        fi
+    fi
+else
+    test_warn "hourly nginx window: ${_hc} not readable — #860/#866 checks skipped"
+fi
+
 # ─── 9l. UFW findings must reach the security-scan score (#893) ──────────────
 # §9j asserts the egress-coverage half of the same rule. This is the ingress
 # half, and it exists because the ingress half was already lost once: PR #884
@@ -1332,8 +1387,16 @@ fi
 # satisfy the check. That scoping is the whole point: an unscoped grep for
 # `ufw_scan_ok` passes against the exact broken file this section is named for.
 #
-# Section letter 9l, not 9k: #890 is open and holds 9k. Checked against main AND
+# Section letter 9l, not 9k: #890 held 9k when this was written and has since
+# merged, so §9k now sits on main and directly above. Checked against main AND
 # the open branches, per the trap recorded in §9j's own comment (#889/#891).
+#
+# That check is what the letter reservation was for, and it is not what the
+# merge did. `git merge main` on this branch (24c1bed) resolved the conflict in
+# self-test.sh by writing §9l over §9k's lines rather than beside them — the
+# reservation was honoured in the letter and lost in the resolution, and the
+# diff showed it as one 59→61 hunk with nothing named in the PR body or the
+# CHANGELOG. Same shape as #889. Restored verbatim from main above (#907).
 
 marvin_log "INFO" "Self-test: checking UFW findings participate in the security scan's overall_status"
 
