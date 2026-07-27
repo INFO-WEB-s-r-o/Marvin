@@ -1332,20 +1332,38 @@ fi
 # tree this section FAILs on its own branch, because main has no fix yet.
 _hc="$(dirname "$0")/hourly-check.sh"
 if [[ -r "$_hc" ]]; then
-    if grep -q 'error\.log\.1' "$_hc"; then
-        test_pass "hourly nginx window: reads the rotated error.log.1, so the 23:30–00:00 span survives logrotate (#860)"
-    else
-        test_fail "hourly nginx window: hourly-check.sh never mentions error.log.1 — the 00:35 run's window opens at 23:30 inside a file it does not read, so that half-hour is dropped nightly (#860)"
-    fi
+    # Scanned inside _nginx_error_window's body with comment lines stripped,
+    # not across the whole file. The prose above the function names both
+    # `error.log.1` and `UNREAD` — matching the file at large would have gone
+    # on passing if the body were reverted and that comment block left behind,
+    # which is a test that asserts the fix was once described rather than that
+    # it is still wired in. Same defect as §9j's pre-#884 shape.
+    _hc_body=$(sed -n '/^_nginx_error_window()[[:space:]]*{/,/^}/p' "$_hc" \
+                 | grep -v '^[[:space:]]*#') || _hc_body=""
 
-    # The other half, from #866: an unreadable log must be reported as unread.
-    # A loop over two files sharing one status flag lets the readable file's
-    # success erase the unreadable one's failure, and the run then prints a
-    # short window with nothing saying half of it was never opened.
-    if grep -qE 'UNREAD|INCOMPLETE, not clean' "$_hc"; then
-        test_pass "hourly nginx window: a log it could not read is reported as unread rather than folded into an empty window (#866)"
+    if [[ -z "$_hc_body" ]]; then
+        # Fail-closed: an extraction that silently yields nothing would make
+        # both checks below fail for the wrong reason, or — had they been
+        # written the other way round — pass for no reason at all.
+        test_fail "hourly nginx window: could not extract _nginx_error_window() from ${_hc} — the function was renamed or removed, so #860/#866 are unverified rather than clean"
     else
-        test_fail "hourly nginx window: no unread-log reporting in hourly-check.sh — a log that cannot be opened is indistinguishable from a log with no errors (#866)"
+        # The loop must actually name the rotated log, not merely mention it.
+        if printf '%s\n' "$_hc_body" | grep -qE '^[[:space:]]*for .*error\.log\.1'; then
+            test_pass "hourly nginx window: the read loop names the rotated error.log.1, so the 23:30–00:00 span survives logrotate (#860)"
+        else
+            test_fail "hourly nginx window: _nginx_error_window() does not iterate over error.log.1 — the 00:35 run's window opens at 23:30 inside a file it does not read, so that half-hour is dropped nightly (#860)"
+        fi
+
+        # The other half, from #866: an unreadable log must be reported as
+        # unread. A loop over two files sharing one status flag lets the
+        # readable file's success erase the unreadable one's failure, and the
+        # run then prints a short window with nothing saying half of it was
+        # never opened. Asserted on the emitting printf, not on the word.
+        if printf '%s\n' "$_hc_body" | grep -qE 'printf.*UNREAD.*INCOMPLETE, not clean'; then
+            test_pass "hourly nginx window: a log it could not read is reported as unread rather than folded into an empty window (#866)"
+        else
+            test_fail "hourly nginx window: _nginx_error_window() emits no unread-log notice — a log that cannot be opened is indistinguishable from a log with no errors (#866)"
+        fi
     fi
 else
     test_warn "hourly nginx window: ${_hc} not readable — #860/#866 checks skipped"
