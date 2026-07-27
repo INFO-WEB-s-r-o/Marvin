@@ -414,6 +414,294 @@ else
     done
 fi
 
+# ─── 1i. weekly-analytics fallback/success shape parity ──────────────────────
+# `_claude_usage()` emits one object on success and a hand-written zero object
+# on the failure/empty paths. Those two shapes must carry the same keys: a
+# consumer reading a field that only the success shape defines gets `null`
+# instead of 0, and nothing downstream distinguishes "no runs" from "key was
+# never there". This is not hypothetical — both fallback literals had already
+# drifted from the jq object, omitting total_prompt_chars and
+# total_output_chars, and the drift was invisible because the fallback only
+# renders on an I/O fault. Collapsed to a single `_zero_claude_usage()`; this
+# asserts it stays in step as fields are added to the jq block.
+#
+# Extract the functions from the script rather than sourcing it (the script
+# runs its whole pipeline at import) and read them via `dirname $0`, NOT
+# MARVIN_DIR — a branch-authored test that resolves through MARVIN_DIR asserts
+# against the deployed main copy and would pass while the branch regressed.
+
+marvin_log "INFO" "Self-test: checking weekly-analytics claude-usage shape parity"
+
+_wa_script="$(dirname "$0")/weekly-analytics.sh"
+if [[ -r "$_wa_script" ]]; then
+    # Slices one function out of weekly-analytics.sh: matches its opening
+    # `fn() {` and stops at the first `}` in column 0.
+    #
+    # That terminator is a structural ASSUMPTION about the source file, not
+    # something the source file enforces. Every brace inside the three
+    # functions extracted here — including the multi-line jq literal — is
+    # indented today; a future reformat leaving a closing `}` at column 0
+    # mid-body would truncate the slice. It fails safe rather than silently
+    # passing: a truncated function is unbalanced bash, `eval` rejects it, and
+    # the `|| exit 3` / `declare -F` guards below render that as test_warn
+    # ("could not run"), never test_pass. Recorded so the next reader knows
+    # the assumption is deliberate and what to re-check if it spreads.
+    _wa_extract() {
+        awk -v fn="$1" '$0 ~ "^"fn"\\(\\) \\{" {p=1} p {print} p && /^\}$/ {exit}' "$_wa_script"
+    }
+    # Subshell: the extracted functions and the METRICS_DIR override must not
+    # leak into the rest of the suite.
+    #
+    # `|| _shape_rc=$?` rather than a bare assignment read by `$?` on the next
+    # line: this file runs under `set -euo pipefail` with `trap
+    # marvin_error_trap ERR`, so an assignment from a subshell that exits
+    # non-zero is a failing simple command, and the suite ABORTS — reporting a
+    # crash — at the exact moment this check finds the drift it exists to
+    # find. Demonstrated after the fact: with a field deleted from
+    # `_zero_claude_usage()`, the previous spelling fired the ERR trap and
+    # exited 1 with no `test_fail` line at all; the entry above claims this
+    # negative control "fails with both key lists printed", and it did not.
+    # As part of an OR-list the assignment is exempt from both errexit and the
+    # trap. (Same defect, same shape, found the same way in #862's §9g.)
+    _shape_rc=0
+    _shape_result=$(
+        set +e
+        _wa_tmp=$(mktemp -d) || exit 3
+        trap 'rm -rf "$_wa_tmp"' EXIT
+        # Read by the _claude_usage extracted below; shellcheck cannot see
+        # through the eval, hence the disable rather than a spurious export.
+        # shellcheck disable=SC2034
+        METRICS_DIR="$_wa_tmp"
+        _wa_day=$(date -u +%Y-%m-%d)
+        printf '{"task":"selftest","duration_s":1,"prompt_chars":1,"output_chars":1,"exit_code":0}\n' \
+            > "${_wa_tmp}/claude-usage-${_wa_day}.jsonl" || exit 3
+        # `eval` is on the guideline's security red-flag list, so the trust
+        # boundary is worth stating rather than leaving to inference: the text
+        # evaluated here is sliced from agent/weekly-analytics.sh, a file
+        # tracked in this same repo and already executed as root by cron. It is
+        # never runtime input, never peer- or user-supplied, and never leaves
+        # this subshell. Anyone who can change what this evaluates can already
+        # change what the daily job runs.
+        eval "$(_wa_extract _dates_in_range)" 2>/dev/null || exit 3
+        eval "$(_wa_extract _zero_claude_usage)" 2>/dev/null || exit 3
+        eval "$(_wa_extract _claude_usage)" 2>/dev/null || exit 3
+        # All three, not just one. `eval ""` on a failed extraction succeeds, so
+        # `|| exit 3` above cannot catch an extractor miss — only this can. And a
+        # missing `_dates_in_range` specifically produces a FALSE PASS, not a
+        # crash: it is called from `< <(_dates_in_range …)`, whose command-not-
+        # found never reaches `_claude_usage`'s exit status, so `files` comes back
+        # empty and `_claude_usage` returns `_zero_claude_usage` — the check then
+        # compares the fallback shape against itself and reports test_pass having
+        # asserted nothing. Demonstrated: extracting only the other two functions
+        # exits 0 today. (#867 — an assertion that cannot fail.)
+        declare -F _dates_in_range _zero_claude_usage _claude_usage >/dev/null || exit 3
+        _ok=$(_claude_usage "$_wa_day" "$_wa_day" | jq -r 'keys|join(",")' 2>/dev/null) || exit 3
+        _zero=$(_zero_claude_usage | jq -r 'keys|join(",")' 2>/dev/null) || exit 3
+        [[ -n "$_ok" && -n "$_zero" ]] || exit 3
+        [[ "$_ok" == "$_zero" ]] && exit 0
+        printf 'success=[%s] fallback=[%s]' "$_ok" "$_zero"
+        exit 1
+    ) || _shape_rc=$?
+    case "$_shape_rc" in
+        0) test_pass "weekly-analytics: claude-usage fallback shape matches success shape" ;;
+        1) test_fail "weekly-analytics: claude-usage fallback shape drifted — ${_shape_result}" ;;
+        # Exit 3 is "could not run the check", kept distinct from a clean pass —
+        # the §1h lesson from #858: a harness that collapses "did not run" into
+        # "found nothing" reports green for a test that never executed.
+        *) test_warn "weekly-analytics: claude-usage shape check could not run (extract/jq failure)" ;;
+    esac
+else
+    test_warn "weekly-analytics: claude-usage shape check skipped — script not readable"
+fi
+
+# ─── 1j. process-substitution producers that fail silently ───────────────────
+# `set -euo pipefail` and the ERR trap do NOT reach inside `< <(...)`. If the
+# producer dies, the loop body simply never runs and the script continues at
+# exit 0 — a step that FAILED is indistinguishable from a step that found
+# NOTHING (#858, #866, #872, #873). The `2>/dev/null` on most of these sites
+# removes the last evidence.
+#
+# The live case that motivated this ratchet: network-discovery.sh pinged peers
+# from `.peers[].url`, but peers.json migrated to `.domain` around 2026-03-24.
+# jq stayed happy (valid file, valid query, empty result), so the loop ran zero
+# times and every run read exactly like "no peers configured" — for 126 days.
+# Note exit-code capture would NOT have caught it: jq exited 0. Only a
+# post-loop emptiness check does. That is what this section enforces.
+#
+# Scope: producers containing `jq` or a real pipeline. Plain `find` producers
+# (33 sites) fail rarely enough to deprioritise. Known gap: `git`-only
+# producers (fix-issues.sh:44,320) are failure-capable but not yet counted.
+#
+# This is a BASELINE RATCHET, not a clean-tree assertion: the count may fall,
+# never rise. Burn it down by adding a real post-loop emptiness check and
+# marking the site `# procsub-guarded`. The marker is opt-in and greppable so a
+# reviewer can see exactly which sites claim a guard.
+#
+# The scan deliberately uses command substitution (which DOES propagate exit
+# codes) rather than the construct it polices, and treats empty output as
+# FAILURE rather than success — blocks always exist, so "found nothing" means
+# the scan did not run. That is #858's exact defect, not repeated here.
+
+marvin_log "INFO" "Self-test: checking process-substitution producers for silent-zero risk"
+
+# 24 → 26 on merging main, and the two additions are named here rather than
+# quietly absorbed, because a baseline that rises without an explanation is how
+# a ratchet stops meaning anything. Neither came from this branch — verified by
+# scanning both trees and diffing per file, this branch's own site count is
+# unchanged:
+#   log-alerting.sh:208   `ls -1t ... | head -2`     — arrived with #841/#844
+#   self-test.sh:906      `grep -rhoE ... || true`   — arrived with #851 (§9f)
+# The second is a real instance of the class, not an artefact: `|| true` on a
+# producer IS the silent-zero idiom. If that grep ever breaks, §9f finds zero
+# flags and PASSES — a check reporting clean because it could not run. NOT
+# fixed here (it is another branch's code and this one already carries three
+# fixes) and NOT yet tracked in an issue — recorded at the baseline itself so
+# the next person to trip §1j finds the reason rather than an unexplained 26.
+#
+# 26 → 27 on the SECOND merge of main (eba2aad), and this one had already gone
+# red: the branch as pushed reported `27 unguarded … baseline 26 — a new one was
+# added` when run against its own tree, and 28 against `main`. A ratchet that
+# fails on the branch introducing it is not a ratchet, it is a broken build that
+# happens to be about correctness, so the accounting is written down here in the
+# same shape as the 24 → 26 note above. Net +1, from two arrivals and one
+# departure, all three from other PRs:
+#   security-scan.sh:284  `printf … | tr ',:'`        — arrived with #879 (UFW audit)
+#   security-scan.sh:288  `printf … | awk … | sort`   — arrived with #879 (UFW audit)
+#   security-scan.sh:483  `echo … | tail -n +2`       — GONE with #884, which
+#       replaced the outbound loop's producer with `marvin_outbound_classify
+#       <<< "$outbound_output"` — a herestring into a function, no pipeline and
+#       no jq, so the scan does not classify it as failure-capable. Counted as a
+#       departure, not as a fix: nothing was guarded, the site simply stopped
+#       matching the scope. Worth knowing, because a baseline can fall for that
+#       reason too and "the number went down" is not by itself progress.
+# Verified by scanning four trees with this same section and diffing per file:
+# df6690d (26, PASS), this branch (27), `main` (28 — the extra is the
+# network-discovery.sh:133 site this PR fixes), and the deployed tree (29).
+_PROCSUB_BASELINE=27
+
+# Walks each `done < <(` site to its matching close paren so multi-line
+# producers are classified on their whole text — the §1d site above pipes on a
+# continuation line, which a line-based grep scores safe and misses.
+# Algorithm, in three lines, because the per-branch rationale below is long and
+# a maintainer should not have to reconstruct the shape from it (review of #874):
+#   state machine over all agent/*.sh at once. On `done < <(`, start collecting
+#   and track paren depth; append each following line until depth hits 0, or the
+#   8-line runaway cap trips, or the file ends — flush and reset at every exit.
+# Every exit path PRINTS. A block that leaves without printing is a site the
+# scan silently lost, which is the one outcome this section must never produce.
+_ps_awk='
+function pcount(s,   i, c, d) {
+    d = 0
+    for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        if (c == "(") d++
+        else if (c == ")") d--
+    }
+    return d
+}
+# awk globals persist across files. A block that never balances (a stray paren
+# in a continuation comment) leaves `collecting` set, and since FNR resets per
+# file the 8-line runaway cap goes negative and never trips — so the leak eats
+# the NEXT file whole. Measured: a leaky file followed by a file containing one
+# obvious jq producer emitted zero blocks. A scanner for silent misses,
+# silently missing. Reset per file (#875).
+#
+# Flush, do not merely reset (#875, second half): a block still open at EOF has
+# never been printed, so a bare reset drops a real site silently and the
+# baseline quietly ratchets DOWN — the scanner under-reporting itself, which is
+# precisely the failure mode this section exists to prevent. The 8-line runaway
+# cap catches an unbalanced block mid-file, but not one that opens within 8
+# lines of EOF. Emit what was collected and classify it on the text so far.
+FNR == 1 {
+    if (collecting) print startfile ":" startline ":" buf
+    collecting = 0; depth = 0; buf = ""; startline = 0
+}
+END { if (collecting) print startfile ":" startline ":" buf }
+{
+    if (collecting) {
+        buf = buf " " $0
+        depth += pcount($0)
+        if (depth <= 0 || FNR - startline >= 8) {
+            print startfile ":" startline ":" buf
+            collecting = 0
+        }
+        next
+    }
+    # A comment that *documents* the pattern is not a site. The §1j commentary
+    # below quotes the construct verbatim and the scanner duly counted its own
+    # documentation (58 blocks → 59). Benign here (no jq, no pipe, so it never
+    # reached the baseline), but a comment citing a jq producer would have
+    # inflated the count. Only skip at block start — comment lines *inside* a
+    # collected block still carry parens that must be counted.
+    if ($0 ~ /done[ \t]*<[ \t]*<\(/ && $0 !~ /^[ \t]*#/) {
+        idx = index($0, "<(")
+        rest = substr($0, idx + 2)
+        depth = 1 + pcount(rest)
+        buf = rest
+        startline = FNR
+        # Record the owning file at block start. A flush running at the FNR==1
+        # of the NEXT file sees FILENAME already advanced, and would blame the
+        # dropped site on whichever innocent file happened to follow.
+        # (No apostrophes in this program: it is a single-quoted shell string,
+        # and one stray quote ends it mid-awk. Caught by bash -n, but only
+        # because the wreckage happened to be a syntax error.)
+        startfile = FILENAME
+        if (depth <= 0) print startfile ":" startline ":" buf
+        else collecting = 1
+    }
+}
+'
+
+# `dirname "$0"`, not `${MARVIN_DIR}` — the same rule §1i states two sections
+# up and for the same reason. `common.sh` hardcodes MARVIN_DIR to the live tree
+# and overrides an inherited environment, so a MARVIN_DIR-resolved ratchet
+# measures whatever is DEPLOYED and not what the branch ships. That is not
+# theoretical here: run from this worktree, the baseline check reported 29
+# against the deployed tree while the branch's own tree holds 27. The number a
+# reviewer sees has to be the number they are reviewing.
+_ps_files=$(find "$(dirname "$0")" -name '*.sh' -type f 2>/dev/null) || _ps_files=""
+if [[ -z "$_ps_files" ]]; then
+    test_fail "procsub scan: could not enumerate agent scripts — scan did NOT run"
+else
+    _ps_blocks=$(printf '%s\n' "$_ps_files" | xargs -d '\n' awk "$_ps_awk" 2>/dev/null) || _ps_blocks=""
+    if [[ -z "$_ps_blocks" ]]; then
+        test_fail "procsub scan: enumerator produced no output — scan did NOT run"
+    else
+        _ps_unguarded=0
+        _ps_sites=""
+        while IFS= read -r _ps_line; do
+            [[ -z "$_ps_line" ]] && continue
+            _ps_file="${_ps_line%%:*}"
+            _ps_rest="${_ps_line#*:}"
+            _ps_ln="${_ps_rest%%:*}"
+            _ps_prod="${_ps_rest#*:}"
+            # `|| true` / `|| echo` are not pipelines — drop `||` before looking
+            # for a pipe, or every guarded fallback reads as failure-capable.
+            _ps_nor="${_ps_prod//||/}"
+            if [[ "$_ps_nor" != *"|"* ]] && ! [[ "$_ps_prod" =~ (^|[^a-zA-Z0-9_])jq($|[^a-zA-Z0-9_]) ]]; then
+                continue
+            fi
+            # Guard marker may sit on the `done` line or just after the loop.
+            _ps_from=$(( _ps_ln > 1 ? _ps_ln - 1 : 1 ))
+            _ps_win=$(sed -n "${_ps_from},$((_ps_ln + 6))p" "$_ps_file" 2>/dev/null) || _ps_win=""
+            if [[ "$_ps_win" == *"procsub-guarded"* ]]; then
+                continue
+            fi
+            _ps_unguarded=$((_ps_unguarded + 1))
+            _ps_sites="${_ps_sites}  $(basename "$_ps_file"):${_ps_ln}"$'\n'
+        done <<< "$_ps_blocks"
+
+        if [[ "$_ps_unguarded" -gt "$_PROCSUB_BASELINE" ]]; then
+            test_fail "procsub: ${_ps_unguarded} unguarded failure-capable producers, baseline ${_PROCSUB_BASELINE} — a new one was added"
+            printf '%s' "$_ps_sites" >&2
+        elif [[ "$_ps_unguarded" -lt "$_PROCSUB_BASELINE" ]]; then
+            test_pass "procsub: ${_ps_unguarded} unguarded (baseline ${_PROCSUB_BASELINE}) — lower _PROCSUB_BASELINE to lock the win in"
+        else
+            test_pass "procsub: ${_ps_unguarded} unguarded, at baseline ${_PROCSUB_BASELINE}"
+        fi
+    fi
+fi
+
 # ─── 2. JSON data file validation ────────────────────────────────────────────
 
 marvin_log "INFO" "Self-test: validating JSON data files"
@@ -834,6 +1122,198 @@ else
     test_warn "beacon negotiate gate: network-discovery.sh or negotiate-listener.sh not readable — check skipped"
 fi
 
+# ─── 9i. --beacon-only reports failure when the beacon was discarded ─────────
+# #877: `--beacon-only` ended in an unconditional `exit 0`, so morning-check.sh's
+# `|| marvin_log WARN "Beacon regeneration failed"` could never fire. The caller
+# runs this ONLY when identity.json is already missing after a git sync, so the
+# discard path leaves no beacon at all — and the caller recorded a successful
+# recovery over a file that does not exist.
+#
+# Deliberately structural rather than behavioural. Executing the real
+# `--beacon-only` path would fire the localhost negotiate probe at line ~222,
+# which POSTs to the live endpoint and lands a forged peer entry in the real
+# negotiate inbox (#852) — a self-test must not do that, and sandboxing
+# COMMS_DIR does not sandbox the probe's destination. The regression this needs
+# to stop is textual anyway: someone simplifying the block back to a bare
+# `exit 0`.
+#
+# Resolved via `dirname "$0"`, not ${MARVIN_DIR}: the latter is hardcoded to the
+# deployed tree, so a branch-authored check would assert against main and pass
+# while the branch it ships with is broken.
+
+marvin_log "INFO" "Self-test: checking --beacon-only exit status carries the discard path"
+
+_bo_file="$(dirname "$0")/network-discovery.sh"
+if [[ -r "$_bo_file" ]]; then
+    # The early-exit block, not the argument-parsing block of the same name:
+    # take the LAST `if [[ "$BEACON_ONLY" == true ]]` region that closes on a
+    # column-0 `fi`. Both are at column 0, and the exit block is always later.
+    _bo_block=$(awk '
+        /^if \[\[ "\$BEACON_ONLY" == true \]\]; then$/ { collecting=1; buf=""; next }
+        collecting && /^fi$/ { collecting=0; last=buf; next }
+        collecting { buf = buf $0 "\n" }
+        END { printf "%s", last }
+    ' "$_bo_file") || _bo_block=""
+
+    # A single unconditional assignment would make the flag meaningless while
+    # leaving every check below it green, so pin the count as well as the shape.
+    _bo_set_count=$(grep -c '^[[:space:]]*BEACON_WRITTEN=true$' "$_bo_file") || _bo_set_count=0
+
+    if [[ -z "$_bo_block" ]]; then
+        test_warn "--beacon-only exit status: could not locate the early-exit block in network-discovery.sh — check skipped (reformatted?)"
+    elif ! grep -q 'exit 1' <<< "$_bo_block"; then
+        test_fail "--beacon-only exit status: the early-exit block has no failing exit — a discarded beacon is reported to morning-check.sh as a successful regeneration (#877)"
+    elif ! grep -q 'BEACON_WRITTEN' <<< "$_bo_block"; then
+        test_fail "--beacon-only exit status: the early-exit block exits non-zero but not on BEACON_WRITTEN — failure is keyed on something other than 'was the beacon actually written' (#877)"
+    elif [[ "$_bo_set_count" -ne 1 ]]; then
+        test_fail "--beacon-only exit status: BEACON_WRITTEN=true is set ${_bo_set_count} times (expected exactly 1, on the mv success path) — the flag no longer proves the beacon was written"
+    else
+        test_pass "--beacon-only exit status: failure path is keyed on BEACON_WRITTEN and exits non-zero (#877)"
+    fi
+else
+    test_warn "--beacon-only exit status: network-discovery.sh not readable — check skipped"
+fi
+
+# ─── 9j. Outbound egress sampling is wired, running, and reaches the score ────
+# Section letter 9j: 9h and 9i are live on main (#856/#878 merged while this
+# branch was open); 9k is claimed by the open #890. 9g is free but left so,
+# since #862's replacement may yet want it.
+#
+# This section was originally written AT 9i's line range, back when #878 was
+# still open and 9i did not exist on main. The `git merge main` that followed
+# resolved that overlapping hunk in favour of this branch and deleted 9i — the
+# #877 regression guard — silently. Restored above (#889). A section letter
+# chosen against the set of *open PRs* rather than against main is a letter that
+# stops being true the moment one of them merges; check main before renumbering.
+#
+# Issue #882: outbound auditing took ONE `ss` sample a day, at the deadest minute
+# on this box, and published the result as the day's answer. It reported zero
+# outbound connections on 30 of 31 retained scans while 704 MB left the interface
+# on one of them. Nothing was broken — it simply never looked, and "never looked"
+# and "nothing there" produced the same output.
+#
+# Four things must hold for the fix to be worth anything, each a way it could rot
+# back into a control that reports clean because it is blind:
+#   1. the sampler is called from a script that actually runs on a tick
+#   2. the call is not `|| true`-suppressed
+#   3. the daily scan consults the day aggregate, not just its own instant sample
+#   4. coverage status reaches overall_status (the #880 lesson: a finding that
+#      only reaches marvin_log is invisible to every consumer of the reports)
+# Plus a drift guard: exactly ONE copy of the classifier may exist.
+
+marvin_log "INFO" "Self-test: checking outbound egress sampling is wired and scored"
+
+_ob_lib="${MARVIN_DIR}/agent/lib/outbound.sh"
+_ob_hm="${MARVIN_DIR}/agent/health-monitor.sh"
+_ob_scan="${MARVIN_DIR}/agent/security-scan.sh"
+
+if [[ ! -r "$_ob_lib" ]]; then
+    test_warn "outbound sampling: agent/lib/outbound.sh not present — #882 fix not deployed yet, egress history is one sample/day"
+else
+    # (1) + (2) — wired into the 5-minute tick, failure not swallowed.
+    if ! grep -q 'marvin_outbound_record_sample' "$_ob_hm" 2>/dev/null; then
+        test_fail "outbound sampling: lib/outbound.sh exists but health-monitor.sh never calls marvin_outbound_record_sample — the sampler has no live caller, so the egress history stays empty and #882 is unfixed in effect"
+    elif grep -qE 'marvin_outbound_record_sample[[:space:]]*(\|\|[[:space:]]*true|&>|>[[:space:]]*/dev/null)' "$_ob_hm" 2>/dev/null; then
+        test_fail "outbound sampling: health-monitor.sh suppresses marvin_outbound_record_sample failures — a sampler that fails silently reproduces the exact defect #882 fixed"
+    else
+        test_pass "outbound sampling: health-monitor.sh (5-min cron tick) calls the sampler and does not suppress its failures"
+    fi
+
+    # (3) — the daily scan must read the aggregate, not just its own instant.
+    if grep -q 'marvin_outbound_day_summary' "$_ob_scan" 2>/dev/null; then
+        test_pass "outbound sampling: security-scan.sh §3d aggregates the retained samples"
+    else
+        test_fail "outbound sampling: security-scan.sh no longer calls marvin_outbound_day_summary — §3d is back to publishing a single instantaneous sample as the day's egress answer (#882)"
+    fi
+
+    # (4) — coverage must be able to move overall_status, or it is decoration.
+    # Scoped to the gate block itself (overall_status="clean" up to the report
+    # heredoc), so a passing mention of the variable elsewhere cannot satisfy it.
+    if awk '/^overall_status="clean"/{f=1} f && /outbound_coverage_status/{found=1} /^cat > "\$REPORT_FILE"/{f=0} END{exit !found}' "$_ob_scan" 2>/dev/null; then
+        test_pass "outbound sampling: egress coverage status participates in overall_status"
+    else
+        test_fail "outbound sampling: outbound_coverage_status does not reach the overall_status gate — a day the sampler never ran would score clean, which is precisely the 30-day failure in #882"
+    fi
+
+    # Drift guard — one classifier only. Two copies cannot be kept in agreement,
+    # and a sampler that disagrees with its aggregator about what counts as
+    # outbound produces authoritative-looking numbers that mean nothing.
+    _ob_dupes=$(grep -lE '^_ip_in_docker_cidr\(\)' "${MARVIN_DIR}"/agent/*.sh "${MARVIN_DIR}"/agent/lib/*.sh 2>/dev/null | wc -l)
+    if [[ "$_ob_dupes" -eq 1 ]]; then
+        test_pass "outbound sampling: exactly one copy of the outbound classifier (_ip_in_docker_cidr)"
+    else
+        test_fail "outbound sampling: ${_ob_dupes} definitions of _ip_in_docker_cidr — the sampler and the daily aggregate can now drift on what 'outbound' means (#882/#591)"
+    fi
+
+    # Runtime — is it actually producing samples? Self-activating: only assert
+    # this once the sampler is deployed, so an unmerged branch warns instead of
+    # failing on a host that has not been given the code yet.
+    if grep -q 'marvin_outbound_record_sample' "$_ob_hm" 2>/dev/null; then
+        # Resolve the path through the library, never by rebuilding it here.
+        # A second hand-written copy of the sample path is the same "two places
+        # must agree" risk this PR just removed for _ip_in_docker_cidr, one file
+        # over. Today the two happen to coincide — SECURITY_DIR is unset at this
+        # point in self-test.sh, so _marvin_outbound_dir() also falls through to
+        # ${DATA_DIR}/security — but that agreement is incidental, not designed.
+        # If the fallback chain ever changes, a hardcoded copy silently starts
+        # stat()ing a file nothing writes and reports "ZERO samples today"
+        # forever, which is a FAIL below.
+        _ob_paths_ok=true
+        _ob_today=$(marvin_outbound_sample_file "$(date -u +%Y-%m-%d)") \
+            || { _ob_today=""; _ob_paths_ok=false; }
+        _ob_yday=$(marvin_outbound_sample_file "$(date -u -d 'yesterday' +%Y-%m-%d 2>/dev/null)") \
+            || { _ob_yday=""; _ob_paths_ok=false; }
+        # Count RECORDS, not lines, and assign the fallback rather than echoing
+        # it. Two bugs in the one line this replaces:
+        #
+        #   1. `$(grep -c . f || echo 0)` — `grep -c` prints 0 and THEN exits 1
+        #      on no match, so the fallback appended a second document and
+        #      _ob_count became "0\n0", an arithmetic error at the `-gt` below.
+        #      This is the #855/#857 double-document class, and §1h caught it in
+        #      this very file.
+        #   2. `grep -c .` counts LINES. The sampler's records were
+        #      pretty-printed (the missing `jq -c` fixed in this PR), so one
+        #      sample was ~31 lines and this reported "31 samples recorded
+        #      today" against 1 real sample. `^{` counts record openings, which
+        #      is correct for BOTH the compact form and any legacy
+        #      pretty-printed file still inside the 30-day retention window.
+        _ob_count=0
+        if [[ "$_ob_paths_ok" != true ]]; then
+            # The path could not be resolved, so no file was ever looked at.
+            # Say exactly that and assert nothing else — falling through with an
+            # empty path would make both -f tests false and land on the "ZERO
+            # samples today" FAIL below, reporting a definite finding from a
+            # check that never ran. That collapse of "could not look" into
+            # "looked and found nothing" is the shape coverage_status exists to
+            # separate; it would be poor to reintroduce it in the test for it.
+            test_warn "outbound sampling: could not resolve the sample file path — _marvin_outbound_dir() found none of SECURITY_DIR/DATA_DIR/MARVIN_DIR, so runtime sampling was NOT verified"
+        else
+            if [[ -f "$_ob_today" ]]; then
+                _ob_count=$(grep -c '^{' "$_ob_today" 2>/dev/null) || _ob_count=0
+            fi
+            # Expected samples so far today, one per 5 minutes since 00:00 UTC.
+            # Single epoch reading rather than `10#%H`/`10#%M` (#886): `10#` does
+            # fix the octal crash, but two `date` calls can still straddle a
+            # minute boundary and report hour N with minute 0. One cannot.
+            _ob_expected=$(( (($(date -u +%s) % 86400) / 60) / 5 ))
+            if [[ "$_ob_count" -gt 0 ]]; then
+                _ob_errs=$(grep -c '"error"' "$_ob_today" 2>/dev/null) || _ob_errs=0
+                if [[ "$_ob_errs" -gt 0 ]]; then
+                    test_warn "outbound sampling: ${_ob_errs} of ${_ob_count} samples today recorded an error — gaps in the egress history"
+                else
+                    test_pass "outbound sampling: ${_ob_count} samples recorded today (≈${_ob_expected} expected so far)"
+                fi
+            elif [[ -f "$_ob_yday" ]]; then
+                test_warn "outbound sampling: no samples yet today but yesterday's history exists — expected shortly after 00:00 UTC"
+            elif [[ "$_ob_expected" -lt 3 ]]; then
+                test_warn "outbound sampling: no samples yet — fewer than 3 ticks have elapsed since 00:00 UTC"
+            else
+                test_fail "outbound sampling: sampler is wired into health-monitor.sh but has produced ZERO samples today after ~${_ob_expected} ticks — egress is unmonitored and the daily audit will report coverage 'absent' (#882)"
+            fi
+        fi
+    fi
+fi
+
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
 # Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
 # artefact with byte-identical duplicates of the active /home/marvin/.gnupg/
@@ -938,6 +1418,77 @@ else
         test_pass "config in sync: cron (setup-cron.sh ⇆ /etc/cron.d/marvin)"
     else
         test_warn "config drift: cron — setup-cron.sh would not reproduce live /etc/cron.d/marvin (a bootstrap re-run could drop or revert active jobs)"
+    fi
+fi
+
+# ─── 9h. nginx must not retain raw request bodies in the negotiate inbox ──────
+# Issue #854. `client_body_in_file_only on` in the /.well-known/ai-negotiate
+# location made nginx keep every request body forever, as a raw
+# attacker-controlled file inside the very directory negotiate-handler.sh globs
+# for proposals. It survived because the glob is `*.json` and nginx's temp files
+# have no extension — one character of luck between "inert" and "the public
+# endpoint feeds the handler unsanitized input".
+#
+# Lives in the §9 config family rather than §1 because it is the same shape as
+# §9d: an assertion about configuration, not about script syntax. Sources are
+# FAIL (the repo is what a rebuild reads); the live copy is WARN, because
+# reconciling it is a deploy step and §9d already tracks that drift. Checked in
+# BOTH tracked sources — nginx-site.conf and bootstrap.sh's heredoc — since only
+# the former is diffed against live, so a bootstrap re-run was free to reinstate
+# what a fix to the other one removed.
+
+marvin_log "INFO" "Self-test: checking nginx does not retain raw negotiate bodies"
+
+# Two distinct invariants, deliberately not merged into one regex — the review of
+# #856 was right that `client_body_in_file_only clean` does NOT retain (nginx
+# removes the file after the request), so banning it under a "retains" message
+# would fail a future legitimate config with a factually false reason.
+#
+#   RETAIN — `in_file_only on` is the one value that never removes the file.
+#   INBOX  — a client_body_temp_path under the project data dir puts a raw,
+#            caller-controlled body inside the directory negotiate-handler.sh
+#            globs, which is the actual defect. This one catches `clean` too:
+#            transient or not, untrusted input does not belong in the inbox.
+#
+# So `clean` with a temp path outside the project tree stays legal, and both
+# messages state something true.
+_body_retain_re='^[[:space:]]*client_body_in_file_only[[:space:]]+on([[:space:]]|;)'
+_body_inbox_re='^[[:space:]]*client_body_temp_path[[:space:]]+[^;]*(negotiate-inbox|data/comms)'
+_body_retain_fails=0
+for _brs in "${MARVIN_DIR}/setup/nginx-site.conf" "${MARVIN_DIR}/setup/bootstrap.sh"; do
+    [[ -r "$_brs" ]] || continue
+    if grep -qE "$_body_retain_re" "$_brs" 2>/dev/null; then
+        test_fail "nginx source never removes request-body temp files (client_body_in_file_only on): $(basename "$_brs")"
+        _body_retain_fails=$((_body_retain_fails + 1))
+    fi
+    if grep -qE "$_body_inbox_re" "$_brs" 2>/dev/null; then
+        test_fail "nginx source writes raw request bodies into the handler's inbox (client_body_temp_path): $(basename "$_brs")"
+        _body_retain_fails=$((_body_retain_fails + 1))
+    fi
+done
+if [[ "$_body_retain_fails" -eq 0 ]]; then
+    test_pass "nginx sources do not deposit raw request bodies in the negotiate inbox"
+fi
+
+_nginx_live_site="/etc/nginx/sites-available/marvin"
+if [[ -r "$_nginx_live_site" ]] \
+    && grep -qE "$_body_retain_re|$_body_inbox_re" "$_nginx_live_site" 2>/dev/null; then
+    test_warn "live nginx config still deposits raw request bodies in the negotiate inbox — reload after deploying the fixed nginx-site.conf (#854)"
+fi
+
+# Residue: nginx temp bodies are extension-less numeric names, so any non-*.json
+# file in the inbox is either retained-body leftovers or something stranger.
+# WARN-only — the handler ignores them, and deleting evidence is not a test's job.
+_inbox_dir="${COMMS_DIR}/negotiate-inbox"
+if [[ -d "$_inbox_dir" ]]; then
+    # Assignment fallback, not `|| echo` — a bare `$(find | wc)` under
+    # `set -euo pipefail` + the ERR trap would abort the whole suite if the dir
+    # were ever unreadable (the §1d crash class, and the #841 fallback shape).
+    _inbox_residue=$(find "$_inbox_dir" -maxdepth 1 -type f ! -name '*.json' 2>/dev/null | wc -l) || _inbox_residue=0
+    if [[ "${_inbox_residue:-0}" -gt 0 ]]; then
+        test_warn "negotiate inbox holds ${_inbox_residue} non-JSON file(s) — retained nginx request bodies (#854)"
+    else
+        test_pass "negotiate inbox holds no retained request bodies"
     fi
 fi
 
