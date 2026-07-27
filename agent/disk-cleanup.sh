@@ -161,22 +161,91 @@ track_freed "Old time-series JSONL.gz (>180d)" "$metrics_size"
 #      abandoned one if you only look at timestamps. The in-use set is read
 #      from /proc first, and if that read fails the whole sweep is skipped —
 #      "could not determine what is in use" must not resolve to "nothing is".
+#      That guarantee was stated here before it was implemented (#908): the
+#      check tested whether /proc had *any* processes, which this script's own
+#      shell guarantees, rather than whether every entry it needed was actually
+#      readable. See _tmp_paths_in_use below.
 
 # Paths under /tmp currently referenced by a live process (cwd, exe or an open
-# fd). Prints one path per line; returns non-zero if /proc could not be read at
-# all, which the caller treats as "do not delete anything".
+# fd). Prints one path per line. Returns non-zero when the scan could not be
+# completed, which the caller treats as "do not delete anything".
+#
+# Issue #908. The first version returned non-zero only when the /proc/[0-9]*
+# glob matched nothing at all, and this function's own shell is always in /proc
+# while it runs — so the flag was set on the first iteration every time and the
+# caller's skip branch was unreachable. The failure it was written for is the
+# partial one: an individual readlink that fails, gets swallowed by `|| continue`
+# and quietly removes that process's /tmp references from the answer. Nothing
+# downstream can tell that from "this directory is genuinely unused", and the
+# next statement in the caller is `rm -rf`.
+#
+# Treating every readlink failure as a failure would be worse than the bug: 88
+# of this box's ~180 processes are kernel threads, whose /proc/N/exe is a
+# dangling symlink by design, so the sweep would skip on every run forever and
+# look exactly like a sweep that had nothing to collect. Failures are therefore
+# classified by errno, via readlink -v's message under LC_ALL=C:
+#
+#   ENOENT  benign — a kernel thread's exe, or a process/fd that exited between
+#           the glob and the readlink. Confirmed by re-testing that the process
+#           still exists, so a race is never counted against the scan.
+#   other   counted — EACCES, EPERM, or any errno not anticipated here. The test
+#           allowlists the one benign case rather than denylisting known-bad
+#           ones, so an unrecognised message (including a stderr this parser
+#           fails to match at all) counts as a read that did not happen and
+#           skips the sweep. Wrong in the direction that keeps files.
+#
+# The two failures are reported as two exit codes rather than one flag plus a
+# count in a variable. The first draft of this fix used a global for the count,
+# and the fixture test below caught it reading 0 in every branch: the caller
+# invokes this in a command substitution, so the assignment happens in a
+# subshell and the parent never sees it. That is the same defect as #908 itself
+# — a signal that cannot reach the code deciding whether to delete — reproduced
+# inside the fix for it. Exit status is the one channel that does cross `$( )`.
+#
+#   0  scan complete
+#   1  no processes found at all (/proc absent, unmounted, or hidden)
+#   2  one or more entries existed but could not be read
+#
+# proc_root is an argument, not a constant, for the same reason _stale_tmp_dirs
+# takes its root as one: the classification above is exercised against a fixture
+# tree, as an unprivileged user so EACCES is reachable, rather than asserted.
+# shellcheck disable=SC2120  # proc_root is deliberately optional: the sole in-script call takes the /proc default, the fixture harness passes a root (see #908)
 _tmp_paths_in_use() {
-    local p t found=0
-    for p in /proc/[0-9]*; do
+    local proc_root="${1:-/proc}"
+    local p t target err scanned=0 unreadable=0
+
+    for p in "$proc_root"/[0-9]*; do
         [[ -d "$p" ]] || continue
-        found=1
+        scanned=$((scanned + 1))
+
+        # Checked before the loop below, because an unreadable fd/ directory
+        # does not surface there as an error at all: the glob simply fails to
+        # expand and `$t` becomes the literal pattern. Every open file of that
+        # process would go unseen, which is the widest way a live /tmp path can
+        # hide from this scan.
+        if [[ ! -r "$p/fd" && -d "$p" ]]; then
+            unreadable=$((unreadable + 1))
+        fi
+
         for t in "$p/cwd" "$p/exe" "$p/fd"/*; do
-            local target
-            target=$(readlink "$t" 2>/dev/null) || continue
-            [[ "$target" == /tmp/* ]] && printf '%s\n' "$target"
+            if target=$(readlink "$t" 2>/dev/null); then
+                [[ "$target" == /tmp/* ]] && printf '%s\n' "$target"
+                continue
+            fi
+
+            # Only on the failure path, so the common case still costs one
+            # subshell per entry. readlink is silent without -v.
+            err=$(LC_ALL=C readlink -v "$t" 2>&1 >/dev/null) || true
+            if [[ "$err" != *"No such file or directory"* ]] && [[ -d "$p" ]]; then
+                unreadable=$((unreadable + 1))
+            fi
         done
     done
-    [[ "$found" -eq 1 ]] || return 1
+
+    # "Found no processes" keeps its original meaning: /proc absent, unmounted
+    # or hidden. It stays a failure — it is simply no longer the only one.
+    [[ "$scanned" -gt 0 ]] || return 1
+    [[ "$unreadable" -eq 0 ]] || return 2
     return 0
 }
 
@@ -231,6 +300,7 @@ _stale_tmp_dirs() {
 tmpdir_size=0
 tmpdir_count=0
 if _in_use=$(_tmp_paths_in_use); then
+    _in_use_rc=0
     while IFS= read -r d; do
         [[ -n "$d" ]] || continue
         dsize=$(du -sb "$d" 2>/dev/null | cut -f1) || dsize=0
@@ -243,7 +313,12 @@ if _in_use=$(_tmp_paths_in_use); then
         track_freed "Stale /tmp scratch directories (>7d, ${tmpdir_count})" "$tmpdir_size"
     fi
 else
-    marvin_log "WARN" "could not read /proc to determine which /tmp directories are in use — skipping the stale-directory sweep rather than guessing (#898)"
+    _in_use_rc=$?
+    if [[ "$_in_use_rc" -eq 2 ]]; then
+        marvin_log "WARN" "at least one /proc entry existed but could not be read while determining which /tmp directories are in use — a live process whose open files went unseen may be holding one, so the stale-directory sweep is skipped rather than guessing (#898, #908)"
+    else
+        marvin_log "WARN" "found no processes under /proc to determine which /tmp directories are in use — skipping the stale-directory sweep rather than guessing (#898)"
+    fi
 fi
 
 # ─── 6. Temp files ──────────────────────────────────────────────────────────
