@@ -132,10 +132,19 @@ $(find "${MARVIN_DIR}/agent" -name "*.sh" -type f -exec sh -c 'echo "$(wc -l < "
 
 "
 
-# Include key infrastructure scripts that are always relevant (common.sh, lib/)
-for script in "${MARVIN_DIR}/agent/common.sh" "${MARVIN_DIR}/agent/lib/github.sh"; do
+# Include key infrastructure scripts that are always relevant (common.sh, lib/).
+#
+# ONE list, read by both the loop below and _rank_scripts' skip check. It used
+# to be written out twice — literals here, literals again in the skip test —
+# with nothing tying them together. Adding a third always-included script and
+# updating only one copy would have dumped it into the prompt twice, spending
+# budget on a duplicate while a genuinely implicated script was refused for
+# want of it.
+ALWAYS_INCLUDED_SCRIPTS=("agent/common.sh" "agent/lib/github.sh")
+
+for script_name in "${ALWAYS_INCLUDED_SCRIPTS[@]}"; do
+    script="${MARVIN_DIR}/${script_name}"
     if [[ -f "$script" ]]; then
-        script_name="${script#${MARVIN_DIR}/}"
         SCRIPTS_CONTEXT+="### ${script_name}
 \`\`\`bash
 $(cat "$script")
@@ -218,12 +227,17 @@ fi
 # comparison to the size field, and `-s` keeps ties in input order so the
 # ranking is reproducible run to run.
 _rank_scripts() {
-    local base path rel
+    local base path rel already script_name
     for base in $1; do
         for path in "${MARVIN_DIR}/agent/${base}" "${MARVIN_DIR}/agent/lib/${base}"; do
             [[ -f "$path" ]] || continue
             rel="${path#"${MARVIN_DIR}"/}"
-            [[ "$rel" == "agent/common.sh" || "$rel" == "agent/lib/github.sh" ]] && continue
+            # Skip anything the always-include loop already dumped in full.
+            already=false
+            for script_name in "${ALWAYS_INCLUDED_SCRIPTS[@]}"; do
+                [[ "$rel" == "$script_name" ]] && { already=true; break; }
+            done
+            [[ "$already" == "true" ]] && continue
             printf '%s\t%s\n' "$(wc -m < "$path")" "$rel"
         done
     done | sort -s -t $'\t' -k1,1n
@@ -293,15 +307,26 @@ _included=0
 _omitted=""
 while IFS=$'\t' read -r _size _rel; do
     [[ -n "$_rel" ]] || continue
-    # ~40 chars of heading and fence overhead per entry.
-    if [[ "$_budget" -gt $(( _size + 40 )) ]]; then
-        FAILURE_SCRIPTS_BLOCK+="### ${_rel} (implicated in today's failures)
+    # Build the entry, then charge the budget what it ACTUALLY costs. The
+    # previous version guessed "~40 chars of heading and fence overhead" and
+    # spent that; the real wrapper is `### ` + the relative path + ` (implicated
+    # in today's failures)` + two fenced lines + a blank line — 51 chars plus
+    # the path, measured at 69 for agent/self-test.sh and 71 for
+    # agent/lib/logging.sh. Every included entry therefore under-charged the
+    # budget by ~30 chars, and the error grew with the path. Small against an
+    # 8000-char reserve, but it is the same species of defect as the one this
+    # file was opened to fix: an assumed constant standing in for a quantity
+    # that is right there to be measured. `${#_entry}` is exactly the unit
+    # run_claude enforces in (characters), so there is nothing left to drift.
+    _entry="### ${_rel} (implicated in today's failures)
 \`\`\`bash
 $(cat "${MARVIN_DIR}/${_rel}")
 \`\`\`
 
 "
-        _budget=$(( _budget - _size - 40 ))
+    if [[ "$_budget" -gt "${#_entry}" ]]; then
+        FAILURE_SCRIPTS_BLOCK+="$_entry"
+        _budget=$(( _budget - ${#_entry} ))
         _included=$(( _included + 1 ))
     else
         _omitted+="${_omitted:+, }${_rel} (${_size} chars)"
