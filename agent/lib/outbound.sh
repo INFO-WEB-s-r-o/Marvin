@@ -171,11 +171,36 @@ marvin_outbound_sample_file() {
 # silently reproduces the exact bug this file exists to fix. When `ss` is
 # missing or fails, a record with "error" is still appended, so a broken
 # sampler is visible in the history instead of looking like a quiet box.
+# _marvin_outbound_ensure_file — create the sample file AT 640, never at 644.
+#
+# Issue #885 (found reviewing #884): `>> "$file"` creates a missing file at the
+# process umask — 644 for root — and a following `chmod 640` only tightens it
+# afterwards. Between the two, the file is world-readable, and since everything
+# under data/ is HTTP-reachable until the /api/ allowlist in #861 lands, a request
+# landing in that window reads the egress history this file exists to protect.
+# A permissions window inside the change whose entire purpose is permissions.
+#
+# Same class as #636 in file-integrity.sh, which restricts the temp file BEFORE
+# the mv rather than the destination after it. Here the equivalent is to create
+# the file under a restrictive umask, so the path never exists at a looser mode:
+# 666 & ~027 = 640. The chmod calls below are kept as well, but their job is now
+# only to tighten a file left at 644 by an older version of this code — the
+# creation path no longer depends on them.
+_marvin_outbound_ensure_file() {
+    local f="$1"
+    [[ -e "$f" ]] && return 0
+    ( umask 027; : > "$f" ) 2>/dev/null || return 1
+    return 0
+}
+
 marvin_outbound_record_sample() {
     local now sample_file tsv rc=0
     now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     sample_file=$(marvin_outbound_sample_file)
     mkdir -p "$_MARVIN_OUTBOUND_DIR" 2>/dev/null || true
+    # Before ANY append path below, including the error ones: the file must come
+    # into existence already at 640 (#885).
+    _marvin_outbound_ensure_file "$sample_file" || return 1
 
     if ! command -v ss &>/dev/null; then
         jq -nc --arg ts "$now" '{ts:$ts,error:"ss-not-found"}' >> "$sample_file" 2>/dev/null || true

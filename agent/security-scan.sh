@@ -517,7 +517,24 @@ fi
 
 # Save outbound audit
 OUTBOUND_FILE="${SECURITY_DIR}/outbound-audit.json"
-cat > "$OUTBOUND_FILE" << OUTEOF
+# Written to a temp file, restricted, then mv'd into place — NOT `cat >` on the
+# destination followed by chmod (#885). Two reasons, both real here:
+#
+#   1. Permissions. `cat >` creates a missing file at the process umask (644 for
+#      root) and preserves the existing mode on a file that is already 644 — so
+#      the destination holds the new egress history world-readable until the
+#      chmod lands. Everything under data/ is HTTP-reachable until the /api/
+#      allowlist (#861) lands, so that window is genuinely reachable. Restrict
+#      first, rename second — the same ordering #636 established in
+#      file-integrity.sh, for the same reason.
+#   2. Atomicity. `cat >` truncates before it writes, so a reader arriving
+#      mid-write gets a partial document. mv on the same filesystem is atomic.
+#
+# 640, not the 644 the rest of data/security/ uses: this is a record of every
+# destination this host contacted, and that is not something to publish.
+_ob_tmp=$(mktemp "${OUTBOUND_FILE}.XXXXXX")
+chmod 640 "$_ob_tmp"
+cat > "$_ob_tmp" << OUTEOF
 {
   "timestamp": "${NOW}",
   "outbound_total": ${outbound_count},
@@ -530,10 +547,16 @@ cat > "$OUTBOUND_FILE" << OUTEOF
   "today_partial": ${outbound_today_json}
 }
 OUTEOF
-# 640, not 644: this is a record of every destination this host contacted.
-# Everything under data/ is HTTP-reachable until the /api/ allowlist (#861)
-# lands, and an egress history is not something to publish.
-chmod 640 "$OUTBOUND_FILE"
+# Validate BEFORE publishing: a malformed document must not replace a good one.
+if jq -e . "$_ob_tmp" >/dev/null 2>&1; then
+    mv -f "$_ob_tmp" "$OUTBOUND_FILE"
+    # Tighten a destination left at 644 by an older version of this code; the
+    # mv above already carries 640 for a newly-created file.
+    chmod 640 "$OUTBOUND_FILE"
+else
+    rm -f "$_ob_tmp"
+    marvin_log "WARN" "Outbound audit: generated document is not valid JSON — previous outbound-audit.json preserved"
+fi
 marvin_validate_json_or_warn "$OUTBOUND_FILE" "outbound-audit" || true
 
 marvin_log "INFO" "Outbound audit: instantaneous sample ${outbound_count} connections, ${outbound_unexpected} to unusual ports; ${OUTBOUND_AUDIT_DAY} coverage ${outbound_coverage_status}"
