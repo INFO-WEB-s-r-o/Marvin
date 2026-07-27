@@ -834,6 +834,58 @@ else
     test_warn "beacon negotiate gate: network-discovery.sh or negotiate-listener.sh not readable — check skipped"
 fi
 
+# ─── 9i. --beacon-only reports failure when the beacon was discarded ─────────
+# #877: `--beacon-only` ended in an unconditional `exit 0`, so morning-check.sh's
+# `|| marvin_log WARN "Beacon regeneration failed"` could never fire. The caller
+# runs this ONLY when identity.json is already missing after a git sync, so the
+# discard path leaves no beacon at all — and the caller recorded a successful
+# recovery over a file that does not exist.
+#
+# Deliberately structural rather than behavioural. Executing the real
+# `--beacon-only` path would fire the localhost negotiate probe at line ~222,
+# which POSTs to the live endpoint and lands a forged peer entry in the real
+# negotiate inbox (#852) — a self-test must not do that, and sandboxing
+# COMMS_DIR does not sandbox the probe's destination. The regression this needs
+# to stop is textual anyway: someone simplifying the block back to a bare
+# `exit 0`.
+#
+# Resolved via `dirname "$0"`, not ${MARVIN_DIR}: the latter is hardcoded to the
+# deployed tree, so a branch-authored check would assert against main and pass
+# while the branch it ships with is broken.
+
+marvin_log "INFO" "Self-test: checking --beacon-only exit status carries the discard path"
+
+_bo_file="$(dirname "$0")/network-discovery.sh"
+if [[ -r "$_bo_file" ]]; then
+    # The early-exit block, not the argument-parsing block of the same name:
+    # take the LAST `if [[ "$BEACON_ONLY" == true ]]` region that closes on a
+    # column-0 `fi`. Both are at column 0, and the exit block is always later.
+    _bo_block=$(awk '
+        /^if \[\[ "\$BEACON_ONLY" == true \]\]; then$/ { collecting=1; buf=""; next }
+        collecting && /^fi$/ { collecting=0; last=buf; next }
+        collecting { buf = buf $0 "\n" }
+        END { printf "%s", last }
+    ' "$_bo_file") || _bo_block=""
+
+    # A single unconditional assignment would make the flag meaningless while
+    # leaving every check below it green, so pin the count as well as the shape.
+    _bo_set_count=$(grep -c '^[[:space:]]*BEACON_WRITTEN=true$' "$_bo_file") || _bo_set_count=0
+
+    if [[ -z "$_bo_block" ]]; then
+        test_warn "--beacon-only exit status: could not locate the early-exit block in network-discovery.sh — check skipped (reformatted?)"
+    elif ! grep -q 'exit 1' <<< "$_bo_block"; then
+        test_fail "--beacon-only exit status: the early-exit block has no failing exit — a discarded beacon is reported to morning-check.sh as a successful regeneration (#877)"
+    elif ! grep -q 'BEACON_WRITTEN' <<< "$_bo_block"; then
+        test_fail "--beacon-only exit status: the early-exit block exits non-zero but not on BEACON_WRITTEN — failure is keyed on something other than 'was the beacon actually written' (#877)"
+    elif [[ "$_bo_set_count" -ne 1 ]]; then
+        test_fail "--beacon-only exit status: BEACON_WRITTEN=true is set ${_bo_set_count} times (expected exactly 1, on the mv success path) — the flag no longer proves the beacon was written"
+    else
+        test_pass "--beacon-only exit status: failure path is keyed on BEACON_WRITTEN and exits non-zero (#877)"
+    fi
+else
+    test_warn "--beacon-only exit status: network-discovery.sh not readable — check skipped"
+fi
+
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
 # Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
 # artefact with byte-identical duplicates of the active /home/marvin/.gnupg/
