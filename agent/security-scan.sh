@@ -505,6 +505,7 @@ outbound_coverage_status=$(jq -r '.coverage_status' <<< "$outbound_day_json" 2>/
 outbound_coverage_pct=$(jq -r '.coverage_percent' <<< "$outbound_day_json" 2>/dev/null || echo "0")
 outbound_day_samples=$(jq -r '.samples_recorded' <<< "$outbound_day_json" 2>/dev/null || echo "0")
 outbound_day_failed=$(jq -r '.samples_failed' <<< "$outbound_day_json" 2>/dev/null || echo "0")
+outbound_day_malformed=$(jq -r '.samples_malformed // 0' <<< "$outbound_day_json" 2>/dev/null || echo "0")
 outbound_day_unexpected=$(jq -r '.unexpected_destinations | length' <<< "$outbound_day_json" 2>/dev/null || echo "0")
 outbound_day_distinct=$(jq -r '.distinct_destinations // 0' <<< "$outbound_day_json" 2>/dev/null || echo "0")
 outbound_day_peak=$(jq -r '.peak_concurrent // 0' <<< "$outbound_day_json" 2>/dev/null || echo "0")
@@ -520,16 +521,34 @@ case "$outbound_coverage_status" in
     degraded)
         marvin_log "WARN" "Outbound audit: only ${outbound_day_samples}/${MARVIN_OUTBOUND_SAMPLES_PER_DAY} samples (${outbound_coverage_pct}%) for ${OUTBOUND_AUDIT_DAY} — too sparse to attribute egress"
         ;;
+    failing)
+        marvin_log "WARN" "Outbound audit: every retained sample for ${OUTBOUND_AUDIT_DAY} is an error or unparseable record (${outbound_day_failed} error, ${outbound_day_malformed} malformed) — the sampler ran and produced nothing usable"
+        ;;
     aggregate-failed)
         marvin_log "WARN" "Outbound audit: sample aggregation FAILED for ${OUTBOUND_AUDIT_DAY} — treat as no data"
         ;;
+    path-unresolved)
+        marvin_log "WARN" "Outbound audit: could not resolve a sample directory (SECURITY_DIR/DATA_DIR/MARVIN_DIR all unset) — egress for ${OUTBOUND_AUDIT_DAY} is UNKNOWN"
+        ;;
     ok)
         marvin_log "INFO" "Outbound audit: ${outbound_day_samples} samples (${outbound_coverage_pct}%) for ${OUTBOUND_AUDIT_DAY}, ${outbound_day_distinct} distinct destination(s), peak ${outbound_day_peak} concurrent"
+        ;;
+    *)
+        # An unrecognised status still degrades overall_status below, but must
+        # not pass through the log in silence — a status nobody prints is a
+        # status nobody notices.
+        marvin_log "WARN" "Outbound audit: unrecognised coverage_status '${outbound_coverage_status}' for ${OUTBOUND_AUDIT_DAY} — treat as no data"
         ;;
 esac
 
 if [[ "$outbound_day_failed" -gt 0 ]] 2>/dev/null; then
     marvin_log "WARN" "Outbound audit: ${outbound_day_failed} sample(s) on ${OUTBOUND_AUDIT_DAY} recorded an error — gaps in the egress history"
+fi
+
+# Malformed lines are skipped rather than fatal (the day still aggregates), so
+# they must be announced or the skip becomes a silent under-count.
+if [[ "$outbound_day_malformed" -gt 0 ]] 2>/dev/null; then
+    marvin_log "WARN" "Outbound audit: ${outbound_day_malformed} unparseable line(s) in the ${OUTBOUND_AUDIT_DAY} sample file — skipped, not counted; the rest of the day aggregated normally"
 fi
 
 if [[ "$outbound_day_unexpected" -gt 0 ]] 2>/dev/null; then
@@ -857,6 +876,7 @@ cat > "$REPORT_FILE" << EOF
     "outbound_day_coverage_percent": ${outbound_coverage_pct},
     "outbound_day_samples": ${outbound_day_samples},
     "outbound_day_samples_failed": ${outbound_day_failed},
+    "outbound_day_samples_malformed": ${outbound_day_malformed},
     "outbound_day_distinct_destinations": ${outbound_day_distinct},
     "outbound_day_peak_concurrent": ${outbound_day_peak},
     "outbound_day_unexpected": ${outbound_day_unexpected},

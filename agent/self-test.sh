@@ -902,15 +902,31 @@ else
     if grep -q 'marvin_outbound_record_sample' "$_ob_hm" 2>/dev/null; then
         _ob_today="${DATA_DIR}/security/outbound-samples-$(date -u +%Y-%m-%d).jsonl"
         _ob_yday="${DATA_DIR}/security/outbound-samples-$(date -u -d 'yesterday' +%Y-%m-%d 2>/dev/null).jsonl"
+        # Count RECORDS, not lines, and assign the fallback rather than echoing
+        # it. Two bugs in the one line this replaces:
+        #
+        #   1. `$(grep -c . f || echo 0)` — `grep -c` prints 0 and THEN exits 1
+        #      on no match, so the fallback appended a second document and
+        #      _ob_count became "0\n0", an arithmetic error at the `-gt` below.
+        #      This is the #855/#857 double-document class, and §1h caught it in
+        #      this very file.
+        #   2. `grep -c .` counts LINES. The sampler's records were
+        #      pretty-printed (the missing `jq -c` fixed in this PR), so one
+        #      sample was ~31 lines and this reported "31 samples recorded
+        #      today" against 1 real sample. `^{` counts record openings, which
+        #      is correct for BOTH the compact form and any legacy
+        #      pretty-printed file still inside the 30-day retention window.
         _ob_count=0
-        [[ -f "$_ob_today" ]] && _ob_count=$(grep -c . "$_ob_today" 2>/dev/null || echo 0)
+        if [[ -f "$_ob_today" ]]; then
+            _ob_count=$(grep -c '^{' "$_ob_today" 2>/dev/null) || _ob_count=0
+        fi
         # Expected samples so far today, at one per 5 minutes since 00:00 UTC.
         # Single epoch reading rather than `10#%H`/`10#%M` (#886): `10#` does fix
         # the octal crash, but two `date` calls can still straddle a minute
         # boundary and report hour N with minute 0. One reading cannot.
         _ob_expected=$(( (($(date -u +%s) % 86400) / 60) / 5 ))
         if [[ "$_ob_count" -gt 0 ]]; then
-            _ob_errs=$(grep -c '"error"' "$_ob_today" 2>/dev/null || echo 0)
+            _ob_errs=$(grep -c '"error"' "$_ob_today" 2>/dev/null) || _ob_errs=0
             if [[ "$_ob_errs" -gt 0 ]]; then
                 test_warn "outbound sampling: ${_ob_errs} of ${_ob_count} samples today recorded an error — gaps in the egress history"
             else

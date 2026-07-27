@@ -45,7 +45,32 @@
 # Days of per-sample history to retain.
 : "${MARVIN_OUTBOUND_RETAIN_DAYS:=30}"
 
-_MARVIN_OUTBOUND_DIR="${SECURITY_DIR:-${DATA_DIR:-/home/marvin/git/data}/security}"
+# _marvin_outbound_dir — where the sample JSONLs live. Resolved at CALL time.
+#
+# Was a source-time assignment with a `${SECURITY_DIR:-...}` head and a literal
+# `/home/marvin/git/data` tail. Both halves were wrong (found reviewing #884):
+#
+#   - The SECURITY_DIR clause could never fire. This file is sourced from
+#     common.sh:244, and every caller sets SECURITY_DIR *after* sourcing
+#     common.sh (security-scan.sh:16), so at source time the variable is always
+#     unset. An override that silently does nothing is worse than no override.
+#   - The literal path violates the repo rule that paths derive from
+#     ${MARVIN_DIR}. It was unreachable today, so it was dead code that would
+#     have come alive — pointing at a hardcoded path — the first time the
+#     sourcing order changed.
+#
+# Now a function, so SECURITY_DIR is honoured whenever it is set, and the
+# fallback chain ends at ${MARVIN_DIR} (common.sh's one sanctioned hardcode)
+# rather than repeating the literal. If none of the three are set there is no
+# path worth guessing: return 1 and let the caller fail loudly.
+_marvin_outbound_dir() {
+    if   [[ -n "${SECURITY_DIR:-}" ]]; then printf '%s\n' "${SECURITY_DIR}"
+    elif [[ -n "${DATA_DIR:-}"     ]]; then printf '%s\n' "${DATA_DIR}/security"
+    elif [[ -n "${MARVIN_DIR:-}"   ]]; then printf '%s\n' "${MARVIN_DIR}/data/security"
+    else return 1
+    fi
+    return 0
+}
 
 # ─── Docker bridge detection ─────────────────────────────────────────────────
 # Container↔container and docker-proxy↔container traffic (Marvin-Brain and the
@@ -60,6 +85,14 @@ _MARVIN_OUTBOUND_DIR="${SECURITY_DIR:-${DATA_DIR:-/home/marvin/git/data}/securit
 #
 # Lazily initialised — common.sh is sourced by ~20 agent scripts and
 # `docker network inspect` per network is far too expensive to run on every one.
+#
+# Cost of the probe, measured 2026-07-27 on this box (5 networks, so 6 docker
+# CLI round-trips), since the sampler now reaches it on the 5-minute tick as
+# well as the daily scan:
+#     0.19s / 0.12 / 0.12 / 0.12 / 0.12  wall,  ~0.11s CPU  (first run warms)
+# At 288 ticks/day that is ~35s wall and ~32s CPU per day, against a box idling
+# at ~4%. Negligible, and it only fires when a tick sees at least one
+# non-loopback connection to classify. Recorded rather than assumed.
 _docker_bridges=""
 _MARVIN_BRIDGES_INIT=false
 
@@ -119,6 +152,19 @@ marvin_outbound_is_loopback() {
 #
 # Filters, in order: skip blank lines, skip inbound (local port is one of ours),
 # skip loopback, skip active Docker bridge subnets.
+#
+# COLUMN PROVENANCE — the positional awk below ($3 Local, $4 Peer, 5..NF
+# Process) is version-sensitive, so record what it was validated against:
+#
+#     ss utility, iproute2-6.1.0   (Ubuntu 24.04, kernel 6.8.0)
+#     $ ss -tnp state established | head -1
+#     Recv-Q Send-Q  Local Address:Port  Peer Address:Port  Process
+#
+# The State column is present in a bare `ss -tn` but OMITTED when the output is
+# filtered by `state established`, which is what makes $3/$4 correct here rather
+# than an off-by-one. If an OS upgrade shifts these columns the failure mode is
+# silent under-counting — the exact class this file exists to fix — so a future
+# reader should re-check the header above before trusting a zero.
 marvin_outbound_classify() {
     local line local_addr remote_addr local_port remote_port remote_ip proc_info proc_name
 
@@ -158,9 +204,11 @@ marvin_outbound_classify() {
 }
 
 # marvin_outbound_sample_file — JSONL path for a given day (default: today UTC).
+# Returns 1 (and prints nothing) if no data directory can be resolved.
 marvin_outbound_sample_file() {
-    local day="${1:-$(date -u +%Y-%m-%d)}"
-    printf '%s/outbound-samples-%s.jsonl\n' "$_MARVIN_OUTBOUND_DIR" "$day"
+    local day="${1:-$(date -u +%Y-%m-%d)}" dir
+    dir=$(_marvin_outbound_dir) || return 1
+    printf '%s/outbound-samples-%s.jsonl\n' "$dir" "$day"
 }
 
 # ─── Sampling (5-minute tick) ────────────────────────────────────────────────
@@ -186,18 +234,29 @@ marvin_outbound_sample_file() {
 # 666 & ~027 = 640. The chmod calls below are kept as well, but their job is now
 # only to tighten a file left at 644 by an older version of this code — the
 # creation path no longer depends on them.
+# Follow-up from the #884 review: the umask above closes the CREATION race, but
+# a file that is already present at 644 — restored from a backup, written by an
+# older version of this code, touched by hand — was still appended to first and
+# chmod'd afterwards, reproducing #885's window on every subsequent tick. So
+# tighten an existing file BEFORE the append, not only after it. The `stat`
+# guard keeps the common case (already 640) syscall-free.
 _marvin_outbound_ensure_file() {
-    local f="$1"
-    [[ -e "$f" ]] && return 0
+    local f="$1" mode
+    if [[ -e "$f" ]]; then
+        mode=$(stat -c '%a' "$f" 2>/dev/null || echo "")
+        [[ "$mode" == "640" ]] || chmod 640 "$f" 2>/dev/null || true
+        return 0
+    fi
     ( umask 027; : > "$f" ) 2>/dev/null || return 1
     return 0
 }
 
 marvin_outbound_record_sample() {
-    local now sample_file tsv rc=0
+    local now sample_file dir tsv rc=0
     now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    sample_file=$(marvin_outbound_sample_file)
-    mkdir -p "$_MARVIN_OUTBOUND_DIR" 2>/dev/null || true
+    dir=$(_marvin_outbound_dir) || return 1
+    sample_file=$(marvin_outbound_sample_file) || return 1
+    mkdir -p "$dir" 2>/dev/null || true
     # Before ANY append path below, including the error ones: the file must come
     # into existence already at 640 (#885).
     _marvin_outbound_ensure_file "$sample_file" || return 1
@@ -217,10 +276,24 @@ marvin_outbound_record_sample() {
 
     # Classify. An empty result is a legitimate observation (no outbound right
     # now) and is recorded as total 0 — distinct from the error records above.
+    # (`marvin_outbound_classify` returns 0 unconditionally today, so this guard
+    # is forward-looking rather than a live failure path — it is here so that a
+    # future failure mode cannot be added silently.)
     tsv=$(marvin_outbound_classify <<< "$raw") || rc=1
 
+    # `-c` is load-bearing, not cosmetic. Without it jq PRETTY-PRINTS, so each
+    # "line" of this .jsonl file was ~31 lines and the file was never actually
+    # line-delimited — measured on the first live sample this branch took:
+    #     $ wc -l outbound-samples-2026-07-27.jsonl   -> 31
+    #     $ jq -s 'length' outbound-samples-2026-07-27.jsonl -> 1
+    # `jq -s` in the aggregator tolerated that, which is why the format was
+    # wrong for the whole life of the branch without anything complaining.
+    # It matters now: every error record below IS written compact, so a file
+    # mixing the two forms has no consistent record boundary, and a crash
+    # part-way through a 31-line append leaves a fragment that no line-oriented
+    # reader can bound. One sample, one line.
     local record
-    record=$(printf '%s' "$tsv" | jq -R -s \
+    record=$(printf '%s' "$tsv" | jq -R -s -c \
         --arg ts "$now" \
         --arg safe "$MARVIN_SAFE_OUTBOUND_PORTS" \
         '
@@ -254,7 +327,9 @@ marvin_outbound_record_sample() {
 
 # marvin_outbound_prune — drop sample files older than the retention window.
 marvin_outbound_prune() {
-    find "$_MARVIN_OUTBOUND_DIR" -maxdepth 1 -name 'outbound-samples-*.jsonl' \
+    local dir
+    dir=$(_marvin_outbound_dir) || return 0
+    find "$dir" -maxdepth 1 -name 'outbound-samples-*.jsonl' \
         -type f -mtime "+${MARVIN_OUTBOUND_RETAIN_DAYS}" -delete 2>/dev/null || true
     return 0
 }
@@ -277,12 +352,14 @@ marvin_outbound_day_summary() {
     local day="${1:-$(date -u +%Y-%m-%d)}"
     local expected="${2:-$MARVIN_OUTBOUND_SAMPLES_PER_DAY}"
     local sample_file
-    sample_file=$(marvin_outbound_sample_file "$day")
-
-    if [[ ! -s "$sample_file" ]]; then
+    if ! sample_file=$(marvin_outbound_sample_file "$day"); then
+        # No resolvable data directory. This is NOT "absent" — that claims the
+        # sampler did not run, and the entire point of this file is to stop
+        # "I could not look" rendering as "there was nothing to see".
         jq -nc --arg day "$day" --argjson exp "$expected" '{
             day: $day, samples_recorded: 0, samples_expected: $exp,
-            samples_failed: 0, coverage_percent: 0, coverage_status: "absent",
+            samples_failed: 0, samples_malformed: 0, coverage_percent: 0,
+            coverage_status: "path-unresolved",
             peak_concurrent: null, total_observations: null,
             distinct_destinations: null, by_destination: [], by_process: [],
             unexpected_destinations: []
@@ -290,15 +367,69 @@ marvin_outbound_day_summary() {
         return 0
     fi
 
-    jq -s -c \
+    if [[ ! -s "$sample_file" ]]; then
+        jq -nc --arg day "$day" --argjson exp "$expected" '{
+            day: $day, samples_recorded: 0, samples_expected: $exp,
+            samples_failed: 0, samples_malformed: 0,
+            coverage_percent: 0, coverage_status: "absent",
+            peak_concurrent: null, total_observations: null,
+            distinct_destinations: null, by_destination: [], by_process: [],
+            unexpected_destinations: []
+        }'
+        return 0
+    fi
+
+    # ── Normalise before aggregating (found reviewing #884) ──────────────────
+    #
+    # The old form fed the file straight to `jq -s`, which parses it as ONE
+    # document: a single malformed record — a process killed mid-append, a disk
+    # that filled — is a parse error for the WHOLE file, so 287 good samples and
+    # one bad one aggregate to zero destinations and "aggregate-failed". Losing
+    # a day's egress attribution to one bad byte is the same "absence reads as
+    # nothing happened" failure this file exists to prevent, one level up.
+    # Demonstrated: 5 samples, 1 truncated → old form recovers 0 and reports no
+    # unexpected destinations, hiding a live 9.9.9.9:4444.
+    #
+    # Two passes, cheapest first:
+    #   1. `jq -c .` over the file. Format-agnostic — it reads true JSONL and
+    #      the legacy pretty-printed records this branch wrote before the `-c`
+    #      fix above — and it is the path taken whenever the file is intact,
+    #      which is nearly always. Emits one compact value per line.
+    #   2. Only if that fails (something in the file really is corrupt): salvage
+    #      per line with `fromjson?`, keeping every record that parses and
+    #      counting the rest. `select(type == "object")` because a bare `42` on
+    #      a line parses fine and is not a sample record.
+    #
+    # Malformed records are SKIPPED, never silently dropped: the count is
+    # reported as samples_malformed and security-scan.sh WARNs on it.
+    # `x=$(cmd || echo 0)` is forbidden here: `grep -c` on empty input PRINTS 0
+    # and THEN exits 1, so the fallback appends a second document and the
+    # variable becomes "0\n0", which is an arithmetic error one line later.
+    # That is the #855/#857 double-document class the §1h ratchet exists to
+    # catch — assign the fallback, never echo it.
+    local norm malformed=0 _lines=0 _kept=0
+    if ! norm=$(jq -c . "$sample_file" 2>/dev/null); then
+        _lines=$(grep -c '' "$sample_file" 2>/dev/null) || _lines=0
+        norm=$(jq -R -r '. as $l | ($l | fromjson? | select(type == "object") | tojson)' \
+                  "$sample_file" 2>/dev/null) || norm=""
+        if [[ -n "$norm" ]]; then
+            _kept=$(printf '%s\n' "$norm" | grep -c '' 2>/dev/null) || _kept=0
+        fi
+        malformed=$(( _lines - _kept ))
+        [[ "$malformed" -ge 0 ]] || malformed=0
+    fi
+
+    printf '%s\n' "$norm" | jq -s -c \
         --arg day "$day" \
         --argjson exp "$expected" \
         --argjson floor "$MARVIN_OUTBOUND_COVERAGE_FLOOR" \
+        --argjson malformed "$malformed" \
         --arg safe "$MARVIN_SAFE_OUTBOUND_PORTS" \
         '
         ($safe | split(" ") | map(select(length > 0) | tonumber)) as $safeports |
-        [ .[] | select(.error == null) ] as $ok |
-        [ .[] | select(.error != null) ] as $bad |
+        [ .[] | select(type == "object") ] as $recs |
+        [ $recs[] | select(.error == null) ] as $ok |
+        [ $recs[] | select(.error != null) ] as $bad |
         ($ok | length) as $n |
         (if $exp > 0 then (($n * 100) / $exp) else 0 end) as $cov |
         [ $ok[] | .conns[]? ] as $all |
@@ -307,8 +438,16 @@ marvin_outbound_day_summary() {
           samples_recorded: $n,
           samples_expected: $exp,
           samples_failed: ($bad | length),
+          samples_malformed: $malformed,
           coverage_percent: ($cov | floor),
-          coverage_status: (if $n == 0 then "absent"
+          # $n counts only parseable, error-free records, so malformed lines
+          # depress coverage exactly as a missing tick would — which is right:
+          # an unreadable sample is not a sample. But a file that is ALL error
+          # or malformed records is not "absent" either; the sampler plainly ran
+          # and failed, and saying "no samples retained — is health-monitor
+          # running?" would send the next debugging session to the wrong place.
+          coverage_status: (if ($n == 0) and ((($bad | length) + $malformed) > 0) then "failing"
+                            elif $n == 0 then "absent"
                             elif $cov < $floor then "degraded"
                             else "ok" end),
           peak_concurrent: ([ $ok[] | .total ] | max // 0),
@@ -329,12 +468,12 @@ marvin_outbound_day_summary() {
               map({ip: .[0].ip, port: .[0].port, process: .[0].process,
                    observations: (map(.count) | add)}) |
               sort_by(-.observations))
-        }' "$sample_file" 2>/dev/null || {
+        }' 2>/dev/null || {
         # The aggregation itself failed — a corrupt JSONL, a jq error. Report it
         # as a failure, never as an empty-but-fine day.
         jq -nc --arg day "$day" --argjson exp "$expected" '{
             day: $day, samples_recorded: 0, samples_expected: $exp,
-            samples_failed: 0, coverage_percent: 0,
+            samples_failed: 0, samples_malformed: 0, coverage_percent: 0,
             coverage_status: "aggregate-failed",
             peak_concurrent: null, total_observations: null,
             distinct_destinations: null, by_destination: [], by_process: [],
