@@ -475,7 +475,28 @@ outbound_day_json=$(marvin_outbound_day_summary "$OUTBOUND_AUDIT_DAY" \
     "$MARVIN_OUTBOUND_SAMPLES_PER_DAY")
 
 # Partial day-so-far: expected = elapsed 5-minute ticks since 00:00 UTC.
-_elapsed_min=$(( $(date -u +%H) * 60 + $(date -u +%M) ))
+#
+# Derived from a single epoch reading, NOT from `$(date +%H) * 60 + $(date +%M)`
+# (#886). Two independent reasons, and the first one crashes:
+#
+#   1. Zero-padding is octal. `date -u +%H` yields `08`/`09` and bash reads a
+#      leading-zero literal as octal, where those are not valid digits:
+#      `bash: 08: value too great for base`. Under this file's `set -euo
+#      pipefail` + ERR trap that aborts the ENTIRE daily security scan, not just
+#      this section. The review that caught it judged the scheduled 02:00 run
+#      safe because minute `00` is valid octal — but §3d does not run at 02:00.
+#      rkhunter takes ~4m16s, so this line executes at **02:04** (02:04:17–02:04:21
+#      across 2026-07-22/24/26). The production run is four minutes of rkhunter
+#      drift away from aborting the whole scan, which makes this a live fault
+#      rather than an ad-hoc-invocation-only one.
+#   2. Two `date` calls can straddle a minute boundary: read `%H` at 02:59:59.99
+#      and `%M` in the next millisecond and you get hour 2 with minute 0 — 120
+#      instead of 180. Rare, silent, and wrong rather than loud.
+#
+# `%s % 86400` is immune to both: one reading, no padded fields, no parsing.
+# `_today_expected` is only ever a sample-count expectation, so integer minutes
+# are all it needs.
+_elapsed_min=$(( ($(date -u +%s) % 86400) / 60 ))
 _today_expected=$(( _elapsed_min / 5 ))
 [[ "$_today_expected" -lt 1 ]] && _today_expected=1
 outbound_today_json=$(marvin_outbound_day_summary "$TODAY" "$_today_expected")

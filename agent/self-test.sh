@@ -905,7 +905,10 @@ else
         _ob_count=0
         [[ -f "$_ob_today" ]] && _ob_count=$(grep -c . "$_ob_today" 2>/dev/null || echo 0)
         # Expected samples so far today, at one per 5 minutes since 00:00 UTC.
-        _ob_expected=$(( (10#$(date -u +%H) * 60 + 10#$(date -u +%M)) / 5 ))
+        # Single epoch reading rather than `10#%H`/`10#%M` (#886): `10#` does fix
+        # the octal crash, but two `date` calls can still straddle a minute
+        # boundary and report hour N with minute 0. One reading cannot.
+        _ob_expected=$(( (($(date -u +%s) % 86400) / 60) / 5 ))
         if [[ "$_ob_count" -gt 0 ]]; then
             _ob_errs=$(grep -c '"error"' "$_ob_today" 2>/dev/null || echo 0)
             if [[ "$_ob_errs" -gt 0 ]]; then
