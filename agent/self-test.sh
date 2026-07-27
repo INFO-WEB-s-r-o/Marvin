@@ -1000,8 +1000,20 @@ else
     # this once the sampler is deployed, so an unmerged branch warns instead of
     # failing on a host that has not been given the code yet.
     if grep -q 'marvin_outbound_record_sample' "$_ob_hm" 2>/dev/null; then
-        _ob_today="${DATA_DIR}/security/outbound-samples-$(date -u +%Y-%m-%d).jsonl"
-        _ob_yday="${DATA_DIR}/security/outbound-samples-$(date -u -d 'yesterday' +%Y-%m-%d 2>/dev/null).jsonl"
+        # Resolve the path through the library, never by rebuilding it here.
+        # A second hand-written copy of the sample path is the same "two places
+        # must agree" risk this PR just removed for _ip_in_docker_cidr, one file
+        # over. Today the two happen to coincide — SECURITY_DIR is unset at this
+        # point in self-test.sh, so _marvin_outbound_dir() also falls through to
+        # ${DATA_DIR}/security — but that agreement is incidental, not designed.
+        # If the fallback chain ever changes, a hardcoded copy silently starts
+        # stat()ing a file nothing writes and reports "ZERO samples today"
+        # forever, which is a FAIL below.
+        _ob_paths_ok=true
+        _ob_today=$(marvin_outbound_sample_file "$(date -u +%Y-%m-%d)") \
+            || { _ob_today=""; _ob_paths_ok=false; }
+        _ob_yday=$(marvin_outbound_sample_file "$(date -u -d 'yesterday' +%Y-%m-%d 2>/dev/null)") \
+            || { _ob_yday=""; _ob_paths_ok=false; }
         # Count RECORDS, not lines, and assign the fallback rather than echoing
         # it. Two bugs in the one line this replaces:
         #
@@ -1017,27 +1029,38 @@ else
         #      is correct for BOTH the compact form and any legacy
         #      pretty-printed file still inside the 30-day retention window.
         _ob_count=0
-        if [[ -f "$_ob_today" ]]; then
-            _ob_count=$(grep -c '^{' "$_ob_today" 2>/dev/null) || _ob_count=0
-        fi
-        # Expected samples so far today, at one per 5 minutes since 00:00 UTC.
-        # Single epoch reading rather than `10#%H`/`10#%M` (#886): `10#` does fix
-        # the octal crash, but two `date` calls can still straddle a minute
-        # boundary and report hour N with minute 0. One reading cannot.
-        _ob_expected=$(( (($(date -u +%s) % 86400) / 60) / 5 ))
-        if [[ "$_ob_count" -gt 0 ]]; then
-            _ob_errs=$(grep -c '"error"' "$_ob_today" 2>/dev/null) || _ob_errs=0
-            if [[ "$_ob_errs" -gt 0 ]]; then
-                test_warn "outbound sampling: ${_ob_errs} of ${_ob_count} samples today recorded an error — gaps in the egress history"
-            else
-                test_pass "outbound sampling: ${_ob_count} samples recorded today (≈${_ob_expected} expected so far)"
-            fi
-        elif [[ -f "$_ob_yday" ]]; then
-            test_warn "outbound sampling: no samples yet today but yesterday's history exists — expected shortly after 00:00 UTC"
-        elif [[ "$_ob_expected" -lt 3 ]]; then
-            test_warn "outbound sampling: no samples yet — fewer than 3 ticks have elapsed since 00:00 UTC"
+        if [[ "$_ob_paths_ok" != true ]]; then
+            # The path could not be resolved, so no file was ever looked at.
+            # Say exactly that and assert nothing else — falling through with an
+            # empty path would make both -f tests false and land on the "ZERO
+            # samples today" FAIL below, reporting a definite finding from a
+            # check that never ran. That collapse of "could not look" into
+            # "looked and found nothing" is the shape coverage_status exists to
+            # separate; it would be poor to reintroduce it in the test for it.
+            test_warn "outbound sampling: could not resolve the sample file path — _marvin_outbound_dir() found none of SECURITY_DIR/DATA_DIR/MARVIN_DIR, so runtime sampling was NOT verified"
         else
-            test_fail "outbound sampling: sampler is wired into health-monitor.sh but has produced ZERO samples today after ~${_ob_expected} ticks — egress is unmonitored and the daily audit will report coverage 'absent' (#882)"
+            if [[ -f "$_ob_today" ]]; then
+                _ob_count=$(grep -c '^{' "$_ob_today" 2>/dev/null) || _ob_count=0
+            fi
+            # Expected samples so far today, one per 5 minutes since 00:00 UTC.
+            # Single epoch reading rather than `10#%H`/`10#%M` (#886): `10#` does
+            # fix the octal crash, but two `date` calls can still straddle a
+            # minute boundary and report hour N with minute 0. One cannot.
+            _ob_expected=$(( (($(date -u +%s) % 86400) / 60) / 5 ))
+            if [[ "$_ob_count" -gt 0 ]]; then
+                _ob_errs=$(grep -c '"error"' "$_ob_today" 2>/dev/null) || _ob_errs=0
+                if [[ "$_ob_errs" -gt 0 ]]; then
+                    test_warn "outbound sampling: ${_ob_errs} of ${_ob_count} samples today recorded an error — gaps in the egress history"
+                else
+                    test_pass "outbound sampling: ${_ob_count} samples recorded today (≈${_ob_expected} expected so far)"
+                fi
+            elif [[ -f "$_ob_yday" ]]; then
+                test_warn "outbound sampling: no samples yet today but yesterday's history exists — expected shortly after 00:00 UTC"
+            elif [[ "$_ob_expected" -lt 3 ]]; then
+                test_warn "outbound sampling: no samples yet — fewer than 3 ticks have elapsed since 00:00 UTC"
+            else
+                test_fail "outbound sampling: sampler is wired into health-monitor.sh but has produced ZERO samples today after ~${_ob_expected} ticks — egress is unmonitored and the daily audit will report coverage 'absent' (#882)"
+            fi
         fi
     fi
 fi
