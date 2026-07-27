@@ -37,13 +37,77 @@ $(journalctl --since "65 minutes ago" --no-pager -p err 2>/dev/null | tail -100 
 # `env -u TZ` pins the cutoff to that same zone: a TZ inherited from cron or a
 # service environment would reintroduce the identical skew, silently and with
 # nothing to catch it, since over-collecting never looks like a failure.
-if [[ -f /var/log/nginx/error.log ]]; then
-    LOG_SNAPSHOT+="### nginx error.log (last 65 min)
+#
+# The window is read from the rotated log as well as the live one (#860).
+# logrotate runs `daily` at 00:00 local, so the 00:35 run's 65-minute window
+# opens at 23:30 the previous day — a span that by then lives entirely in
+# error.log.1. `find /var/log/nginx -name "error.log"` matched only the live
+# file, so those 30 minutes were dropped every single night, and dropped
+# invisibly: an empty window and a window nobody read produce the same report.
+#
+# Only `.1` is read, on purpose. `delaycompress` leaves exactly one rotation
+# uncompressed, and a 65-minute window cannot reach past it — .2.gz is always
+# more than a day old. Reading further back would cost a zcat per run to
+# re-examine entries every window has already excluded.
+#
+# Timestamps sort lexically in `%Y/%m/%d %H:%M:%S`, so the same string cutoff
+# filters both files correctly; .1 is read first so the output stays in
+# chronological order.
+_nginx_error_window() {
+    local cutoff="$1" f lines all="" failed=""
+    for f in /var/log/nginx/error.log.1 /var/log/nginx/error.log; do
+        [[ -f "$f" ]] || continue
+        # Per-file status, deliberately not shared (#866). A single `ok` flag
+        # that each iteration overwrites lets a readable error.log erase the
+        # fact that error.log.1 could not be opened — the run then prints a
+        # confident, short window and nothing says half of it is missing.
+        # awk exits 0 on "no matching lines", so a non-zero status here really
+        # is a read failure and not an empty result.
+        if lines=$(awk -v d="$cutoff" '$0 >= d' "$f" 2>/dev/null); then
+            if [[ -n "$lines" ]]; then
+                all+="${lines}"$'\n'
+            fi
+        else
+            failed="${failed}${failed:+, }${f}"
+        fi
+    done
+
+    if [[ -n "$all" ]]; then
+        printf '%s' "$all" | tail -50
+    fi
+    # An unreadable log is reported as unread, never folded into the quiet
+    # case. `x=$(scan) || true` collapsing "could not look" into "found
+    # nothing" is the exact bug this section keeps being rewritten to avoid.
+    if [[ -n "$failed" ]]; then
+        printf '!! UNREAD: %s — this window is INCOMPLETE, not clean\n' "$failed"
+    elif [[ -z "$all" ]]; then
+        printf -- '-- No entries --\n'
+    fi
+    return 0
+}
+
+if [[ -f /var/log/nginx/error.log || -f /var/log/nginx/error.log.1 ]]; then
+    # Computed once, outside the substitution below, so that a `date` failure
+    # is visible as an empty cutoff rather than silently becoming an awk
+    # pattern that matches every line ever logged.
+    _nginx_cutoff=$(env -u TZ date -d '65 minutes ago' '+%Y/%m/%d %H:%M:%S' 2>/dev/null \
+        || env -u TZ date -v-65M '+%Y/%m/%d %H:%M:%S' 2>/dev/null \
+        || echo "")
+    if [[ -z "$_nginx_cutoff" ]]; then
+        LOG_SNAPSHOT+="### nginx error.log (last 65 min)
 \`\`\`
-$(find /var/log/nginx -name "error.log" -exec awk -v d="$(env -u TZ date -d '65 minutes ago' '+%Y/%m/%d %H:%M:%S' 2>/dev/null || env -u TZ date -v-65M '+%Y/%m/%d %H:%M:%S')" '$0 >= d' {} \; 2>/dev/null | tail -50 || tail -50 /var/log/nginx/error.log 2>/dev/null || echo "unavailable")
+!! could not compute the 65-minute cutoff — window NOT read
 \`\`\`
 
 "
+    else
+        LOG_SNAPSHOT+="### nginx error.log (last 65 min)
+\`\`\`
+$(_nginx_error_window "$_nginx_cutoff")
+\`\`\`
+
+"
+    fi
 fi
 
 # syslog / kern.log errors
