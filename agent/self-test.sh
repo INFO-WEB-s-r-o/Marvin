@@ -3464,20 +3464,49 @@ if [[ -z "$_bl_postconf" ]]; then
 elif [[ -z "$_bl_dig" ]]; then
     test_warn "dnsbl health: dig not found — the DNSBL test-vector check DID NOT RUN (#871)"
 else
-    _bl_restr=$("$_bl_postconf" -h smtpd_recipient_restrictions 2>/dev/null) || _bl_restr="__PC_FAIL__"
+    # EVERY smtpd restriction class is read, not just the recipient one (#914).
+    # `reject_rbl_client` is legal in the client, helo, sender, recipient and
+    # relay classes alike, so a DNSBL configured in any of the others would have
+    # been invisible here — and invisible would have been reported as the PASS
+    # "no reject_rbl_client entries configured": a clean bill of health for a
+    # blocklist this section never looked at. That is the precise failure shape
+    # §9o exists to catch, which makes it a poor one to ship inside it.
+    #
+    # The class list is enumerated from `postconf -d` rather than hardcoded, so
+    # it cannot rot against a postfix that adds one. An empty enumeration means
+    # the query broke, never that postfix has no restriction classes.
+    _bl_restr=""
+    _bl_classes=$("$_bl_postconf" -d 2>/dev/null | sed -n 's/^\(smtpd_[a-z_]*restrictions\) *=.*/\1/p' | sort -u) || _bl_classes=""
+
+    if [[ -z "$_bl_classes" ]]; then
+        test_warn "dnsbl health: could not enumerate smtpd restriction classes from '${_bl_postconf} -d' — NO DNSBL was verified (#871, #914)"
+        _bl_restr="__PC_FAIL__"
+    else
+        _bl_pcfail=0
+        while IFS= read -r _bl_class; do
+            [[ -z "$_bl_class" ]] && continue
+            _bl_one=$("$_bl_postconf" -h "$_bl_class" 2>/dev/null) || { _bl_pcfail=1; continue; }
+            _bl_restr+="${_bl_one}, "
+        done <<< "$_bl_classes"
+        if [[ "$_bl_pcfail" -eq 1 ]]; then
+            test_warn "dnsbl health: '${_bl_postconf} -h' failed for at least one smtpd restriction class — any DNSBL configured there was NOT verified (#914)"
+        fi
+    fi
 
     if [[ "$_bl_restr" == "__PC_FAIL__" ]]; then
-        test_warn "dnsbl health: '${_bl_postconf} -h smtpd_recipient_restrictions' failed — no DNSBL was verified (#871)"
+        : # already reported above; do not also emit a misleading verdict
     elif ! printf '%s' "$_bl_restr" | grep -q 'reject_rbl_client'; then
-        test_pass "dnsbl health: postfix configures no reject_rbl_client entries — nothing to verify"
+        test_pass "dnsbl health: no reject_rbl_client in any of the $(printf '%s\n' "$_bl_classes" | grep -c .) smtpd restriction classes — nothing to verify"
     else
         # sed -n 's///p' rather than grep|sed: grep exits 1 on no match, and the
         # `reject_rbl_client` presence test above has already established there
         # IS a match, so an empty result here means the parser broke, not that
         # the config is empty. That case is a FAIL below, never a silent pass.
+        # sort -u: the same zone named in two classes is one blocklist, and
+        # probing it twice would report an identical fault twice.
         _bl_entries=$(printf '%s' "$_bl_restr" | tr ',' '\n' \
             | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
-            | sed -n 's/^reject_rbl_client[[:space:]][[:space:]]*//p') || _bl_entries=""
+            | sed -n 's/^reject_rbl_client[[:space:]][[:space:]]*//p' | sort -u) || _bl_entries=""
 
         if [[ -z "$_bl_entries" ]]; then
             test_fail "dnsbl health: reject_rbl_client is configured but no zone could be extracted — the parser broke and NO DNSBL was verified (#871)"
