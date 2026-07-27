@@ -3511,15 +3511,25 @@ else
             test_pass "dnsbl health: no reject_rbl_client in any of the ${_bl_read:-0} smtpd restriction classes read — nothing to verify"
         fi
     else
-        # sed -n 's///p' rather than grep|sed: grep exits 1 on no match, and the
-        # `reject_rbl_client` presence test above has already established there
-        # IS a match, so an empty result here means the parser broke, not that
-        # the config is empty. That case is a FAIL below, never a silent pass.
+        # Tokenised, not comma-split (#916). postfix accepts commas AND bare
+        # whitespace as restriction separators — `smtpd_relay_restrictions` on
+        # this very host is space-separated — so splitting on commas alone and
+        # anchoring to line-start missed any rule that was not comma-delimited
+        # or not first in its class. That did not lose the rule quietly: it fell
+        # through to the "parser broke" FAIL below, actively misdiagnosing a
+        # perfectly valid config as broken.
+        #
+        # So: flatten every separator to whitespace and walk the token stream,
+        # taking the argument that FOLLOWS each `reject_rbl_client` — which is
+        # what postfix itself does, and the only reading that survives both
+        # spellings. `i < NF` skips a trailing directive with no zone rather
+        # than emitting an empty entry that would probe the root zone.
+        #
         # sort -u: the same zone named in two classes is one blocklist, and
         # probing it twice would report an identical fault twice.
-        _bl_entries=$(printf '%s' "$_bl_restr" | tr ',' '\n' \
-            | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
-            | sed -n 's/^reject_rbl_client[[:space:]][[:space:]]*//p' | sort -u) || _bl_entries=""
+        _bl_entries=$(printf '%s' "$_bl_restr" | tr ',\t\n' '   ' \
+            | awk '{for (i = 1; i <= NF; i++) if ($i == "reject_rbl_client" && i < NF) print $(i + 1)}' \
+            | sort -u) || _bl_entries=""
 
         if [[ -z "$_bl_entries" ]]; then
             test_fail "dnsbl health: reject_rbl_client is configured but no zone could be extracted — the parser broke and NO DNSBL was verified (#871)"
