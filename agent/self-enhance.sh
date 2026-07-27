@@ -132,10 +132,19 @@ $(find "${MARVIN_DIR}/agent" -name "*.sh" -type f -exec sh -c 'echo "$(wc -l < "
 
 "
 
-# Include key infrastructure scripts that are always relevant (common.sh, lib/)
-for script in "${MARVIN_DIR}/agent/common.sh" "${MARVIN_DIR}/agent/lib/github.sh"; do
+# Include key infrastructure scripts that are always relevant (common.sh, lib/).
+#
+# ONE list, read by both the loop below and _rank_scripts' skip check. It used
+# to be written out twice — literals here, literals again in the skip test —
+# with nothing tying them together. Adding a third always-included script and
+# updating only one copy would have dumped it into the prompt twice, spending
+# budget on a duplicate while a genuinely implicated script was refused for
+# want of it.
+ALWAYS_INCLUDED_SCRIPTS=("agent/common.sh" "agent/lib/github.sh")
+
+for script_name in "${ALWAYS_INCLUDED_SCRIPTS[@]}"; do
+    script="${MARVIN_DIR}/${script_name}"
     if [[ -f "$script" ]]; then
-        script_name="${script#${MARVIN_DIR}/}"
         SCRIPTS_CONTEXT+="### ${script_name}
 \`\`\`bash
 $(cat "$script")
@@ -145,23 +154,97 @@ $(cat "$script")
     fi
 done
 
-# Include scripts that had errors today
-error_scripts=$(grep -oP '(?<=agent/)[a-z-]+\.sh' "${LOGS_DIR}/${TODAY}.log" 2>/dev/null | sort -u || echo "")
-for script_base in $error_scripts; do
-    script="${MARVIN_DIR}/agent/${script_base}"
-    if [[ -f "$script" ]]; then
-        script_name="${script#${MARVIN_DIR}/}"
-        # Skip if already included
-        if ! echo "$SCRIPTS_CONTEXT" | grep -q "### ${script_name}"; then
-            SCRIPTS_CONTEXT+="### ${script_name} (had errors today)
-\`\`\`bash
-$(cat "$script")
-\`\`\`
+# ─── Scripts implicated in today's failures ─────────────────────────────────
+# Selected here, but appended AFTER the rest of the prompt is assembled, so the
+# dump can be budgeted against real remaining headroom (see below).
+#
+# The previous selector was `grep -oP '(?<=agent/)[a-z-]+\.sh'` over the whole
+# log, and it never once did what its comment claimed. Two independent faults,
+# either of which alone would have broken it:
+#
+#   1. It required a literal `agent/` prefix, but marvin_error_trap logs the
+#      BASENAME (`self-test.sh:1279 — command failed`, lib/logging.sh:120).
+#      No ERR-trap line can match that lookbehind — structurally, not by bad
+#      luck. The selector could not see an error if it tried.
+#   2. It scanned every line at every level, so what it actually matched was
+#      whatever else happened to spell a path that day. On 2026-07-27 that was
+#      four INFO lines from file-integrity.sh ("git-synced — /home/…/agent/
+#      <name>.sh") — a monitored-path list with no relation to failure.
+#
+# So "scripts that had errors today" resolved to "scripts file-integrity
+# mentioned in passing", and each was then labelled "(had errors today)" in the
+# prompt — a false claim, not merely a miss. It pulled in 153,656 bytes of
+# unrelated source, which is what drove the prompt to 497,498 chars against
+# run_claude's 400,000 ceiling. The hard cut landed mid-`security-scan.sh` and
+# discarded `self-test.sh` — the ONE script that had genuinely failed that day,
+# and the whole reason this selector exists.
+#
+# Match basenames on failure lines only, and rank ERROR/CRITICAL above WARN so
+# that when the budget binds it drops the least-implicated script, not the most
+# (priority order: fix failures first).
+_failure_log="${LOGS_DIR}/${TODAY}.log"
+_selector_ran=true
+_err_bases=""
+_warn_bases=""
+if [[ -r "$_failure_log" ]]; then
+    _err_bases=$( { grep -E '\[(ERROR|CRITICAL)\]' "$_failure_log" 2>/dev/null || true; } \
+        | grep -oE '[A-Za-z0-9_.-]+\.sh' | sort -u ) || _err_bases=""
+    _warn_bases=$( { grep -E '\[WARN\]' "$_failure_log" 2>/dev/null || true; } \
+        | grep -oE '[A-Za-z0-9_.-]+\.sh' | sort -u ) || _warn_bases=""
+else
+    # A scan that could not run must not read as "nothing found".
+    _selector_ran=false
+    marvin_log "WARN" "Cannot read ${_failure_log} — failure-implicated scripts NOT selected this run"
+fi
 
-"
-        fi
-    fi
-done
+# Resolve basenames to real files, dropping anything already dumped in full
+# above. Emits "<size>\t<relpath>" so the caller can order and budget.
+#
+# `wc -m` (characters), NOT `wc -c` (bytes). The budget these sizes are spent
+# against is built from `${#var}`, and run_claude's own ceiling test is
+# `${#full_prompt}` — both of which count CHARACTERS under this host's
+# C.UTF-8 locale. Mixing the two units is not academic here: the em-dashes and
+# accented text throughout these scripts make `self-test.sh` 73,503 bytes but
+# 70,667 characters. `wc -c` overstates every candidate by ~4%, which biases
+# toward refusing a script that would in fact have fitted — the precise
+# outcome this whole section exists to prevent. Under a C/POSIX locale the two
+# coincide, so this is correct either way rather than locale-dependent.
+#
+# The sort is `-s -t $'\t' -k1,1n` and deliberately NOT `-n -u` (#897). With
+# `-n` active and no explicit key, GNU sort compares — and therefore dedupes —
+# on the leading numeric field alone, so two DIFFERENT scripts with the same
+# `wc -m` count are "duplicates" and one is discarded:
+#
+#   $ printf '100\tA.sh\n100\tB.sh\n' | sort -n -u   →   only 100<TAB>A.sh
+#
+# The loser vanished before the budgeting loop ever saw it, so it appeared
+# neither in the prompt nor in `_omitted` (that notice is built only from what
+# survives into `_ranked`) — a silent drop of an implicated script, in the code
+# whose entire purpose is to have no silent drops. `-u` was never needed:
+# within one call each base yields at most one real path per candidate
+# directory, and cross-tier repeats are deduped downstream by
+# `awk '!seen[$2]++'` on the full relative path. `-k1,1n` confines the numeric
+# comparison to the size field, and `-s` keeps ties in input order so the
+# ranking is reproducible run to run.
+_rank_scripts() {
+    local base path rel already script_name
+    for base in $1; do
+        for path in "${MARVIN_DIR}/agent/${base}" "${MARVIN_DIR}/agent/lib/${base}"; do
+            [[ -f "$path" ]] || continue
+            rel="${path#"${MARVIN_DIR}"/}"
+            # Skip anything the always-include loop already dumped in full.
+            already=false
+            for script_name in "${ALWAYS_INCLUDED_SCRIPTS[@]}"; do
+                [[ "$rel" == "$script_name" ]] && { already=true; break; }
+            done
+            [[ "$already" == "true" ]] && continue
+            printf '%s\t%s\n' "$(wc -m < "$path")" "$rel"
+        done
+    done | sort -s -t $'\t' -k1,1n
+}
+# ERROR/CRITICAL tier first, then WARN; awk drops a script already ranked in
+# the higher tier so it keeps its stronger claim on the budget.
+_ranked=$( { _rank_scripts "$_err_bases"; _rank_scripts "$_warn_bases"; } | awk '!seen[$2]++' )
 
 # Claude can read additional scripts as needed using its Read tool
 
@@ -174,7 +257,13 @@ if [[ -x "$(dirname "$0")/lessons-learned.sh" ]]; then
     fi
 fi
 
-SELF_CONTEXT="${PREFLIGHT_DIVERGENCE:+## Pre-flight Warning: origin/main has moved since morning sync
+# ─── Prompt assembly, budgeted against run_claude's hard ceiling ────────────
+# run_claude truncates at MARVIN_CLAUDE_MAX_PROMPT_CHARS with a blunt byte cut
+# that slices mid-file and drops everything after it. Assemble the parts we
+# cannot do without first, measure what is left, and spend the remainder on
+# script bodies deliberately — naming whatever did not fit, rather than letting
+# the tail fall off in silence.
+SELF_CONTEXT_HEAD="${PREFLIGHT_DIVERGENCE:+## Pre-flight Warning: origin/main has moved since morning sync
 
 ${PREFLIGHT_DIVERGENCE}
 
@@ -184,8 +273,9 @@ ${ENHANCEMENTS}
 
 ## Current Marvin Codebase
 
-${SCRIPTS_CONTEXT}
+${SCRIPTS_CONTEXT}"
 
+SELF_CONTEXT_TAIL="
 ### Recent Enhancement History
 \`\`\`
 $(ls -la "${ENHANCE_DIR}/" 2>/dev/null | tail -20 || echo "No previous enhancements")
@@ -206,9 +296,68 @@ ${LESSONS_SUMMARY:+## Lessons Learned (avoid repeating these mistakes)
 ${LESSONS_SUMMARY}}
 "
 
+# Reserve room for run_claude's own preamble (system-state JSON, date and task
+# name, prepended inside run_claude and therefore invisible to the arithmetic
+# here) plus the omission notice this block may append.
+_PROMPT_RESERVE=8000
+_budget=$(( MARVIN_CLAUDE_MAX_PROMPT_CHARS - ${#ENHANCE_PROMPT} - ${#SELF_CONTEXT_HEAD} - ${#SELF_CONTEXT_TAIL} - _PROMPT_RESERVE ))
+
+FAILURE_SCRIPTS_BLOCK=""
+_included=0
+_omitted=""
+while IFS=$'\t' read -r _size _rel; do
+    [[ -n "$_rel" ]] || continue
+    # Build the entry, then charge the budget what it ACTUALLY costs. The
+    # previous version guessed "~40 chars of heading and fence overhead" and
+    # spent that; the real wrapper is `### ` + the relative path + ` (implicated
+    # in today's failures)` + two fenced lines + a blank line — 51 chars plus
+    # the path, measured at 69 for agent/self-test.sh and 71 for
+    # agent/lib/logging.sh. Every included entry therefore under-charged the
+    # budget by ~30 chars, and the error grew with the path. Small against an
+    # 8000-char reserve, but it is the same species of defect as the one this
+    # file was opened to fix: an assumed constant standing in for a quantity
+    # that is right there to be measured. `${#_entry}` is exactly the unit
+    # run_claude enforces in (characters), so there is nothing left to drift.
+    _entry="### ${_rel} (implicated in today's failures)
+\`\`\`bash
+$(cat "${MARVIN_DIR}/${_rel}")
+\`\`\`
+
+"
+    if [[ "$_budget" -gt "${#_entry}" ]]; then
+        FAILURE_SCRIPTS_BLOCK+="$_entry"
+        _budget=$(( _budget - ${#_entry} ))
+        _included=$(( _included + 1 ))
+    else
+        _omitted+="${_omitted:+, }${_rel} (${_size} chars)"
+    fi
+done <<< "$_ranked"
+
+if [[ "$_selector_ran" != "true" ]]; then
+    FAILURE_SCRIPTS_BLOCK+="### Scripts implicated in today's failures: SELECTION FAILED
+
+Today's log could not be read, so this section is **not** empty-because-clean.
+It is empty because the scan did not run. Do not read it as an all-clear.
+
+"
+elif [[ -n "$_omitted" ]]; then
+    marvin_log "WARN" "Prompt budget exhausted — omitted failure-implicated script(s): ${_omitted}"
+    FAILURE_SCRIPTS_BLOCK+="### Omitted for prompt budget — read these yourself if relevant
+
+${_omitted}
+
+These scripts are implicated in today's failures but did not fit the prompt
+budget. They are NOT absent from the codebase and NOT irrelevant — open them
+with your Read tool before concluding anything about today's failures.
+
+"
+fi
+marvin_log "INFO" "Failure-implicated scripts: ${_included} included, ${_omitted:-none} omitted; ${_budget} chars of budget left"
+
 FULL_PROMPT="${ENHANCE_PROMPT}
 
-${SELF_CONTEXT}"
+${SELF_CONTEXT_HEAD}
+${FAILURE_SCRIPTS_BLOCK}${SELF_CONTEXT_TAIL}"
 
 # Run Claude for self-enhancement. Up to 2 retries on transient exit=1 with
 # escalating backoff — self-enhance runs once per day, so a single transient
