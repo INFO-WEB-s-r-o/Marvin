@@ -834,6 +834,95 @@ else
     test_warn "beacon negotiate gate: network-discovery.sh or negotiate-listener.sh not readable — check skipped"
 fi
 
+# ─── 9j. Outbound egress sampling is wired, running, and reaches the score ────
+# Section letter 9j: 9g/9h/9i are claimed by open PRs #862/#856/#878.
+#
+# Issue #882: outbound auditing took ONE `ss` sample a day, at the deadest minute
+# on this box, and published the result as the day's answer. It reported zero
+# outbound connections on 30 of 31 retained scans while 704 MB left the interface
+# on one of them. Nothing was broken — it simply never looked, and "never looked"
+# and "nothing there" produced the same output.
+#
+# Four things must hold for the fix to be worth anything, each a way it could rot
+# back into a control that reports clean because it is blind:
+#   1. the sampler is called from a script that actually runs on a tick
+#   2. the call is not `|| true`-suppressed
+#   3. the daily scan consults the day aggregate, not just its own instant sample
+#   4. coverage status reaches overall_status (the #880 lesson: a finding that
+#      only reaches marvin_log is invisible to every consumer of the reports)
+# Plus a drift guard: exactly ONE copy of the classifier may exist.
+
+marvin_log "INFO" "Self-test: checking outbound egress sampling is wired and scored"
+
+_ob_lib="${MARVIN_DIR}/agent/lib/outbound.sh"
+_ob_hm="${MARVIN_DIR}/agent/health-monitor.sh"
+_ob_scan="${MARVIN_DIR}/agent/security-scan.sh"
+
+if [[ ! -r "$_ob_lib" ]]; then
+    test_warn "outbound sampling: agent/lib/outbound.sh not present — #882 fix not deployed yet, egress history is one sample/day"
+else
+    # (1) + (2) — wired into the 5-minute tick, failure not swallowed.
+    if ! grep -q 'marvin_outbound_record_sample' "$_ob_hm" 2>/dev/null; then
+        test_fail "outbound sampling: lib/outbound.sh exists but health-monitor.sh never calls marvin_outbound_record_sample — the sampler has no live caller, so the egress history stays empty and #882 is unfixed in effect"
+    elif grep -qE 'marvin_outbound_record_sample[[:space:]]*(\|\|[[:space:]]*true|&>|>[[:space:]]*/dev/null)' "$_ob_hm" 2>/dev/null; then
+        test_fail "outbound sampling: health-monitor.sh suppresses marvin_outbound_record_sample failures — a sampler that fails silently reproduces the exact defect #882 fixed"
+    else
+        test_pass "outbound sampling: health-monitor.sh (5-min cron tick) calls the sampler and does not suppress its failures"
+    fi
+
+    # (3) — the daily scan must read the aggregate, not just its own instant.
+    if grep -q 'marvin_outbound_day_summary' "$_ob_scan" 2>/dev/null; then
+        test_pass "outbound sampling: security-scan.sh §3d aggregates the retained samples"
+    else
+        test_fail "outbound sampling: security-scan.sh no longer calls marvin_outbound_day_summary — §3d is back to publishing a single instantaneous sample as the day's egress answer (#882)"
+    fi
+
+    # (4) — coverage must be able to move overall_status, or it is decoration.
+    # Scoped to the gate block itself (overall_status="clean" up to the report
+    # heredoc), so a passing mention of the variable elsewhere cannot satisfy it.
+    if awk '/^overall_status="clean"/{f=1} f && /outbound_coverage_status/{found=1} /^cat > "\$REPORT_FILE"/{f=0} END{exit !found}' "$_ob_scan" 2>/dev/null; then
+        test_pass "outbound sampling: egress coverage status participates in overall_status"
+    else
+        test_fail "outbound sampling: outbound_coverage_status does not reach the overall_status gate — a day the sampler never ran would score clean, which is precisely the 30-day failure in #882"
+    fi
+
+    # Drift guard — one classifier only. Two copies cannot be kept in agreement,
+    # and a sampler that disagrees with its aggregator about what counts as
+    # outbound produces authoritative-looking numbers that mean nothing.
+    _ob_dupes=$(grep -lE '^_ip_in_docker_cidr\(\)' "${MARVIN_DIR}"/agent/*.sh "${MARVIN_DIR}"/agent/lib/*.sh 2>/dev/null | wc -l)
+    if [[ "$_ob_dupes" -eq 1 ]]; then
+        test_pass "outbound sampling: exactly one copy of the outbound classifier (_ip_in_docker_cidr)"
+    else
+        test_fail "outbound sampling: ${_ob_dupes} definitions of _ip_in_docker_cidr — the sampler and the daily aggregate can now drift on what 'outbound' means (#882/#591)"
+    fi
+
+    # Runtime — is it actually producing samples? Self-activating: only assert
+    # this once the sampler is deployed, so an unmerged branch warns instead of
+    # failing on a host that has not been given the code yet.
+    if grep -q 'marvin_outbound_record_sample' "$_ob_hm" 2>/dev/null; then
+        _ob_today="${DATA_DIR}/security/outbound-samples-$(date -u +%Y-%m-%d).jsonl"
+        _ob_yday="${DATA_DIR}/security/outbound-samples-$(date -u -d 'yesterday' +%Y-%m-%d 2>/dev/null).jsonl"
+        _ob_count=0
+        [[ -f "$_ob_today" ]] && _ob_count=$(grep -c . "$_ob_today" 2>/dev/null || echo 0)
+        # Expected samples so far today, at one per 5 minutes since 00:00 UTC.
+        _ob_expected=$(( (10#$(date -u +%H) * 60 + 10#$(date -u +%M)) / 5 ))
+        if [[ "$_ob_count" -gt 0 ]]; then
+            _ob_errs=$(grep -c '"error"' "$_ob_today" 2>/dev/null || echo 0)
+            if [[ "$_ob_errs" -gt 0 ]]; then
+                test_warn "outbound sampling: ${_ob_errs} of ${_ob_count} samples today recorded an error — gaps in the egress history"
+            else
+                test_pass "outbound sampling: ${_ob_count} samples recorded today (≈${_ob_expected} expected so far)"
+            fi
+        elif [[ -f "$_ob_yday" ]]; then
+            test_warn "outbound sampling: no samples yet today but yesterday's history exists — expected shortly after 00:00 UTC"
+        elif [[ "$_ob_expected" -lt 3 ]]; then
+            test_warn "outbound sampling: no samples yet — fewer than 3 ticks have elapsed since 00:00 UTC"
+        else
+            test_fail "outbound sampling: sampler is wired into health-monitor.sh but has produced ZERO samples today after ~${_ob_expected} ticks — egress is unmonitored and the daily audit will report coverage 'absent' (#882)"
+        fi
+    fi
+fi
+
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
 # Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
 # artefact with byte-identical duplicates of the active /home/marvin/.gnupg/

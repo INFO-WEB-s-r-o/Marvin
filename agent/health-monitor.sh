@@ -16,6 +16,21 @@ marvin_log_json "INFO" "health-monitor" "Health monitor starting"
 metrics=$(collect_metrics)
 append_metrics "$metrics"
 
+# ─── Outbound connection sample (issue #882) ─────────────────────────────────
+# The daily security scan used to be the ONLY thing that looked at outbound
+# connections: one instantaneous `ss` at 04:00 local, the deadest minute here.
+# It reported zero on 30 of 31 days while 704 MB left the box on one of them.
+# Sampling belongs on this tick — 288 samples a day instead of one — and the
+# scan's §3d now aggregates what this records.
+#
+# One `ss` call plus one jq over ~40 lines. Explicitly NOT `|| true`: a sampler
+# that fails silently is the bug being fixed, so a failure is logged as a
+# failure and the JSONL gets an error record to keep the gap visible.
+if ! marvin_outbound_record_sample; then
+    marvin_log_json "WARN" "health-monitor" \
+        "Outbound connection sample failed — egress history has a gap for this tick"
+fi
+
 # Quick health checks
 ISSUES=()
 
