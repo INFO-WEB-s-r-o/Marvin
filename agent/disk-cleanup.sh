@@ -255,9 +255,18 @@ _tmp_paths_in_use() {
 
         # Checked before the loop below, because an unreadable fd/ directory
         # does not surface there as an error at all: the glob simply fails to
-        # expand and `$t` becomes the literal pattern. Every open file of that
-        # process would go unseen, which is the widest way a live /tmp path can
-        # hide from this scan.
+        # expand and `$t` becomes the literal pattern. readlink then fails with
+        # ENOENT, which the failure path below deliberately does not count — so
+        # every open file of that process goes unseen and the scan still reports
+        # clean. This is the widest way a live /tmp path can hide from it.
+        #
+        # -r alone is the correct test here, and deliberately not `-r && -x`.
+        # Listing a directory's names needs read; only resolving an entry needs
+        # execute. So r-without-x still expands the glob, and each readlink then
+        # fails EACCES — which the branch below *does* count, because it only
+        # exempts ENOENT. Verified unprivileged (as root both bits are free and
+        # the mode means nothing): r-without-x -> unreadable=1 via readlink,
+        # full rx -> 0. Adding `! -x` here only double-counts the same process.
         if [[ ! -r "$p/fd" && -d "$p" ]]; then
             unreadable=$((unreadable + 1))
         fi
@@ -305,13 +314,26 @@ _stale_tmp_dirs() {
     while IFS= read -r -d '' d; do
         base="${d##*/}"
 
-        # Skip list, checked before anything else. Dot-prefixed names cover
-        # the X11/ICE/XIM/font socket directories and any other hidden state;
-        # the rest are service and session scratch owned by things that are
-        # still running.
+        # Skip list, checked before anything else. Grouped by why each entry is
+        # here, because the groups are not equally load-bearing and a future
+        # editor pruning "obviously dead" names needs to know which is which.
         case "$base" in
-            .*|systemd-private-*|snap-private-*|snap.*|pulse-*|tmux-*|ssh-*|\
-            vscode-*|dbus-*|Temp-*|hsperfdata_*) continue ;;
+            # Hidden state: the X11/ICE/XIM/font socket directories and
+            # anything else dot-prefixed.
+            .*) continue ;;
+            # LOAD-BEARING — do not drop. A PrivateTmp= unit gets a private
+            # /tmp bind-mounted over this directory, so its processes' open
+            # files resolve to paths inside the mount, never to this name. The
+            # /proc in-use check below is structurally unable to see that it is
+            # busy; this line is the only thing protecting it.
+            systemd-private-*|snap-private-*) continue ;;
+            # Session and desktop scratch owned by things still running. The
+            # /proc check would normally catch these; belt-and-braces for the
+            # window where a socket dir outlives its last open fd.
+            snap.*|pulse-*|tmux-*|ssh-*|vscode-*|dbus-*) continue ;;
+            # JVM and cross-platform toolchain scratch. Defensive padding —
+            # nothing on this host is known to depend on these.
+            Temp-*|hsperfdata_*) continue ;;
         esac
 
         # Refuse anything that is not a plain child of root — no traversal, no
