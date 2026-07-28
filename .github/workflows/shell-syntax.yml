@@ -26,17 +26,28 @@ jobs:
 
       - name: Parse every tracked shell script
         run: |
-          set -uo pipefail
+          set -euo pipefail
           broken=0
           total=0
-          while IFS= read -r f; do
+          # NUL-delimited end to end. Routing `-z` output through `tr '\0' '\n'`
+          # undoes the only thing `-z` is for: a tracked name containing a raw
+          # newline splits into two records, and if both halves happen to name
+          # a file that parses, a script that does NOT parse is counted as two
+          # clean ones and the gate reports PASS. Measured, not assumed — see
+          # the CHANGELOG entry for the fixture that produces exactly that.
+          while IFS= read -r -d '' f; do
             total=$((total + 1))
             if ! err=$(bash -n "$f" 2>&1); then
-              printf '::error file=%s::%s\n' "$f" "$err"
+              # The annotation is a line-oriented protocol, so anything with an
+              # embedded newline can forge a second workflow command. Both
+              # operands are attacker-influenced on a fork PR (the filename is
+              # theirs, and `bash -n` echoes their source text back), so they
+              # are flattened here. The plain log line below keeps the original.
+              printf '::error file=%s::%s\n' "${f//[$'\n\r']/ }" "${err//[$'\n\r']/ }"
               printf 'BROKEN  %s\n    %s\n' "$f" "$err"
               broken=$((broken + 1))
             fi
-          done < <(git ls-files -z -- '*.sh' | tr '\0' '\n')
+          done < <(git ls-files -z -- '*.sh')
 
           # Zero files is not a pass. Either the pathspec stopped matching or the
           # layout moved, and both make every assertion above vacuous — the
