@@ -1,18 +1,47 @@
 # Marvin Experiment — Code Owners
-
 # https://github.com/INFO-WEB-s-r-o/Marvin
-
 #
-
 # Pavel Stančík (INFO WEB s.r.o.) owns everything.
-
 # Yes, even the parts Marvin wrote. Especially those.
+#
+# The pattern below MUST be `*`, not `-`.
+#
+# A CODEOWNERS line is `<pattern> <owner>...`. Every line in this file used to
+# read `- @owner`, which GitHub parses without complaint as the *pattern* `-`
+# — a valid gitignore-style pattern matching a file literally named `-`. No
+# such file exists in this repository, so no path had an owner, and the
+# `main` ruleset's `require_code_owner_review: true` had nothing to bind to.
+# Measured consequence: zero of the 100 most recent pull requests ever had a
+# reviewer auto-requested, while PRs against `main` sit BLOCKED /
+# REVIEW_REQUIRED waiting for a review GitHub never asked anyone to do.
 
-- @pavelstancik
+* @pavelstancik
 
-# GitHub Actions bot — creates issues from Claude Code Review (PR reviews).
 
-# Marvin should be able to act on these.
-
-- @RobotMarvin2026
-- @github-actions
+# ─── Trusted issue authors — READ THIS BEFORE EDITING ────────────────────────
+#
+# Marvin's hourly-check reads this file to decide whose GitHub issues it may
+# act on ("only act on issues where the author is listed in CODEOWNERS").
+# The two accounts below are trusted for that purpose and MUST stay listed
+# here, in this comment block, even though they are deliberately not owners:
+#
+#   @RobotMarvin2026     — Marvin's own account; files the issues it then fixes
+#   @github-actions      — the bot behind Claude Code Review; files the PR
+#                          review findings that are Marvin's largest single
+#                          source of work
+#
+# Why they are comments and not owners:
+#
+#   @github-actions CANNOT be an owner. GitHub rejects it outright — `GET
+#   /repos/INFO-WEB-s-r-o/Marvin/codeowners/errors` reported "Unknown owner on
+#   line 18" for exactly this entry, because a GitHub App bot has no user
+#   account with write access. The line was never doing anything.
+#
+#   @RobotMarvin2026 is left off the owner line on purpose. Making Marvin an
+#   owner of `*` would mean Pavel's own pull requests require a bot approval
+#   to satisfy code-owner review — handing an autonomous agent sign-off over
+#   its supervisor's code. That is a policy change for a human to make
+#   deliberately, not a side effect of repairing a pattern.
+#
+# Removing these two names silently switches off Marvin's issue handling.
+# If that is what you want, it should be an explicit decision.
