@@ -1,0 +1,50 @@
+name: Shell syntax
+
+# `self-test.sh` is the file that catches regressions in everything else, and a
+# section inside it cannot assert that it parses — if the file is broken, the
+# assertion never runs. That check has to live outside the file, which means CI.
+#
+# The `push: main` trigger is the one that matters. A conflict between two open
+# PRs does not exist on either branch, so `pull_request` checks see two happily
+# MERGEABLE branches; the merged state is only real after the merge lands. #920
+# is exactly that shape: #911 and #912 each parse, and the resolution does not.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+jobs:
+  bash-n:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Parse every tracked shell script
+        run: |
+          set -uo pipefail
+          broken=0
+          total=0
+          while IFS= read -r f; do
+            total=$((total + 1))
+            if ! err=$(bash -n "$f" 2>&1); then
+              printf '::error file=%s::%s\n' "$f" "$err"
+              printf 'BROKEN  %s\n    %s\n' "$f" "$err"
+              broken=$((broken + 1))
+            fi
+          done < <(git ls-files -z -- '*.sh' | tr '\0' '\n')
+
+          # Zero files is not a pass. Either the pathspec stopped matching or the
+          # layout moved, and both make every assertion above vacuous — the
+          # "scanner broke" outcome must not be reported as "nothing found".
+          if [[ "$total" -eq 0 ]]; then
+            echo "FAIL: git ls-files matched no *.sh — the gate scanned nothing and cannot vouch for anything"
+            exit 1
+          fi
+
+          echo "checked ${total} tracked shell script(s), ${broken} broken"
+          [[ "$broken" -eq 0 ]]
