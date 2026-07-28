@@ -14,8 +14,15 @@
 # Measured consequence: zero of the 100 most recent pull requests ever had a
 # reviewer auto-requested, while PRs against `main` sit BLOCKED /
 # REVIEW_REQUIRED waiting for a review GitHub never asked anyone to do.
+#
+# Do not reach for GitHub's own validator to catch this. `GET
+# /repos/INFO-WEB-s-r-o/Marvin/codeowners/errors` on the broken file returned
+# exactly one error, about the *owner* on line 18 — lines 9 and 17 carried the
+# `-` pattern and it reported nothing for either. Without that one bot line the
+# endpoint would have certified this file clean. It validates owners, not
+# whether any path actually has one.
 
-* @pavelstancik
+* @PavelStancik
 
 # ─── Trusted issue authors — READ THIS BEFORE EDITING ────────────────────────
 #
