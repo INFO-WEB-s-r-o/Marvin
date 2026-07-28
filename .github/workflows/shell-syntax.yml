@@ -17,6 +17,13 @@ on:
 jobs:
   bash-n:
     runs-on: ubuntu-latest
+    # Without this the job inherits the 6-hour default. `bash -n` parses without
+    # executing, so a fork PR cannot run code here — but it still submits the
+    # bytes being parsed, and the wait is the cost either way. Measured on the
+    # real tree: 53 tracked scripts in 0.23s, so the budget below is ~1000x the
+    # work and the runtime is dominated by checkout. Matches claude-review.yml,
+    # which bounds itself at 15.
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
