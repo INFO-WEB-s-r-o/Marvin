@@ -199,13 +199,31 @@ EOF
 # (systemd 255; verified against a real /etc-only unit and a nonexistent one),
 # so it is both more general and still a genuine gate. The drop-in directory
 # below is correct regardless of where the base unit lives.
+#
+# `install` runs unconditionally — it is what repairs a drifted mode or a
+# hand-edited copy, and it is cheap. The `daemon-reload` is what gets gated:
+# systemd re-reads unit *content*, so a byte-identical drop-in has nothing to
+# tell it, and reloading anyway is a side effect on every rerun that buys
+# nothing. The comparison must happen BEFORE the install — afterwards the two
+# files always match, and the test would be answering a question about its own
+# side effect rather than about the host it found. `cmp` exits non-zero for
+# both "differs" and "could not read" (missing destination, unreadable source),
+# and both take the reload arm: an unanswerable comparison is not a match.
+_ck_dropin_src="${MARVIN_DIR}/setup/chkrootkit-service-override.conf"
+_ck_dropin_dst=/etc/systemd/system/chkrootkit.service.d/override.conf
 if systemctl list-unit-files chkrootkit.service &>/dev/null; then
-    log "Installing chkrootkit systemd drop-in (restore history-file checks)..."
+    _ck_dropin_changed=1
+    cmp -s "${_ck_dropin_src}" "${_ck_dropin_dst}" && _ck_dropin_changed=0
     mkdir -p /etc/systemd/system/chkrootkit.service.d
-    install -m 644 "${MARVIN_DIR}/setup/chkrootkit-service-override.conf" \
-        /etc/systemd/system/chkrootkit.service.d/override.conf
-    systemctl daemon-reload
+    install -m 644 "${_ck_dropin_src}" "${_ck_dropin_dst}"
+    if [[ "${_ck_dropin_changed}" -eq 1 ]]; then
+        log "Installed chkrootkit systemd drop-in (restore history-file checks)."
+        systemctl daemon-reload
+    else
+        log "chkrootkit systemd drop-in already current — no daemon-reload needed."
+    fi
 fi
+unset _ck_dropin_src _ck_dropin_dst _ck_dropin_changed
 
 # =============================================================================
 # 3. Install Node.js (for Claude Code CLI)
