@@ -420,8 +420,23 @@ _stale_tmp_dirs() {
         # /tmp name may legitimately contain regex metacharacters, and a path
         # that failed to match because it contained a `[` would fail OPEN — it
         # would read as "not in use" and the directory would be deleted.
-        if awk -v d="$d" 'index($0, d "/") == 1 || $0 == d { found = 1; exit }
-                          END { exit !found }' <<< "$in_use"; then
+        #
+        # Passed through the ENVIRON array, NOT `awk -v`. POSIX requires a -v
+        # assignment to undergo the same backslash-escape processing as a
+        # string literal in the program text, so awk receives `foo\nbar` — a
+        # legal 8-character directory name — as 7 characters with a real
+        # newline in the middle. Every line of `in_use` is newline-free by
+        # construction, so neither term can ever match and the protection
+        # fails OPEN: the identical failure direction the index() choice above
+        # was made to avoid, reached by a different route. ENVIRON entries are
+        # not escape-processed, so the name arrives byte-for-byte. Confirmed
+        # here on gawk 5.2.1; the semantics are POSIX and hold for mawk too.
+        # (`log-watcher.sh` passes INTEREST_RE through the environment for the
+        # same reason.) Shown failing first: with -v, a held `/tmp/…/foo\nbar`
+        # was emitted as an `rm -rf` candidate while an ordinary held name
+        # beside it was correctly protected. (#923)
+        if D="$d" awk 'index($0, ENVIRON["D"] "/") == 1 || $0 == ENVIRON["D"] { found = 1; exit }
+                       END { exit !found }' <<< "$in_use"; then
             continue
         fi
 
