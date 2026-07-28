@@ -2105,6 +2105,177 @@ else
         test_pass "openapi drift: all 8 parser fixtures agree — a literal, an unreadable alternative and a group suffix each expand identically wherever they sit (#935)"
     fi
 
+    # ── Shared: attribute a directive to its enclosing location block ────────
+    # Both the direction-B arm and the auth-posture arm need the same thing —
+    # "which location block is this line inside?" — and until #906 they answered
+    # it two different ways. #903 fixed the auth parser to track brace DEPTH;
+    # direction B kept the bare `}` reset that #903 had just condemned, so the
+    # bug class was repaired in one sibling and left standing in the other. One
+    # implementation now, called twice, so that cannot happen a third time.
+    #
+    # Why depth and not a bare `}` reset: literal-prefix location blocks in this
+    # very file wrap nested `if (...) { ... }` blocks (/.well-known/ai-negotiate
+    # has two), so the first inner `}` clears a naive tracker while still inside
+    # the outer block, and a directive below it is attributed to nothing at all.
+    # For direction B that is a silent OPEN failure: a `deny all` after a nested
+    # `if` would go unrecorded, the denied prefix would be emitted as serving,
+    # and a documented endpoint nginx actually blocks would PASS.
+    #
+    # Per-line NET brace counting is what keeps braces inside quoted strings
+    # from derailing the depth: the one such line in this config (the 401 return
+    # whose JSON body carries both) is self-balancing. A line that is NOT
+    # self-balancing surfaces as a final-depth mismatch, which each caller
+    # reports as an explicit FAIL rather than a confident wrong answer.
+    #
+    # Reads the server-block text on stdin. $1 is an ERE matched per line.
+    # Emits, tab-separated:
+    #   L <path>            a literal-prefix or exact (`=`) location block
+    #   P <path>            the directive, inside one of those
+    #   U <mod path>        the directive, inside a regex (~, ~*) or named block
+    #   N <path>            a `location` opener nested inside another block —
+    #                       the one shape below that is NOT tracked, surfaced
+    #                       so the caller can say so instead of guessing
+    #   D <depth> <mind>    final brace accounting, for the caller's did-not-run
+    #                       guard. `_od_tls` is the INSIDE of the server block —
+    #                       opener stripped, closer kept — so well-formed is -1:-1.
+    #
+    # Exact `= /path` blocks count as literal: they carry a perfectly usable
+    # path and were silently dropped by the old `[^~=]` guard (#903). No `/api/`
+    # location in the current config uses `=`, so this changes nothing today.
+    #
+    # NOT handled: a `location` nested inside another `location`, which nginx
+    # does allow. The opener is only recognised at depth 0, so an inner block
+    # never becomes its own attribution unit — its directives fold into the
+    # enclosing one. Demonstrated rather than assumed: an `auth_request` inside
+    # `location /api/outer/inner/`, itself inside `location /api/outer/`, comes
+    # back as `L /api/outer/` + `P /api/outer/`, with `/api/outer/inner/` never
+    # emitted at all. Brace accounting stays well-formed (-1:-1), so neither
+    # caller's did-not-run guard fires — it is a quiet misattribution, not a
+    # detected one. The two arms fail in opposite directions on it: direction B
+    # would read a nested `deny all` as denying the whole outer prefix, which is
+    # over-broad and therefore lands on FAIL; the auth arm would credit a nested
+    # `auth_request` to the outer prefix and leave the inner path looking
+    # ungated, which is the silent-pass direction and the one that matters.
+    # Nothing in setup/nginx-site.conf nests a location today — all 25 blocks
+    # open at the same depth (checked by walking the file's brace depth, not by
+    # eye), and the only nesting inside them is `if (...)`, which depth tracking
+    # already handles.
+    #
+    # As of #902 review round 9 the limitation is no longer documented ONLY in
+    # this comment: a nested opener is emitted as `N` and the caller WARNs on
+    # it. A comment cannot notice the day the config changes; the fixtures
+    # below prove the emitter can, and prove it can also stay quiet on the
+    # same directives written flat, which is the half that makes the WARN mean
+    # something.
+    _od_attribute() {
+        awk -v want="$1" '
+            {
+                _l = $0
+                _o = gsub(/\{/, "", _l)
+                _c = gsub(/\}/, "", _l)
+
+                # A `location` opener seen at depth >= 1 is nested inside
+                # another block. nginx does not allow one inside `if`, so in
+                # practice that means inside another `location` — precisely the
+                # shape this attributor folds into its parent instead of
+                # tracking (the NOT-handled note above). Emitted as `N` so the
+                # caller can WARN, rather than the comment being the only
+                # safety net for a misattribution that is silent by
+                # construction: brace accounting stays well-formed, so no
+                # did-not-run guard fires.
+                if (depth >= 1 && $0 ~ /^[[:space:]]*location[[:space:]]+/) {
+                    print "N\t" (($2 == "=" || $2 == "~" || $2 == "~*" || $2 == "^~") ? $3 : $2)
+                }
+
+                if (depth == 0 && $0 ~ /^[[:space:]]*location[[:space:]]+/) {
+                    if ($2 == "=" || $2 == "~" || $2 == "~*" || $2 == "^~") {
+                        mod = $2; path = $3
+                    } else {
+                        mod = ""; path = $2
+                    }
+                    # `~`/`~*` are regexes and `@name` is a named block — neither
+                    # is a path prefix, so a documented endpoint cannot be
+                    # prefix-matched against it. Carried out as `U` so a match
+                    # inside one gets REPORTED instead of dropped on the floor.
+                    if (mod != "~" && mod != "~*" && path ~ /^\//) {
+                        p = path; u = ""; print "L\t" p
+                    } else {
+                        p = ""; u = (mod == "" ? path : mod " " path)
+                    }
+                }
+
+                # Count the openers on this line before testing, so a
+                # single-line `location /x { directive; }` is still seen.
+                depth += _o
+                if (depth >= 1 && $0 ~ want) {
+                    if (p != "")      print "P\t" p
+                    else if (u != "") print "U\t" u
+                }
+                depth -= _c
+                if (depth <= 0) { p = ""; u = "" }
+                if (depth < mind) mind = depth
+            }
+            # mind stays unassigned when depth never goes negative, and an
+            # unassigned awk variable prints as the empty string — a mismatch
+            # message reading "0:" rather than "0:0". Normalised here so the
+            # did-not-run FAIL states a number the reader can compare.
+            END { print "D\t" depth "\t" (mind == "" ? 0 : mind) }
+        '
+    }
+
+    # ── Nested-location fixtures for the attributor above (#902 review r9) ───
+    # Two fixtures carrying the SAME two paths and the SAME directive, differing
+    # only in whether the second block sits inside the first. The nested one
+    # must be flagged; the flat one must not. A detector that cannot stay quiet
+    # is not a detector, it is a constant — and this section has already shipped
+    # a guard that could not fail (#935).
+    #
+    # These drive the real _od_attribute in its own scope, and they run whether
+    # or not setup/nginx-site.conf parses: a fixture gated on production reading
+    # correctly is the #935 mistake in a second costume.
+    #
+    # The nested case also asserts the misattribution ITSELF, not merely the new
+    # marker — `/api/outer/inner/` is absent from the `L` set and the gate is
+    # credited to `/api/outer/`, which is the silent-pass the WARN exists to
+    # announce. Stated in the runtime rather than in prose, because prose is
+    # what this limitation had for three rounds.
+    _od_nest_fx_n=0
+    _od_nest_fx_fail=""
+    _od_nest_case() {   # $1 label, $2 config text, $3 expected "N-set|L-set|P-set"
+        local raw got
+        _od_nest_fx_n=$((_od_nest_fx_n + 1))
+        raw=$(printf '%s\n' "$2" | _od_attribute 'auth_request') || raw="!harness-error"
+        got=$(printf '%s\n' "$raw" | awk -F'\t' '
+                  $1=="N"{n = n $2 " "} $1=="L"{l = l $2 " "} $1=="P"{p = p $2 " "}
+                  END { sub(/ $/,"",n); sub(/ $/,"",l); sub(/ $/,"",p)
+                        print n "|" l "|" p }') || got="!harness-error"
+        [[ "$got" == "$3" ]] || _od_nest_fx_fail+="${1} (got '${got}' want '${3}') "
+    }
+
+    _od_nest_case "nested" '
+location /api/outer/ {
+    location /api/outer/inner/ {
+        auth_request /_auth;
+    }
+}
+' '/api/outer/inner/|/api/outer/|/api/outer/'
+
+    _od_nest_case "flat" '
+location /api/outer/ {
+}
+location /api/outer/inner/ {
+    auth_request /_auth;
+}
+' '|/api/outer/ /api/outer/inner/|/api/outer/inner/'
+
+    if [[ "$_od_nest_fx_n" -ne 2 ]]; then
+        test_fail "openapi drift: the §9m nested-location fixtures DID NOT RUN — expected 2 cases, ${_od_nest_fx_n} executed (this is not a clean result)"
+    elif [[ -n "$_od_nest_fx_fail" ]]; then
+        test_fail "openapi drift: the §9m location attributor does not behave as documented on nested blocks — either the nesting goes unreported or a flat config is falsely reported as nested, and the WARN below means nothing either way: ${_od_nest_fx_fail% }"
+    else
+        test_pass "openapi drift: the location attributor flags a nested location block and stays silent on the same two blocks written flat (#902 review r9)"
+    fi
+
     # Everything below is scoped to the TLS server block. openapi.yaml declares
     # `servers: https://robot-marvin.cz`, so that block IS the contract. The
     # port-80 block is defense-in-depth hardening with its own
@@ -2159,102 +2330,6 @@ else
                 test_pass "openapi drift: all $(printf '%s\n' "$_od_served" | wc -l) allowlisted /api/ endpoints are documented in openapi.yaml"
             fi
 
-    # ── Shared: attribute a directive to its enclosing location block ────────
-    # Both the direction-B arm and the auth-posture arm need the same thing —
-    # "which location block is this line inside?" — and until #906 they answered
-    # it two different ways. #903 fixed the auth parser to track brace DEPTH;
-    # direction B kept the bare `}` reset that #903 had just condemned, so the
-    # bug class was repaired in one sibling and left standing in the other. One
-    # implementation now, called twice, so that cannot happen a third time.
-    #
-    # Why depth and not a bare `}` reset: literal-prefix location blocks in this
-    # very file wrap nested `if (...) { ... }` blocks (/.well-known/ai-negotiate
-    # has two), so the first inner `}` clears a naive tracker while still inside
-    # the outer block, and a directive below it is attributed to nothing at all.
-    # For direction B that is a silent OPEN failure: a `deny all` after a nested
-    # `if` would go unrecorded, the denied prefix would be emitted as serving,
-    # and a documented endpoint nginx actually blocks would PASS.
-    #
-    # Per-line NET brace counting is what keeps braces inside quoted strings
-    # from derailing the depth: the one such line in this config (the 401 return
-    # whose JSON body carries both) is self-balancing. A line that is NOT
-    # self-balancing surfaces as a final-depth mismatch, which each caller
-    # reports as an explicit FAIL rather than a confident wrong answer.
-    #
-    # Reads the server-block text on stdin. $1 is an ERE matched per line.
-    # Emits, tab-separated:
-    #   L <path>            a literal-prefix or exact (`=`) location block
-    #   P <path>            the directive, inside one of those
-    #   U <mod path>        the directive, inside a regex (~, ~*) or named block
-    #   D <depth> <mind>    final brace accounting, for the caller's did-not-run
-    #                       guard. `_od_tls` is the INSIDE of the server block —
-    #                       opener stripped, closer kept — so well-formed is -1:-1.
-    #
-    # Exact `= /path` blocks count as literal: they carry a perfectly usable
-    # path and were silently dropped by the old `[^~=]` guard (#903). No `/api/`
-    # location in the current config uses `=`, so this changes nothing today.
-    #
-    # NOT handled: a `location` nested inside another `location`, which nginx
-    # does allow. The opener is only recognised at depth 0, so an inner block
-    # never becomes its own attribution unit — its directives fold into the
-    # enclosing one. Demonstrated rather than assumed: an `auth_request` inside
-    # `location /api/outer/inner/`, itself inside `location /api/outer/`, comes
-    # back as `L /api/outer/` + `P /api/outer/`, with `/api/outer/inner/` never
-    # emitted at all. Brace accounting stays well-formed (-1:-1), so neither
-    # caller's did-not-run guard fires — it is a quiet misattribution, not a
-    # detected one. The two arms fail in opposite directions on it: direction B
-    # would read a nested `deny all` as denying the whole outer prefix, which is
-    # over-broad and therefore lands on FAIL; the auth arm would credit a nested
-    # `auth_request` to the outer prefix and leave the inner path looking
-    # ungated, which is the silent-pass direction and the one that matters.
-    # Nothing in setup/nginx-site.conf nests a location today — all 25 blocks
-    # open at the same depth (checked by walking the file's brace depth, not by
-    # eye), and the only nesting inside them is `if (...)`, which depth tracking
-    # already handles. Stated here because the
-    # rest of this section documents its assumptions, and an undocumented one
-    # reads to the next editor as a handled case.
-    _od_attribute() {
-        awk -v want="$1" '
-            {
-                _l = $0
-                _o = gsub(/\{/, "", _l)
-                _c = gsub(/\}/, "", _l)
-
-                if (depth == 0 && $0 ~ /^[[:space:]]*location[[:space:]]+/) {
-                    if ($2 == "=" || $2 == "~" || $2 == "~*" || $2 == "^~") {
-                        mod = $2; path = $3
-                    } else {
-                        mod = ""; path = $2
-                    }
-                    # `~`/`~*` are regexes and `@name` is a named block — neither
-                    # is a path prefix, so a documented endpoint cannot be
-                    # prefix-matched against it. Carried out as `U` so a match
-                    # inside one gets REPORTED instead of dropped on the floor.
-                    if (mod != "~" && mod != "~*" && path ~ /^\//) {
-                        p = path; u = ""; print "L\t" p
-                    } else {
-                        p = ""; u = (mod == "" ? path : mod " " path)
-                    }
-                }
-
-                # Count the openers on this line before testing, so a
-                # single-line `location /x { directive; }` is still seen.
-                depth += _o
-                if (depth >= 1 && $0 ~ want) {
-                    if (p != "")      print "P\t" p
-                    else if (u != "") print "U\t" u
-                }
-                depth -= _c
-                if (depth <= 0) { p = ""; u = "" }
-                if (depth < mind) mind = depth
-            }
-            # mind stays unassigned when depth never goes negative, and an
-            # unassigned awk variable prints as the empty string — a mismatch
-            # message reading "0:" rather than "0:0". Normalised here so the
-            # did-not-run FAIL states a number the reader can compare.
-            END { print "D\t" depth "\t" (mind == "" ? 0 : mind) }
-        '
-    }
 
             # ── Direction B: documented but not served ──
             # A documented path counts as served if it is in the allowlist, or if
@@ -2272,6 +2347,28 @@ else
             # arm, not by reading it.
             _od_serve_raw=$(printf '%s\n' "$_od_tls" | _od_attribute 'deny all|return 403') || _od_serve_raw=""
             _od_serve_depth=$(printf '%s\n' "$_od_serve_raw" | awk -F'\t' '$1=="D"{print $2":"$3}') || _od_serve_depth=""
+
+            # ── Is the attributor's one blind spot reachable yet? ──
+            # Both arms read the same `_od_tls` through the same attributor, so
+            # the nesting scan is done once here on direction B's stream rather
+            # than twice with two identical messages. WARN, not FAIL: nesting is
+            # legal nginx and does not by itself mean the config is wrong — it
+            # means the two arms below are answering a question they cannot see
+            # all of, which the operator needs told before a wrong PASS gets
+            # believed.
+            _od_nested=$(printf '%s\n' "$_od_serve_raw" | awk -F'\t' '$1=="N"{print $2}' \
+                         | sort -u | tr '\n' ' ') || _od_nested=""
+            if [[ "$_od_serve_depth" != "-1:-1" ]]; then
+                # The attribution stream this scan reads is the same one the
+                # direction-B FAIL below rejects as untrustworthy. Saying
+                # "no nesting found" off a broken parse would be the exact
+                # scanner-broke-reported-as-clean substitution.
+                test_warn "openapi drift: nested-location scan DID NOT RUN — brace accounting ended at '${_od_serve_depth:-unknown}', so absence of nesting is unproven (see the direction-B FAIL)"
+            elif [[ -n "$_od_nested" ]]; then
+                test_warn "openapi drift: setup/nginx-site.conf now nests a location inside another (${_od_nested% }) — _od_attribute folds an inner block into its parent, so an auth_request on the inner path is credited to the outer prefix and the inner path can look gated when it is not; the arms below are reporting on an incomplete view (#902 review r9)"
+            else
+                test_pass "openapi drift: no location block in the TLS server block is nested inside another, so every directive attributes to the block that owns it"
+            fi
 
             # Serving = every literal location seen, minus the ones that deny.
             # Restricted to prefixes strictly below /api/ for the reason above.
