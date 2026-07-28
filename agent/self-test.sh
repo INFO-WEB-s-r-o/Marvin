@@ -2219,7 +2219,13 @@ else
                         inpath && /^ *"401":/ { found=1; exit }
                         END { exit !found }
                     ' "$_od_spec"; then
-                        _od_authgap+="${_od_p} "
+                        # Newline-delimited, deduplicated at report time below.
+                        # A path under two auth_request-gated prefixes (e.g.
+                        # /api/ and /api/exports/) reaches here once per
+                        # matching prefix, and a FAIL message that names the
+                        # same endpoint twice reads as two problems (#902
+                        # review).
+                        _od_authgap+="${_od_p}"$'\n'
                     fi
                 done <<< "$_od_doc_api"
             done <<< "$_od_authed_prefixes"
@@ -2233,7 +2239,7 @@ else
             if [[ "$_od_depth" != "-1:-1" ]]; then
                 test_fail "openapi drift: auth-posture arm did not run — nginx brace accounting ended at depth:min '${_od_depth:-unknown}', expected '-1:-1'; auth_request attribution cannot be trusted (#903)"
             elif [[ -n "$_od_authgap" ]]; then
-                test_fail "openapi drift: endpoint(s) behind an nginx auth_request are documented WITHOUT a 401 response — the spec publishes an authenticated endpoint as open (#883): ${_od_authgap}"
+                test_fail "openapi drift: endpoint(s) behind an nginx auth_request are documented WITHOUT a 401 response — the spec publishes an authenticated endpoint as open (#883): $(printf '%s' "$_od_authgap" | sort -u | tr '\n' ' ')"
             elif [[ -z "$_od_authed_prefixes" ]]; then
                 test_warn "openapi drift: no prefix-matchable auth_request-gated location blocks found in nginx-site.conf — the auth-posture arm had nothing to check"
             else
