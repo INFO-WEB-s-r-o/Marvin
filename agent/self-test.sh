@@ -2007,8 +2007,28 @@ else
             # Consume the group's suffix as well as reading it: left in place it
             # comes back around as a bare literal alternative and is emitted as
             # the nonsense path /api/.json.
-            if [[ "$rest" == '\.json'* ]]; then
-                suffix=".json"; rest=${rest#\\.json}
+            #
+            # Matched as a SHAPE (`\.` + literal, repeatable), not as the string
+            # `\.json` (#902 review, eighth round). Hardcoding today's only
+            # suffix made this the third instance of the section's recurring
+            # class: `(?:a|b)\.svg` — an ordinary PCRE-valid edit nginx loads
+            # without complaint — left suffix empty, so the group's own
+            # alternatives were emitted as /api/a and /api/b with their suffix
+            # stripped, the real /api/a.svg and /api/b.svg never appeared in the
+            # served set at all, and the orphaned `\.svg` came back around as the
+            # phantom path /api/.svg. Under-report plus invention, with no
+            # marker: direction A goes blind on the real paths (#883 itself)
+            # while FAILing on two endpoints nginx does not serve.
+            if [[ "$rest" =~ ^((\\\.[A-Za-z0-9_-]+)+) ]]; then
+                suffix=${BASH_REMATCH[1]//\\./.}
+                rest=${rest#"${BASH_REMATCH[1]}"}
+            fi
+            # Whatever follows a group must be another alternative or the end of
+            # the regex. Anything else is a shape this parser has not been shown
+            # to read, and guessing at it is what produced /api/.svg above.
+            if [[ -n "$rest" && "$rest" != '|'* ]]; then
+                printf '%s%s\n' "$_OD_UNPARSED" "$rest"
+                return 0
             fi
             _od_literals "$head"
             IFS='|' read -ra alts <<< "$inner"
@@ -2066,12 +2086,23 @@ else
     _od_perm_case "unreadable-first" 'v[12]|(?:about|status)\.json' "$_od_perm_marked"
     _od_perm_case "unreadable-last"  '(?:about|status)\.json|v[12]' "$_od_perm_marked"
 
-    if [[ "$_od_perm_n" -ne 5 ]]; then
-        test_fail "openapi drift: the §9m parser permutation fixtures DID NOT RUN — expected 5 cases, ${_od_perm_n} executed (this is not a clean result)"
+    # Family 3 — the group SUFFIX, varied the same way the position was. The
+    # eighth-round instance of this section's recurring class: the suffix was
+    # matched as the literal string `\.json`, so any other escaped suffix left
+    # the group's alternatives stripped bare and orphaned the suffix into a
+    # phantom path. It is now matched as a shape, and a group followed by
+    # something that is neither a suffix nor another alternative is markered
+    # rather than guessed at.
+    _od_perm_case "suffix-nonjson"     '(?:a|b)\.svg'          '/api/a.svg /api/b.svg'
+    _od_perm_case "suffix-compound"    '(?:a|b)\.tar\.gz'      '/api/a.tar.gz /api/b.tar.gz'
+    _od_perm_case "suffix-unreadable"  '(?:a|b)x'              '!unparsed-alt:x'
+
+    if [[ "$_od_perm_n" -ne 8 ]]; then
+        test_fail "openapi drift: the §9m parser permutation fixtures DID NOT RUN — expected 8 cases, ${_od_perm_n} executed (this is not a clean result)"
     elif [[ -n "$_od_perm_fail" ]]; then
         test_fail "openapi drift: the /api/ allowlist parser is POSITIONAL — an alternative expands differently depending on where it sits in the regex, so the served set silently depends on config ordering (#935): ${_od_perm_fail% }"
     else
-        test_pass "openapi drift: all 5 parser order-permutation fixtures agree — a literal and an unreadable alternative expand identically in first, middle and last position (#935)"
+        test_pass "openapi drift: all 8 parser fixtures agree — a literal, an unreadable alternative and a group suffix each expand identically wherever they sit (#935)"
     fi
 
     # Everything below is scoped to the TLS server block. openapi.yaml declares
