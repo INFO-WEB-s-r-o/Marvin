@@ -1955,29 +1955,29 @@ else
     # caller reads this function through a command substitution, so a variable
     # set here would be set in a subshell the parent never sees — the exact
     # mechanism that made #908's fail-closed guard dead code.
+    #
+    # That marker was still POSITIONAL, and the promise leaked again. The group
+    # loop consumed from the first `(?:` onwards and discarded everything to its
+    # LEFT, so bare literals were only ever read once the last group had been
+    # eaten. A literal alternative before or between groups — an ordinary,
+    # PCRE-valid edit that nginx loads without complaint — vanished with no
+    # marker, and its siblings kept the set non-empty so the emptiness guard
+    # never fired. `openapi\.yaml|(?:about|status)\.json` expanded to about+status
+    # and silently forgot openapi.yaml. Same #883-inside-the-#883-guard failure
+    # as before, one position over. The scan is now left-to-right: the text
+    # before each group is read as literals in place, so position cannot matter.
     _OD_UNPARSED='!unparsed-alt:'
-    _od_expand() {
-        local b="$1" grp inner rest suffix alt
+
+    # Emit one run of bare (non-group) alternatives. Split out of _od_expand so
+    # a literal is read wherever it sits, not only after the final group.
+    _od_literals() {
+        local alt
         local -a alts
-        while [[ "$b" == *'(?:'* ]]; do
-            grp=${b#*\(\?:}; inner=${grp%%)*}; rest=${grp#*)}
-            suffix=""
-            # Consume the group's suffix as well as reading it: left in place it
-            # comes back around as a bare literal alternative and is emitted as
-            # the nonsense path /api/.json.
-            if [[ "$rest" == '\.json'* ]]; then
-                suffix=".json"; rest=${rest#\\.json}
-            fi
-            IFS='|' read -ra alts <<< "$inner"
-            for alt in "${alts[@]}"; do printf '/api/%s%s\n' "$alt" "$suffix"; done
-            b=$rest
-        done
-        b=${b//\\./.}
-        IFS='|' read -ra alts <<< "$b"
+        IFS='|' read -ra alts <<< "${1//\\./.}"
         for alt in "${alts[@]}"; do
-            # An empty alternative is the ordinary residue of a regex that was
-            # entirely groups — `read -ra` yields one empty field for an empty
-            # string — not a shape this parser failed to read.
+            # An empty alternative is the ordinary residue of a `|` adjacent to a
+            # group, or of a regex that was entirely groups — `read -ra` yields an
+            # empty field — not a shape this parser failed to read.
             [[ -z "$alt" ]] && continue
             if [[ "$alt" =~ ^[A-Za-z0-9_/.-]+$ ]]; then
                 printf '/api/%s\n' "$alt"
@@ -1985,6 +1985,37 @@ else
                 printf '%s%s\n' "$_OD_UNPARSED" "$alt"
             fi
         done
+    }
+
+    _od_expand() {
+        local b="$1" head grp inner rest suffix alt
+        local -a alts
+        while [[ "$b" == *'(?:'* ]]; do
+            head=${b%%\(\?:*}
+            grp=${b#*\(\?:}
+            # A group with no closing paren is not a shape this parser reads.
+            # Unreachable through nginx — PCRE rejects an unterminated subpattern,
+            # so such a config never loads and never reaches this check — but once
+            # the shape is unrecognised the remainder cannot be trusted either, so
+            # hand the caller a marker instead of guessing at the rest.
+            if [[ "$grp" != *')'* ]]; then
+                printf '%s%s\n' "$_OD_UNPARSED" "$b"
+                return 0
+            fi
+            inner=${grp%%)*}; rest=${grp#*)}
+            suffix=""
+            # Consume the group's suffix as well as reading it: left in place it
+            # comes back around as a bare literal alternative and is emitted as
+            # the nonsense path /api/.json.
+            if [[ "$rest" == '\.json'* ]]; then
+                suffix=".json"; rest=${rest#\\.json}
+            fi
+            _od_literals "$head"
+            IFS='|' read -ra alts <<< "$inner"
+            for alt in "${alts[@]}"; do printf '/api/%s%s\n' "$alt" "$suffix"; done
+            b=$rest
+        done
+        _od_literals "$b"
     }
 
     # Everything below is scoped to the TLS server block. openapi.yaml declares
