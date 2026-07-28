@@ -399,7 +399,20 @@ _stale_tmp_dirs() {
 
         # Refuse anything that is not a plain child of root — no traversal, no
         # deleting the root itself.
-        [[ "$d" == "$root"/* && "$d" != *".."* && -n "$base" ]] || continue
+        #
+        # The traversal term tests `..` as a whole path COMPONENT, not as a
+        # substring. `find -mindepth 1 -maxdepth 1` cannot emit `.` or `..`,
+        # and if it somehow did, the `.*)` arm above would already have taken
+        # it — so the only thing this term can still catch is a caller passing
+        # a root that is itself unnormalised (`/tmp/x/..`), which arrives here
+        # as `/tmp/x/../y`. A substring test catches that case too, but it
+        # also permanently refuses any legitimate scratch directory whose name
+        # merely contains `..` (`pytest-of-root..1`), which would then
+        # accumulate forever with nothing said. Wrong in the keeping-files
+        # direction, as every guard here is — but this section reports the one
+        # name it refuses to sweep (the newline marker above) instead of
+        # dropping it quietly, and a blacklist nobody can see is not that.
+        [[ "$d" == "$root"/* && "/$d/" != */../* && -n "$base" ]] || continue
 
         # In use by a live process? Match the directory itself or anything
         # beneath it, so an open fd on a file inside protects the parent.
