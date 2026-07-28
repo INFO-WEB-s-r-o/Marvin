@@ -188,8 +188,18 @@ EOF
 # full rationale, including the daily false-positive alert it also silences.
 # Conditional: chkrootkit is not a bootstrap package, so a host without it
 # simply skips this.
-if systemctl list-unit-files chkrootkit.service &>/dev/null \
-    && [[ -f /usr/lib/systemd/system/chkrootkit.service ]]; then
+#
+# The presence test is `list-unit-files` alone, deliberately. An earlier form
+# also required `[[ -f /usr/lib/systemd/system/chkrootkit.service ]]`, which
+# hardcodes one of several unit search paths: a host carrying the unit in
+# /etc/systemd/system (a hand-installed or packaged-elsewhere chkrootkit)
+# satisfies list-unit-files, fails the -f, and silently skips the drop-in —
+# losing the fix on exactly the rebuild path this block exists to serve.
+# `list-unit-files` searches every unit path and exits 1 when nothing matches
+# (systemd 255; verified against a real /etc-only unit and a nonexistent one),
+# so it is both more general and still a genuine gate. The drop-in directory
+# below is correct regardless of where the base unit lives.
+if systemctl list-unit-files chkrootkit.service &>/dev/null; then
     log "Installing chkrootkit systemd drop-in (restore history-file checks)..."
     mkdir -p /etc/systemd/system/chkrootkit.service.d
     install -m 644 "${MARVIN_DIR}/setup/chkrootkit-service-override.conf" \
