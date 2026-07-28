@@ -328,7 +328,17 @@ else
         SYNC_BASE="$OLD_HEAD"
         # Reached when the watermark is absent (first run) OR was just rejected
         # above, so the wording must not claim it was merely missing.
-        marvin_log "INFO" "No usable sync-and-learn watermark — using this pull's previous HEAD as the baseline (${OLD_HEAD:0:7})"
+        #
+        # Announce the baseline only when it actually opens a range. If this
+        # run pulled nothing, OLD_HEAD *is* HEAD — a commit is its own
+        # ancestor, so the is-ancestor test above still passes — and the "no
+        # unanalysed commits" line below already states the whole outcome.
+        # Two INFO lines for one no-op read like two events later. A rejected
+        # watermark keeps its WARN above, which is the part carrying
+        # information.
+        if [[ "$OLD_HEAD" != "$SYNC_HEAD" ]]; then
+            marvin_log "INFO" "No usable sync-and-learn watermark — using this pull's previous HEAD as the baseline (${OLD_HEAD:0:7})"
+        fi
     else
         SYNC_BASE="$SYNC_HEAD"
         marvin_log "INFO" "No sync-and-learn watermark and no pull baseline — seeding at HEAD (${SYNC_HEAD:0:7}); analysis resumes with the next incoming commit"
