@@ -47,12 +47,6 @@ jobs:
           # injects further properties into the *same* annotation. A file named
           # `evil,line=99,title=Looks fine.sh` moves the error onto line 99 and
           # retitles it — the annotation stops describing the file it came from.
-          _esc_prop() {
-            local v="$1"
-            v="${v//%/%25}"; v="${v//$'\r'/%0D}"; v="${v//$'\n'/%0A}"
-            v="${v//,/%2C}"; v="${v//:/%3A}"
-            printf '%s' "$v"
-          }
           # Message text is not property-parsed, so only the three characters
           # that could end the line early are escaped. `%0A` renders as a real
           # newline inside the annotation, which is how multi-line `bash -n`
@@ -61,6 +55,18 @@ jobs:
           _esc_msg() {
             local v="$1"
             v="${v//%/%25}"; v="${v//$'\r'/%0D}"; v="${v//$'\n'/%0A}"
+            printf '%s' "$v"
+          }
+          # Properties are the message escaping plus `,` and `:`. Composed onto
+          # `_esc_msg` rather than repeating its three substitutions, so the two
+          # cannot drift apart if only one is ever edited (#921 review). Order
+          # still holds: `_esc_msg` substitutes `%` first, and the `%2C`/`%3A`
+          # introduced below are added after that pass, so neither is re-encoded
+          # into `%252C`/`%253A`.
+          _esc_prop() {
+            local v
+            v="$(_esc_msg "$1")"
+            v="${v//,/%2C}"; v="${v//:/%3A}"
             printf '%s' "$v"
           }
 
