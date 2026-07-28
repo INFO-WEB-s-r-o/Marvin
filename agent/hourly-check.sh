@@ -163,12 +163,33 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
             "https://api.github.com/repos/INFO-WEB-s-r-o/Marvin/issues?state=open&per_page=20" \
             2>/dev/null || echo "[]")
 
-        # Fetch CODEOWNERS
-        CODEOWNERS_CONTENT=$(curl -s \
+        # Fetch CODEOWNERS. The file is at the repo ROOT — there is no
+        # .github/CODEOWNERS and there never has been (#934), so this asked
+        # the contents API for a path that 404s on every single run.
+        #
+        # The old `|| echo "* PavelStancik"` fallback never fired and could
+        # not have: `curl -s` without `-f` exits 0 on an HTTP 404, because
+        # the transfer succeeded. What actually reached the prompt was the
+        # API's 404 JSON body, pasted under the heading "CODEOWNERS file" —
+        # which the agent then reasonably read as "the file is absent" and
+        # applied the PavelStancik-only rule to, skipping the review-bot
+        # issues that are its largest source of work (this cost ~3h and one
+        # money-burning issue on 2026-06-05).
+        #
+        # -f so an HTTP error is an error, and a failure is reported AS a
+        # failure rather than collapsing into "the file does not exist".
+        if CODEOWNERS_CONTENT=$(curl -sf \
             -H "Authorization: token ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github.v3.raw" \
-            "https://api.github.com/repos/INFO-WEB-s-r-o/Marvin/contents/.github/CODEOWNERS" \
-            2>/dev/null || echo "* PavelStancik")
+            "https://api.github.com/repos/INFO-WEB-s-r-o/Marvin/contents/CODEOWNERS" \
+            2>/dev/null); then
+            :
+        else
+            CODEOWNERS_CONTENT="FETCH FAILED — could not read CODEOWNERS (HTTP error or network failure).
+This is NOT the same as the file being absent. Do not fall back to a
+sole-codeowner assumption on the strength of this message; read
+${MARVIN_DIR}/CODEOWNERS from the local checkout instead."
+        fi
 
         GITHUB_ISSUES="### CODEOWNERS file
 \`\`\`
