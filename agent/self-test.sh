@@ -335,28 +335,33 @@ fi
 # this is a grep and not a fifth code review. Detection lives in
 # agent/lib/pipefail-scan.sh; see its header for the four-condition rule.
 #
-# RATCHET, not a wall. The two PRs that fix the five sites still on main (#844,
-# #846) are unmerged, and #855 concluded the detector therefore could not ship —
-# a suite that is red for a reason nobody can act on is worse than no test. So
-# known-pending sites are listed below and reported as WARN; anything NOT listed
-# is a FAIL. That protects main against a sixth instance today instead of after
-# two merges, and cannot turn the suite red on merge.
+# RATCHET, not a wall. When this shipped, the two PRs fixing the five sites then
+# on main (#844, #846) were unmerged, and #855 concluded the detector therefore
+# could not ship — a suite that is red for a reason nobody can act on is worse
+# than no test. So known-pending sites were listed below and reported as WARN,
+# while anything NOT listed was a FAIL: main was protected against a sixth
+# instance immediately rather than after two human merges.
 #
 # Keyed by a hash of the whitespace-normalized statement, not by line number, so
 # an edit above a known site does not read as a new defect. A fixed statement's
 # key changes, so it drops out of the baseline by itself — reported as a stale
-# WARN telling whoever merged the fix to delete the line. Removing all five is
-# the last step of #855.
+# WARN telling whoever merged the fix to delete the line.
+#
+# THE BASELINE IS NOW EMPTY, and that is the completed end state of #855, not an
+# oversight. #844 (a45aaa0) and #846 (7352d2b) are both merged; the scanner exits
+# 0 against this tree with zero hits, and all five entries duly reported as stale
+# on 2026-07-28. Every excuse is spent: any hit from here on matches no entry and
+# is a FAIL, which is exactly the property the baseline was always meant to decay
+# into. Do NOT re-add an entry to silence a new finding — a reintroduction is the
+# sixth instance this section exists to stop. The array itself stays (both loops
+# below iterate it, and `"${arr[@]}"` on an empty array is safe under `set -u` on
+# bash 4.4+; verified on this host's 5.2.21) so that a future genuinely-pending
+# fix has somewhere to go without restructuring the check.
+#
 # Fields: basename | statement key | note. Split with `IFS='|' read -r f k note`
 # so a note containing a pipe lands wholly in the third field and can never be
 # mistaken for part of the key.
-_PIPEFAIL_KNOWN=(
-    "capability-inventory.sh|f00b3f0b1a2d|cron-entries jq -s fallback — fix pending in PR #844"
-    "log-export.sh|2295353653c5|enhancement_log find + jq -R -s fallback — fix pending in PR #844"
-    "log-export.sh|7996086ae437|blog_posts find + jq -R -s fallback — fix pending in PR #844"
-    "weekly-analytics.sh|ba972a99c6ce|claude-usage cat + jq -s fallback — fix pending in PR #846"
-    "weekly-analytics.sh|46dcf3def0ca|error_summary head -5 SIGPIPE — fix pending in PR #846"
-)
+_PIPEFAIL_KNOWN=()
 
 _pipefail_scan="${MARVIN_DIR}/agent/lib/pipefail-scan.sh"
 if [[ ! -r "$_pipefail_scan" ]]; then
