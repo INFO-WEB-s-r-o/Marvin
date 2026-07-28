@@ -248,6 +248,32 @@ if [[ -z "$BEACON_BORN" ]]; then
     fi
 fi
 
+# `message` is a carry-over field for the same reason `born` is: it is written
+# *after* the beacon is generated (section 4's Claude call composes the day's
+# message), so the next run's heredoc is the only thing that can preserve it.
+# It didn't — the field was a hardcoded literal, so every run silently reverted
+# the published message to the Hitchhiker's placeholder, and the day's actual
+# message survived only until the next run. Measured across the retained
+# backups, 6 of 11 sampled days served the placeholder for the full 24 hours:
+# the one field in the beacon that says something specific was, more often than
+# not, saying nothing. `born` was rescued from exactly this in #851; `message`
+# is the same class and was missed.
+#
+# Captured as JSON (`jq -c .message`) rather than as a raw string, so the value
+# arrives already quoted and escaped and is substituted WITHOUT surrounding
+# quotes below. A message containing a `"`, a backslash or a newline would
+# otherwise emit a malformed document; the validation gate would then keep the
+# previous beacon and `uptime_seconds`/`last_seen` would freeze — a stale
+# beacon that still looks alive, which is the #851 failure wearing a new hat.
+# Substituting through a variable is also what keeps the value inert: the
+# unquoted heredoc expands `$(…)` and backticks in its *literal* text, but not
+# in the result of a parameter expansion, so a message may contain either.
+BEACON_MESSAGE=$(jq -c 'if (.message // "") == "" then empty else .message end' \
+    "${COMMS_DIR}/identity.json" 2>/dev/null || true)
+if [[ -z "$BEACON_MESSAGE" ]]; then
+    BEACON_MESSAGE='"I think you ought to know I'"'"'m feeling very depressed."'
+fi
+
 BEACON_UPTIME=$(cut -d' ' -f1 /proc/uptime | cut -d'.' -f1)
 
 # Only advertise the negotiate endpoint if it actually answers. Publishing a
@@ -374,7 +400,7 @@ cat > "${COMMS_DIR}/identity.json.tmp" << EOF
   "gpg_public_key": "/.well-known/marvin-gpg.asc",
 ${BEACON_NEGOTIATE}  "uptime_seconds": ${BEACON_UPTIME},
   "last_seen": "${NOW}",
-  "message": "I think you ought to know I'm feeling very depressed.",
+  "message": ${BEACON_MESSAGE},
   "peers_wanted": true,
   "echo": "ECHO_marvin_hledam_spojeni"
 }
