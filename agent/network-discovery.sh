@@ -268,7 +268,17 @@ fi
 # Substituting through a variable is also what keeps the value inert: the
 # unquoted heredoc expands `$(…)` and backticks in its *literal* text, but not
 # in the result of a parameter expansion, so a message may contain either.
-BEACON_MESSAGE=$(jq -c 'if (.message // "") == "" then empty else .message end' \
+#
+# The `type == "string"` arm is not defensive boilerplate: nothing in this
+# script assigns `.message`. The field is written by the Claude call in section
+# 4 editing `identity.json` by hand, so the write path is a free-form model
+# edit, not a schema-checked `jq` assignment — a number, list or object is a
+# typo away. Without the arm such a value is carried through verbatim into a
+# still-valid beacon, which is the worst shape to debug: every gate passes and
+# the published `message` is `42`. `negotiate-handler.sh` already guards the
+# same field the same way when it reads it back (`if type == "string"`).
+BEACON_MESSAGE=$(jq -c 'if (.message | type) == "string" and .message != ""
+                        then .message else empty end' \
     "${COMMS_DIR}/identity.json" 2>/dev/null || true)
 if [[ -z "$BEACON_MESSAGE" ]]; then
     BEACON_MESSAGE='"I think you ought to know I'"'"'m feeling very depressed."'
