@@ -116,3 +116,31 @@ jobs:
 
           echo "checked ${total} tracked shell script(s), ${broken} broken"
           [[ "$broken" -eq 0 ]]
+
+  # The gate above is only as good as its own regression coverage. Six review
+  # rounds each found a way it could report on a file it had not validated, and
+  # every one of those was demonstrated with a fixture that was then thrown away
+  # — leaving a paragraph in CHANGELOG.md as the only thing standing between the
+  # gate and its own history. This job is that paragraph, executable (#931).
+  #
+  # It runs in its own job rather than as another step: a failure here means the
+  # gate is untrustworthy, which is a different verdict from "a tracked script
+  # does not parse", and folding them together would report one as the other.
+  gate-selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # The harness parses the workflow to extract the gate, so it needs a YAML
+      # reader. Preinstalled on the runner images, but asserted rather than
+      # assumed — an ImportError partway through would look like a test failure.
+      - name: Ensure PyYAML
+        run: python3 -c 'import yaml' 2>/dev/null || pip install --quiet pyyaml
+
+      - name: Prove the gate still catches the six defects it has had
+        run: ./tests/shell-syntax-gate.test.sh
