@@ -53,8 +53,35 @@ PASSED=0
 FAILED=0
 RESULTS=()
 
+# Collapse a recorded detail to exactly one line.
+#
+# The FAIL paths below interpolate captured gate output, and that output is built
+# from adversarial filenames — the same bytes these fixtures exist to provoke. A
+# raw newline in a table cell puts whatever follows it at column 0 of the step
+# log, where GitHub parses it as a workflow command. `case_forge`'s FAIL message
+# greps for `^::notice` and would have re-emitted the forged command it had just
+# caught. That is the gate's own second review round (#921) recurring inside the
+# harness written to prevent it: the human-readable line is the same channel as
+# the annotation. "Only reached when something is already broken" describes
+# exactly when a person will be reading this log.
+#
+# Newlines and carriage returns become their two-character escapes, so a row is
+# always one line and nothing it carries can reach column 0. Long captures are
+# truncated — the table is a summary, and the failing run's raw output is already
+# in the log above it.
+flatten() {  # <text>
+    local v="$1"
+    v="${v//$'\r'/\\r}"
+    v="${v//$'\n'/\\n}"
+    if (( ${#v} > 400 )); then
+        v="${v:0:400}…[truncated]"
+    fi
+    printf '%s' "$v"
+}
+
 record() {  # <PASS|FAIL> <case> <detail>
-    local verdict="$1" name="$2" detail="$3"
+    local verdict="$1" name="$2" detail
+    detail="$(flatten "$3")"
     RESULTS+=("${verdict}|${name}|${detail}")
     if [[ "$verdict" == "PASS" ]]; then
         PASSED=$((PASSED + 1))

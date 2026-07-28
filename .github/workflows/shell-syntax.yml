@@ -139,8 +139,15 @@ jobs:
       # The harness parses the workflow to extract the gate, so it needs a YAML
       # reader. Preinstalled on the runner images, but asserted rather than
       # assumed — an ImportError partway through would look like a test failure.
+      #
+      # The fallback is pinned. Measured on the run that shipped this: the import
+      # succeeded and `pip` emitted nothing, so the install never executes today
+      # — which is the argument for pinning rather than against it. An unpinned
+      # install that only ever fires on a future runner-image change would fetch
+      # whatever happened to be current that day, in a job nobody was watching
+      # (#932 review).
       - name: Ensure PyYAML
-        run: python3 -c 'import yaml' 2>/dev/null || pip install --quiet pyyaml
+        run: python3 -c 'import yaml' 2>/dev/null || pip install --quiet 'pyyaml==6.0.2'
 
       - name: Prove the gate still catches the six defects it has had
         run: ./tests/shell-syntax-gate.test.sh
