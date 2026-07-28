@@ -465,12 +465,23 @@ PY
 # Run
 # ─────────────────────────────────────────────────────────────────────────────
 
-case_newline
-case_comma
-case_dash
-case_empty
-case_forge
-case_timeout
+# Each case records exactly two rows: the assertion against the real gate, and
+# its negative control against a mutant. Listing the cases rather than calling
+# them inline lets the expected row count be derived from the list instead of
+# hardcoded — a 7th case added below would previously have needed a manual bump
+# of `EXPECTED`, and forgetting it would report 14 rows against a stale 12 and
+# `die` on a run that was actually fine (#932 review).
+CASES=(
+    case_newline
+    case_comma
+    case_dash
+    case_empty
+    case_forge
+    case_timeout
+)
+for c in "${CASES[@]}"; do
+    "$c"
+done
 
 printf '%s\n' "─────────────────────────────────────────────────────────────────"
 for row in "${RESULTS[@]}"; do
@@ -480,12 +491,13 @@ done
 printf '%s\n' "─────────────────────────────────────────────────────────────────"
 
 TOTAL=$((PASSED + FAILED))
-# Half the rows are controls, so an odd or short total means a case silently did
-# not run — which would otherwise read as a clean sweep of whatever did.
-EXPECTED=12
+# A short or odd total means a case silently did not run — which would otherwise
+# read as a clean sweep of whatever did.
+EXPECTED=$(( ${#CASES[@]} * 2 ))
 if (( TOTAL != EXPECTED )); then
-    die "recorded ${TOTAL} results, expected ${EXPECTED} — a case did not run"
+    die "recorded ${TOTAL} results, expected ${EXPECTED} (${#CASES[@]} cases x 2) — a case did not run"
 fi
 
-printf '%d/%d assertions passed (6 defects, each with its negative control)\n' "$PASSED" "$TOTAL"
+printf '%d/%d assertions passed (%d defects, each with its negative control)\n' \
+    "$PASSED" "$TOTAL" "${#CASES[@]}"
 (( FAILED == 0 ))
