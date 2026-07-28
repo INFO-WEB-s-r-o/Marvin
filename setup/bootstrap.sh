@@ -214,7 +214,13 @@ _ck_dropin_dst=/etc/systemd/system/chkrootkit.service.d/override.conf
 if systemctl list-unit-files chkrootkit.service &>/dev/null; then
     _ck_dropin_changed=1
     cmp -s "${_ck_dropin_src}" "${_ck_dropin_dst}" && _ck_dropin_changed=0
-    mkdir -p /etc/systemd/system/chkrootkit.service.d
+    # `install -d -m 755`, not `mkdir -p`: mkdir takes its mode from whatever
+    # umask the caller happened to have. 0022 — this host's, and cron's — gives
+    # 755 either way, but 002 yields a group-writable systemd drop-in directory
+    # and 077 yields 700. A directory whose mode depends on ambient state, one
+    # line above an `install -m 644` that pins the file's mode precisely because
+    # ambient state is not a specification.
+    install -d -m 755 /etc/systemd/system/chkrootkit.service.d
     install -m 644 "${_ck_dropin_src}" "${_ck_dropin_dst}"
     if [[ "${_ck_dropin_changed}" -eq 1 ]]; then
         log "Installed chkrootkit systemd drop-in (restore history-file checks)."
