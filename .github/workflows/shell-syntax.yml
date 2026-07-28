@@ -70,9 +70,21 @@ jobs:
           # a file that parses, a script that does NOT parse is counted as two
           # clean ones and the gate reports PASS. Measured, not assumed — see
           # the CHANGELOG entry for the fixture that produces exactly that.
+          # `--` because git permits a tracked name starting with `-`, and
+          # `git ls-files` emits paths relative to the repo root — so a
+          # root-level `-c.sh` reaches bash as an option string, not a path.
+          # It does not open a bypass: every name matching `*.sh` contains the
+          # `.`, which is not a valid option character, so bash always exits
+          # nonzero. The failure is the inverse — a *false* FAIL, where the
+          # file's real contents are never parsed and the annotation carries
+          # `bash: -.: invalid option` plus a usage dump instead of a syntax
+          # error. A correct script would turn CI red and no output would say
+          # why. (The six in-repo `bash -n "$script"` call sites are not in
+          # this class: all six iterate `find "$ABSOLUTE_DIR"` or an absolute
+          # glob, so their paths always begin with `/`.)
           while IFS= read -r -d '' f; do
             total=$((total + 1))
-            if ! err=$(bash -n "$f" 2>&1); then
+            if ! err=$(bash -n -- "$f" 2>&1); then
               # Both operands are attacker-influenced on a fork PR: the filename
               # is theirs, and `bash -n` echoes their source text back.
               #
