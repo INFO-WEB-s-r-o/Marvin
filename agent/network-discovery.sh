@@ -280,8 +280,23 @@ fi
 BEACON_MESSAGE=$(jq -c 'if (.message | type) == "string" and .message != ""
                         then .message else empty end' \
     "${COMMS_DIR}/identity.json" 2>/dev/null || true)
+# Built with `jq -cn --arg` rather than as a hand-quoted JSON literal. The
+# literal it replaces was correct, but it had to spell one apostrophe as
+# `'"'"'` inside a single-quoted string that itself carries the JSON double
+# quotes — three quoting layers around one sentence. A mis-nesting there stays
+# valid bash: it emits a subtly different document rather than failing, and the
+# next thing to read that document is a scanner, not a test. With `--arg` the
+# sentence appears exactly once, unescaped, and jq owns the quoting. The idiom
+# is already the house one for building JSON here (negotiate-handler.sh has
+# four `jq --arg` call sites) — though not previously for this field.
+#
+# This does put jq on a path that previously could not fail. Deliberate: every
+# other jq call in this script is `|| true`-guarded against a MISSING FILE, so a
+# broken jq would otherwise first surface as a beacon whose peer count, born
+# date and negotiate gate are all silently degraded, then be discarded by the
+# `jq empty` validation gate anyway. Aborting beats publishing that.
 if [[ -z "$BEACON_MESSAGE" ]]; then
-    BEACON_MESSAGE='"I think you ought to know I'"'"'m feeling very depressed."'
+    BEACON_MESSAGE=$(jq -cn --arg m "I think you ought to know I'm feeling very depressed." '$m')
 fi
 
 BEACON_UPTIME=$(cut -d' ' -f1 /proc/uptime | cut -d'.' -f1)
