@@ -287,6 +287,11 @@ SYNC_HEAD=$(git -C "$MARVIN_DIR" rev-parse HEAD 2>/dev/null || echo "")
 SYNC_BASE=""
 SYNC_OMITTED=""
 SYNC_COMMIT_COUNT=0
+# 1 = the count below is trustworthy (including a genuine 0); 0 = it could not
+# be determined. Defaults to 1 so the "cannot resolve HEAD" path, which never
+# reaches the count, keeps its existing behaviour rather than reporting a
+# counting failure it did not have.
+SYNC_COUNT_OK=1
 
 if [[ -z "$SYNC_HEAD" ]]; then
     marvin_log "WARN" "sync-and-learn: cannot resolve HEAD — skipping change analysis (nothing marked analysed)"
@@ -329,13 +334,28 @@ else
         marvin_log "INFO" "No sync-and-learn watermark and no pull baseline — seeding at HEAD (${SYNC_HEAD:0:7}); analysis resumes with the next incoming commit"
     fi
 
+    # "Could not count" must stay distinguishable from "counted, and it is zero".
+    # `|| echo 0` collapsed the two, and zero is the value that advances the
+    # watermark to HEAD — so a rev-list that failed for any reason would mark an
+    # unread range as analysed and drop it permanently, which is defect B of
+    # this very PR reproduced one level down. Hold the watermark instead.
     if [[ "$SYNC_BASE" != "$SYNC_HEAD" ]]; then
-        SYNC_COMMIT_COUNT=$(git -C "$MARVIN_DIR" rev-list --count "${SYNC_BASE}..${SYNC_HEAD}" 2>/dev/null || echo 0)
-        [[ "$SYNC_COMMIT_COUNT" =~ ^[0-9]+$ ]] || SYNC_COMMIT_COUNT=0
+        if SYNC_COMMIT_COUNT=$(git -C "$MARVIN_DIR" rev-list --count "${SYNC_BASE}..${SYNC_HEAD}" 2>/dev/null) \
+            && [[ "$SYNC_COMMIT_COUNT" =~ ^[0-9]+$ ]]; then
+            :
+        else
+            SYNC_COUNT_OK=0
+            SYNC_COMMIT_COUNT=0
+        fi
     fi
 fi
 
-if [[ "$SYNC_COMMIT_COUNT" -eq 0 ]]; then
+if [[ "$SYNC_COUNT_OK" -eq 0 ]]; then
+    # Deferred, not dropped: the watermark is left where it was, so the next run
+    # retries this exact range. Named at WARN because a range we cannot even
+    # measure is the state most likely to be silently lost.
+    marvin_log "WARN" "sync-and-learn: cannot count commits ${SYNC_BASE:0:7}..${SYNC_HEAD:0:7} (git rev-list failed or returned a non-number) — watermark held at ${SYNC_BASE:0:7}, range stays pending for the next run"
+elif [[ "$SYNC_COMMIT_COUNT" -eq 0 ]]; then
     # Genuinely nothing new. Say so — the old code was silent here, which is
     # exactly what made a skipped analysis indistinguishable from a clean run.
     [[ -n "$SYNC_HEAD" ]] && {
