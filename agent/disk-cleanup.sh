@@ -306,19 +306,22 @@ _tmp_paths_in_use() {
     return 0
 }
 
-# Prefix for the one thing this function reports that is not a collectable
-# path. It cannot call marvin_log: that logs via `tee`, which writes to stdout,
-# and stdout here is the path stream the caller feeds to `rm -rf`. A log line
-# would arrive as a candidate for deletion. Every real line is an absolute
-# path under <root>, so a leading `!` is unambiguous.
+# Prefixes for the two things this function reports that are not collectable
+# paths. Neither can call marvin_log: that logs via `tee`, which writes to
+# stdout, and stdout here is the path stream the caller feeds to `rm -rf`. A
+# log line would arrive as a candidate for deletion. Every real line is an
+# absolute path under <root>, so a leading `!` is unambiguous.
 _STALE_TMP_UNREADABLE='!unreadable:'
+_STALE_TMP_UNSAFE='!unsafe:'
 
 # Directories directly under <root> that are safe to collect: root-owned, not
 # on the skip list, not in use, and with nothing in the subtree newer than
 # <age_days>. Takes the root as an argument rather than hardcoding /tmp so the
 # selection can be exercised against a fixture tree without risking the real
 # one. Prints one collectable path per line, plus a `!unreadable:<path>` line
-# for any directory whose subtree could not be walked (skipped, not collected).
+# for any directory whose subtree could not be walked, and a `!unsafe:<path>`
+# line for any name this line protocol cannot carry (both skipped, neither
+# collected).
 _stale_tmp_dirs() {
     local root="$1" age_days="$2" in_use="$3"
     local d base newest cutoff
@@ -326,6 +329,51 @@ _stale_tmp_dirs() {
 
     while IFS= read -r -d '' d; do
         base="${d##*/}"
+
+        # Checked before the skip list, because this is not a policy question
+        # about which directories deserve to survive — it is whether anything
+        # downstream can trust the line at all. A newline in a /tmp directory
+        # name is legal on Linux, arrives here intact (find -print0 into
+        # `read -d ''`), and then breaks BOTH channels out of this function,
+        # which are line-delimited (#901 review):
+        #
+        #   collect  — the caller reads with `read -r`, so it sees the
+        #              fragments as separate candidates. Measured on a fixture
+        #              holding a stale `<root>/a\nb` beside an unrelated and
+        #              FRESH `<root>/a`: the caller reached
+        #              `rm -rf -- <root>/a`, a directory that was never a
+        #              candidate and had failed the staleness test, while the
+        #              actual target survived. Not a missed collection — a
+        #              delete aimed at the wrong path, running as root.
+        #   in-use   — `in_use` is one path per line too, so a held path under
+        #              such a directory arrives split and the `index()` test
+        #              below can never match it. The protection fails OPEN,
+        #              the exact direction the fixed-string matching was
+        #              chosen to avoid.
+        #
+        # NUL-delimiting both channels is the tidier-looking fix and does not
+        # work: `in_use` reaches this function through a command substitution,
+        # and `$( )` strips NUL bytes outright — the producer's separators
+        # would be gone before the consumer could see them. That leaves an
+        # escaping protocol on a delete path, or refusing the input. Refusing
+        # is the one that cannot be got subtly wrong.
+        #
+        # So such a directory is never collected, and it is said out loud
+        # rather than dropped silently; the marker line carries the name
+        # %q-escaped, which is single-line by construction. The cost is that a
+        # scratch directory with a newline in its name is never swept and
+        # accumulates — the same trade every other guard in this section
+        # makes, wrong in the direction that keeps files.
+        #
+        # With this in place, every line either channel emits is newline-free
+        # by construction, so the line protocol is sound rather than merely
+        # lucky. The reverse case needs no guard: a newline inside an *in-use*
+        # path splits into fragments that can only match extra candidates, and
+        # over-protection deletes nothing.
+        if [[ "$d" == *$'\n'* ]]; then
+            printf '%s%q\n' "$_STALE_TMP_UNSAFE" "$d"
+            continue
+        fi
 
         # Skip list, checked before anything else. Grouped by why each entry is
         # here, because the groups are not equally load-bearing and a future
@@ -414,6 +462,7 @@ if [[ ! -k /tmp ]]; then
     ACTIONS+=("Stale /tmp scratch directories: SKIPPED (/tmp not sticky)")
 elif _in_use=$(_tmp_paths_in_use); then
     tmpdir_unreadable=0
+    tmpdir_unsafe=0
     while IFS= read -r d; do
         [[ -n "$d" ]] || continue
 
@@ -423,6 +472,16 @@ elif _in_use=$(_tmp_paths_in_use); then
         if [[ "$d" == "${_STALE_TMP_UNREADABLE}"* ]]; then
             tmpdir_unreadable=$((tmpdir_unreadable + 1))
             marvin_log "WARN" "could not walk ${d#"${_STALE_TMP_UNREADABLE}"} to establish its newest mtime — skipped rather than assuming it is stale, since a partial walk reports an age that is too old and this is a delete path (#909)"
+            continue
+        fi
+
+        # Not a candidate: a name this loop's line-delimited protocol cannot
+        # carry. Reported %q-escaped, exactly as it arrived — un-escaping it
+        # for a prettier log line would put the newline back into the log
+        # stream, which is the class of problem being reported.
+        if [[ "$d" == "${_STALE_TMP_UNSAFE}"* ]]; then
+            tmpdir_unsafe=$((tmpdir_unsafe + 1))
+            marvin_log "WARN" "/tmp directory ${d#"${_STALE_TMP_UNSAFE}"} has a newline in its name — never collected, because neither the in-use check nor this delete loop can carry it intact, and a split candidate would aim rm -rf at a path that was never examined (#901 review)"
             continue
         fi
 
@@ -449,6 +508,9 @@ elif _in_use=$(_tmp_paths_in_use); then
     # which is #898 over again.
     if [[ "$tmpdir_unreadable" -gt 0 ]]; then
         ACTIONS+=("Stale /tmp scratch directories: ${tmpdir_unreadable} skipped, subtree unreadable")
+    fi
+    if [[ "$tmpdir_unsafe" -gt 0 ]]; then
+        ACTIONS+=("Stale /tmp scratch directories: ${tmpdir_unsafe} skipped, newline in name")
     fi
 else
     _in_use_rc=$?
