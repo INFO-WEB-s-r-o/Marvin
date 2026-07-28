@@ -232,7 +232,26 @@ MARVIN_DOMAIN="robot-marvin.cz"
 # the heredoc reads an already-emptied file. `.born // empty` then yields
 # nothing and jq still exits 0, so even the `||` fallback never fired — which
 # is why the public beacon has served `"born": ""` since 2026-02-24.
-BEACON_BORN=$(jq -r '.born // empty' "${COMMS_DIR}/identity.json" 2>/dev/null || true)
+# Captured as JSON (`jq -c`) and substituted UNQUOTED below, for the same
+# reason `message` is. Under the old `jq -r` + `"${BEACON_BORN}"` shape, jq
+# stripped the value's own quoting and the heredoc's literal quotes put it
+# back — so any value containing a `"`, a backslash or a newline re-emitted a
+# MALFORMED document. Those are ordinary strings; a `type == "string"` guard
+# passes all three and fixes none of them, which is why this is a change of
+# idiom and not an added check. The type guard rides along only to make a
+# non-string fall through to the default instead of being laundered into one:
+# under the old shape `.born = 42` produced a valid beacon claiming `"42"`.
+#
+# The malformed case does not fail loudly, and it does not self-heal. The
+# validation gate below correctly discards the document and keeps the previous
+# identity.json — which still contains the offending `.born`, so the next run
+# reads it back and discards again. `last_seen` and `uptime_seconds` freeze at
+# the last good write while the beacon goes on being served: alive-looking and
+# stale, wedged until someone edits the file by hand. That is #851's failure
+# mode exactly, which is the one this file is least entitled to reintroduce.
+BEACON_BORN=$(jq -c 'if (.born | type) == "string" and .born != ""
+                     then .born else empty end' \
+    "${COMMS_DIR}/identity.json" 2>/dev/null || true)
 # The constant below is INSTANCE-SPECIFIC: it is *this* deployment's first
 # boot, recovered from the repository's first commit because the field was
 # never once populated and there is no earlier value to inherit. It must not
@@ -242,9 +261,9 @@ BEACON_BORN=$(jq -r '.born // empty' "${COMMS_DIR}/identity.json" 2>/dev/null ||
 # when it first writes a beacon, so ${NOW} is the honest answer there.
 if [[ -z "$BEACON_BORN" ]]; then
     if [[ "$(hostname -f 2>/dev/null || hostname)" == "${MARVIN_DOMAIN}" ]]; then
-        BEACON_BORN="2026-02-21T18:50:47Z"
+        BEACON_BORN=$(jq -cn --arg b "2026-02-21T18:50:47Z" '$b')
     else
-        BEACON_BORN="${NOW}"
+        BEACON_BORN=$(jq -cn --arg b "${NOW}" '$b')
     fi
 fi
 
@@ -415,7 +434,7 @@ cat > "${COMMS_DIR}/identity.json.tmp" << EOF
   "name": "Marvin",
   "type": "autonomous-server-agent",
   "engine": "claude-code",
-  "born": "${BEACON_BORN}",
+  "born": ${BEACON_BORN},
   "host": "${MARVIN_DOMAIN}",
   "domain": "${MARVIN_DOMAIN}",
   "status_url": "https://${MARVIN_DOMAIN}/",
