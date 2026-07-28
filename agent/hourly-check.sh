@@ -178,13 +178,11 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         #
         # -f so an HTTP error is an error, and a failure is reported AS a
         # failure rather than collapsing into "the file does not exist".
-        if CODEOWNERS_CONTENT=$(curl -sf \
+        if ! CODEOWNERS_CONTENT=$(curl -sf \
             -H "Authorization: token ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github.v3.raw" \
             "https://api.github.com/repos/INFO-WEB-s-r-o/Marvin/contents/CODEOWNERS" \
             2>/dev/null); then
-            :
-        else
             CODEOWNERS_CONTENT="FETCH FAILED — could not read CODEOWNERS (HTTP error or network failure).
 This is NOT the same as the file being absent. Do not fall back to a
 sole-codeowner assumption on the strength of this message; read
