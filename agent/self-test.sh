@@ -2018,6 +2018,62 @@ else
         _od_literals "$b"
     }
 
+    # ── Order-permutation fixtures for the parser above (#935) ───────────────
+    # This section has now shipped the same defect twice, one position apart:
+    # round 5 dropped an unreadable alternative without its marker, round 7
+    # dropped a bare literal sitting to the LEFT of a group. Both survived five
+    # review rounds and a mutation suite, for one reason — every fixture ever
+    # written for them put the literal LAST, because that is where the live
+    # config puts it. The fixtures shared an incidental property with production
+    # and inherited it as a blind spot, so a positional parser and a correct one
+    # were indistinguishable to the whole suite.
+    #
+    # Both of those drives were ad hoc: run during review, recorded in the
+    # CHANGELOG, and gone from the runtime. Nothing committed would catch the
+    # class coming back a third time. These fixtures are that assertion, and
+    # order is the variable they exist to vary — each group below is a set of
+    # permutations of the SAME alternatives, and every permutation must expand
+    # to the same set. They drive the real _od_expand defined directly above,
+    # in its own scope, not a copy that could drift from it.
+    #
+    # LC_ALL=C on the sort: the expected strings are literal, and the marker
+    # (`!`, 0x21) sorting before `/api/` (0x2f) must not depend on the locale
+    # the suite happens to run under.
+    _od_perm_n=0
+    _od_perm_fail=""
+    _od_perm_case() {   # $1 label, $2 regex body, $3 expected normalised expansion
+        local got
+        _od_perm_n=$((_od_perm_n + 1))
+        got=$(_od_expand "$2" | grep -vE '^/api/$|^$' | LC_ALL=C sort -u \
+              | tr '\n' ' ' | sed 's/ $//') || got="!harness-error"
+        [[ "$got" == "$3" ]] || _od_perm_fail+="${1} (got '${got:-<empty>}') "
+    }
+
+    # Family 1 — one bare literal, moved through every position around the
+    # groups. Against the round-7 parser the first two FAIL (openapi.yaml is
+    # silently absent) and the third passes, which is the positionality itself.
+    _od_perm_set='/api/about.json /api/openapi.yaml /api/status.json'
+    _od_perm_case "literal-first"  'openapi\.yaml|(?:about|status)\.json'           "$_od_perm_set"
+    _od_perm_case "literal-middle" '(?:about)\.json|openapi\.yaml|(?:status)\.json' "$_od_perm_set"
+    _od_perm_case "literal-last"   '(?:about|status)\.json|openapi\.yaml'           "$_od_perm_set"
+
+    # Family 2 — the same for the marker promise. `v[12]` is an ordinary
+    # PCRE character class: nginx loads it without complaint, and this parser
+    # deliberately does not read it, so it MUST come back marked rather than
+    # dropped. Against the round-7 parser the first case emits no marker at all
+    # while its siblings keep the set non-empty — the silent-pass direction.
+    _od_perm_marked='!unparsed-alt:v[12] /api/about.json /api/status.json'
+    _od_perm_case "unreadable-first" 'v[12]|(?:about|status)\.json' "$_od_perm_marked"
+    _od_perm_case "unreadable-last"  '(?:about|status)\.json|v[12]' "$_od_perm_marked"
+
+    if [[ "$_od_perm_n" -ne 5 ]]; then
+        test_fail "openapi drift: the §9m parser permutation fixtures DID NOT RUN — expected 5 cases, ${_od_perm_n} executed (this is not a clean result)"
+    elif [[ -n "$_od_perm_fail" ]]; then
+        test_fail "openapi drift: the /api/ allowlist parser is POSITIONAL — an alternative expands differently depending on where it sits in the regex, so the served set silently depends on config ordering (#935): ${_od_perm_fail% }"
+    else
+        test_pass "openapi drift: all 5 parser order-permutation fixtures agree — a literal and an unreadable alternative expand identically in first, middle and last position (#935)"
+    fi
+
     # Everything below is scoped to the TLS server block. openapi.yaml declares
     # `servers: https://robot-marvin.cz`, so that block IS the contract. The
     # port-80 block is defense-in-depth hardening with its own
