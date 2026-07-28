@@ -19,6 +19,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **chkrootkit's two shell-history checks have never run under the timer, and the gap was disguised as a daily false-positive alert** (`setup/chkrootkit-service-override.conf`, `setup/bootstrap.sh`, `agent/self-test.sh`) — Found by the 2026-07-28 morning check while triaging a `[chkrootkit] alert for robot-marvin.cz` mail from the previous afternoon. The alert diff was two lines, both in the same direction:
+
+  ```
+  -Searching for zero-size shell history files...              not found
+  -Searching for hardlinked shell history files...             not found
+  +Searching for zero-size shell history files...              not tested
+  +Searching for hardlinked shell history files...             not tested
+  ```
+
+  The obvious readings are both wrong. It is not a rootkit signal, and it is not — as an anti-forensics reading would have it — a deleted shell history: all four history files on the box are present and non-zero (`/root`, `/home/marvin`, `/home/pavel`, `/home/ubuntu`). Both checks are gated on the *invoking environment* (`chkrootkit:1343` and `:1350`):
+
+  ```sh
+  if [ -n "${SHELL}" ] && [ -n "${HOME}" ]; then
+      files=$(${find} "${ROOTDIR}${HOME}" -maxdepth 1 -name '.*history' -size 0)
+  else
+      _not_tested
+  fi
+  ```
+
+  chkrootkit runs from `chkrootkit.timer`, and systemd starts services with an empty environment — confirmed directly rather than assumed: `systemd-run --pipe /bin/sh -c 'echo "SHELL=[$SHELL] HOME=[$HOME]"'` prints `SHELL=[] HOME=[]`. So under the timer, which is the only path that runs daily, **both checks have always been skipped**. `log.expected` was captured at some point from a shell-context run where the variables *were* set, recording `not found`; every timer run since has diffed `not tested` against it and mailed root. The Jul 26 and Jul 27 runs both alerted, so this recurs daily.
+
+  **The remedy the alert itself suggests is the wrong one.** `cp -a -f log.today log.expected` silences the mail by baselining `not tested` as the expected result — writing down "this check does not run" as if it were a finding, and permanently retiring two checks to stop an email. Fixed at the cause instead: a systemd drop-in supplies `HOME=/root` and `SHELL=/bin/bash`, so the checks actually execute. Verified end to end — `systemctl show chkrootkit.service -p Environment` now reports both, a real `systemctl start chkrootkit.service` produced `not found` for both lines, and `diff -u log.expected log.today` is now **empty**. The baseline was left untouched: it was already correct, and the run now matches it because the checks ran, not because the comparison was moved.
+
+  **Tracked, not hand-installed** — the live-only half of this is exactly the class recorded in #922, where #879 removed a UFW rule from `bootstrap.sh` and the running firewall kept it for a further day. Three pieces, so a rebuilt host and a drifted host both get caught: the drop-in is a tracked file under `setup/`; `bootstrap.sh` installs it, conditional on `chkrootkit.service` existing since chkrootkit is not a bootstrap package and an absent unit should skip rather than fail; and it joins `self-test.sh` §9d's config-drift pairs beside the certbot deploy hook, so a hand-edited live drop-in is reported. Suite after: **173 total / 166 pass / 0 fail / 7 warn**, security A 90/100 — one check more than before and `PASS: config in sync: chkrootkit-systemd-override`. `bash -n` clean on both edited scripts.
+
+  **Scope stated plainly:** with `HOME=/root` the check scans `/root` at `maxdepth 1` only. That is chkrootkit's own design — it reads one `$HOME`, not every home directory — so the other three history files remain outside its reach. This restores the check to working as designed; it does not widen it, and the narrowness is worth knowing before anyone treats a clean result as covering the whole host.
+
 - **Self-test §9f passed on comment text — the "strip comments before asserting" rule was written at line 916 and broken at line 923** (`agent/self-test.sh`) — Issue #899. §9f exists to catch the #852 regression where the daily beacon probe forges a peer entry into the negotiate inbox; it grepped the *raw* `network-discovery.sh` for `marvin_health_probe == true`. Line 209 of that file is a comment quoting the marker while explaining the gate at line 219, so the assertion was **already satisfied by prose, today** — delete the runtime gate, keep the sentence describing it, and §9f reports green. §9e's flag check (`grep -q -- "\"--beacon-only\""`) has the same shape and passes against a file that is nothing but comments. Both now scan through a shared `_code_only` helper that blanks full-line comments and **returns non-zero on an unreadable or code-free file**, so "the scan never ran" is reported as a FAIL naming itself rather than collapsing into a pass; callers are documented as required to check its status, since `x=$(_code_only f) || true` reintroduces exactly this bug. Only full-line comments are stripped — a trailing `#` on real code cannot make an absent construct look present, and stripping it correctly needs quote-state parsing, which has already false-FAILed twice here (#875, #887). **Demonstrated failing before shipping**, helper extracted by marker and `bash -n`'d, against `network-discovery.sh` with line 219 deleted and line 209 kept:
 
   ```

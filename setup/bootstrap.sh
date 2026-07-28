@@ -180,6 +180,23 @@ Unattended-Upgrade::Remove-Unused-Dependencies "true";
 Unattended-Upgrade::Automatic-Reboot "false";
 EOF
 
+# chkrootkit runs from chkrootkit.timer, and systemd starts services with an
+# empty environment. Two of chkrootkit's checks — "zero-size shell history
+# files" and "hardlinked shell history files" — are gated on $SHELL and $HOME
+# being set, so under the timer they report "not tested" and never run. The
+# drop-in supplies both. See setup/chkrootkit-service-override.conf for the
+# full rationale, including the daily false-positive alert it also silences.
+# Conditional: chkrootkit is not a bootstrap package, so a host without it
+# simply skips this.
+if systemctl list-unit-files chkrootkit.service &>/dev/null \
+    && [[ -f /usr/lib/systemd/system/chkrootkit.service ]]; then
+    log "Installing chkrootkit systemd drop-in (restore history-file checks)..."
+    mkdir -p /etc/systemd/system/chkrootkit.service.d
+    install -m 644 "${MARVIN_DIR}/setup/chkrootkit-service-override.conf" \
+        /etc/systemd/system/chkrootkit.service.d/override.conf
+    systemctl daemon-reload
+fi
+
 # =============================================================================
 # 3. Install Node.js (for Claude Code CLI)
 # =============================================================================

@@ -1614,6 +1614,7 @@ done
 # both exist — a host without SSL configured has no live hook and is skipped.
 _deployhook_drift_pairs=(
     "${MARVIN_DIR}/setup/letsencrypt-deploy-hook.sh /etc/letsencrypt/renewal-hooks/deploy/reload-services.sh letsencrypt-deploy-hook"
+    "${MARVIN_DIR}/setup/chkrootkit-service-override.conf /etc/systemd/system/chkrootkit.service.d/override.conf chkrootkit-systemd-override"
 )
 for _pair in "${_deployhook_drift_pairs[@]}"; do
     read -r _src _live _label <<< "$_pair"
