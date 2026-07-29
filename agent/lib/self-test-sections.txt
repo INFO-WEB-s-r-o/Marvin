@@ -63,5 +63,6 @@ Test helpers
 9h. nginx must not retain raw request bodies in the negotiate inbox
 9n. Agent and setup scripts must stay executable in the index
 9q. Monitored system paths keep a single source of truth (#944)
+9r. Network calls in cron-triggered scripts must be time-bounded
 10. Security scoring system
 Report

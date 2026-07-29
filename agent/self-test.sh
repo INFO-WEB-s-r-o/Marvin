@@ -3108,6 +3108,115 @@ if [[ "$_mp_unreadable" -gt 0 ]]; then
     test_warn "monitored-path consumer scan skipped ${_mp_unreadable} unreadable or comment-only script(s) — not counted as clean"
 fi
 
+# ─── 9r. Network calls in cron-triggered scripts must be time-bounded ─────────
+# Issue #949. `set -euo pipefail` bounds correctness; it does not bound
+# wall-clock time. Every agent here runs from cron, so an untimed `curl` is a
+# run that stops existing for as long as the kernel keeps a socket open — no
+# error, no log line, no exit code. The same defect has been fixed five times
+# in this repo (#835, #728, #948, #493, and the CODEOWNERS fetch found by
+# reading the file next door to #948). Five instances of one class is not five
+# mistakes; it is a missing assertion.
+#
+# Scope is agent/ only. setup/bootstrap.sh has three untimed calls and is
+# deliberately excluded — it is run once, by a human, who can see it hanging.
+# #949 names them rather than counting them clean, and so does this.
+#
+# Three shapes have to be read correctly or this reports a comfortable lie:
+#   1. backslash continuations — the flag routinely sits on a later physical
+#      line than the `curl` token (external-domains-check.sh:40).
+#   2. array-built invocations — `curl "${curl_args[@]}"` carries its timeout
+#      in an assignment tens of lines earlier (export-push.sh, lib/github.sh).
+#      A line-scoped grep calls both of those untimed; that is a false FAIL,
+#      which gets the guard deleted rather than the bug fixed (#930).
+#   3. comments — `_code_only` strips full-line comments, so prose describing
+#      a timeout cannot satisfy the assertion (#858, #887, #890).
+#
+# Known residual, stated rather than papered over: `_code_only` strips only
+# *full-line* comments by design, because parsing quote state to strip trailing
+# ones has false-FAILed here twice (#875, #887). So an untimed curl carrying a
+# trailing `# ... --max-time 10 ...` comment on the same logical line still
+# reads as timed. That is a narrower hole than the one this closes, and closing
+# it costs the exact instrument this repo has twice had to revert.
+_nt_dir="$(dirname "$0")"          # branch-authored: ${MARVIN_DIR} is pinned to
+                                   # /home/marvin/git and would assert against
+                                   # the deployed tree, not this one (#855/#874)
+_nt_findings=""
+_nt_scanned=0
+_nt_unreadable=""
+
+for _nt_f in "$_nt_dir"/*.sh "$_nt_dir"/lib/*.sh; do
+    [[ -e "$_nt_f" ]] || continue
+    # Fail-closed on the extractor: `x=$(_code_only f) || true` collapses "the
+    # scanner broke" into "the scanner found nothing", which is the shape
+    # _code_only's own header warns about.
+    if ! _nt_code=$(_code_only "$_nt_f"); then
+        _nt_unreadable+="$(basename "$_nt_f") "
+        continue
+    fi
+    _nt_scanned=$((_nt_scanned + 1))
+    _nt_hits=$(printf '%s\n' "$_nt_code" | awk -v FNAME="$(basename "$_nt_f")" '
+        {
+            # Join backslash continuations into one logical line, remembering
+            # where it started so the report points at the curl, not its tail.
+            if (pending) { logical = logical " " $0 }
+            else         { logical = $0; startln = FNR }
+            if (logical ~ /\\[ \t]*$/) { sub(/\\[ \t]*$/, "", logical); pending = 1; next }
+            pending = 0
+
+            # Collect array assignments (NAME=( ... ) and NAME+=( ... )) so an
+            # invocation that expands one can be judged on its real arguments.
+            if (logical ~ /^[ \t]*(local[ \t]+)?[A-Za-z_][A-Za-z0-9_]*\+?=\(/) {
+                aname = logical
+                sub(/^[ \t]*(local[ \t]+)?/, "", aname)
+                sub(/\+?=\(.*$/, "", aname)
+                arr[aname] = arr[aname] " " logical
+                if (logical !~ /\)[ \t]*$/) inarr = aname
+                next
+            }
+            if (inarr != "") {
+                arr[inarr] = arr[inarr] " " logical
+                if (logical ~ /\)[ \t]*$/) inarr = ""
+                next
+            }
+
+            # curl as a command word — start of line, or after a pipe,
+            # separator, subshell or assignment. Not `curl` inside a word.
+            if (logical !~ /(^|[ \t]|[;&|(]|\$\()curl[ \t]/) next
+            n++; ln[n] = startln; txt[n] = logical
+        }
+        END {
+            for (i = 1; i <= n; i++) {
+                eff = txt[i]; probe = txt[i]
+                while (match(probe, /\$\{[A-Za-z_][A-Za-z0-9_]*\[@\]\}/)) {
+                    a = substr(probe, RSTART + 2, RLENGTH - 6)
+                    sub(/\[@\]$/, "", a)
+                    if (a in arr) eff = eff " " arr[a]
+                    probe = substr(probe, RSTART + RLENGTH)
+                }
+                if (eff ~ /--max-time[ \t]/) continue
+                printf "%s:%d ", FNAME, ln[i]
+            }
+        }
+    ') || _nt_hits=""
+    _nt_findings+="$_nt_hits"
+done
+
+if [[ -n "$_nt_unreadable" ]]; then
+    # Unread files are reported as unread. A sweep that could not open half its
+    # inputs and prints "clean" is the #866 failure, one section up.
+    test_fail "network timeouts: could not read ${_nt_unreadable% } — those scripts are UNVERIFIED, not clean (#949)"
+fi
+
+if [[ "$_nt_scanned" -eq 0 ]]; then
+    test_fail "network timeouts: scanned 0 scripts under ${_nt_dir} — the sweep did not run, so #949 is unverified (#949)"
+elif [[ -n "${_nt_findings// /}" ]]; then
+    test_fail "network timeouts: $(printf '%s' "$_nt_findings" | wc -w) curl call(s) in cron-triggered scripts have no --max-time — each is an unbounded hang that reads as a run that never happened (#949): ${_nt_findings% }"
+else
+    test_pass "network timeouts: every curl invocation across ${_nt_scanned} cron-triggered scripts is bounded by --max-time (#949)"
+fi
+
+unset _nt_dir _nt_findings _nt_scanned _nt_unreadable _nt_f _nt_code _nt_hits
+
 # ─── 10. Security scoring system ──────────────────────────────────────────────
 # Grades the server A-F across multiple security dimensions
 
