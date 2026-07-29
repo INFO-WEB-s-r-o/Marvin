@@ -193,12 +193,83 @@ github_normalize_labels() {
         jq -R -s -c 'split("\n") | map(sub("^\\s+";"") | sub("\\s+$";"")) | map(select(. != "")) | unique'
 }
 
+# Look up an OPEN issue whose title matches, for the duplicate guard below.
+#
+# Exit status carries three distinct outcomes, because collapsing them is the
+# whole hazard: 0 = a match was found (the issue JSON is on stdout), 1 = the
+# lookup ran and found nothing, 2 = the lookup COULD NOT RUN. A caller that
+# treats 2 as 1 files duplicates; one that treats 2 as 0 silently destroys
+# real bug reports. Neither is acceptable, so the states stay separate.
+#
+# `.pull_request == null` is load-bearing: GET /issues returns pull requests
+# as well as issues, and there are routinely more open PRs than issues here.
+# Without it, a PR sharing an issue's title would suppress the issue.
+#
+# The listing is GitHub's default sort (created, descending), so the newest
+# issues are the ones actually compared — which is what dedup needs, since a
+# duplicate arrives seconds after its original. A repo with more than 100 open
+# issues would truncate the tail; that only costs a duplicate, never a report.
+#
+# Titles are compared trimmed but otherwise EXACTLY. No fuzzy or prefix
+# matching: two reports that differ only in wording are two reports, and
+# suppressing one of them is the failure mode this must not introduce.
+_github_find_open_issue_by_title() {
+    local title="$1"
+
+    local listing
+    listing=$(github_list_issues "" 100 2>/dev/null) || return 2
+    printf '%s' "$listing" | jq -e 'type == "array"' >/dev/null 2>&1 || return 2
+
+    local match
+    match=$(printf '%s' "$listing" | jq -c --arg t "$title" '
+        def trim: (. // "") | sub("^\\s+";"") | sub("\\s+$";"");
+        [ .[]
+          | select(.pull_request == null)
+          | select((.title | trim) == ($t | trim))
+        ] | first // empty
+    ' 2>/dev/null) || return 2
+
+    [[ -n "$match" ]] || return 1
+    printf '%s' "$match"
+}
+
 # Create a GitHub issue
 # Usage: github_create_issue "title" "body" "label1,label2"
 github_create_issue() {
     local title="$1"
     local body="$2"
     local labels="${3:-}"
+
+    # ─── Duplicate guard (#945) ──────────────────────────────────────────────
+    # #942 and #943 were filed 31 seconds apart with byte-identical bodies:
+    # two complete calls through here, each returning 201, neither aware of
+    # the other. `fix-issues.sh` has carried input- AND output-side dedup since
+    # it opened PRs #836/#837/#838 for one issue; the cheaper, more frequent
+    # write path one door down had nothing.
+    #
+    # FAILS OPEN, deliberately and asymmetrically. A duplicate issue is noise
+    # in a queue; a guard that cannot run and blocks anyway destroys a finished
+    # bug report, and this failure class erases the evidence of itself (three
+    # reports died that way on 2026-07-26, #850). So the ONLY state that
+    # suppresses is a positive match; both "found nothing" and "could not look"
+    # proceed to create, and the latter says so at WARN.
+    #
+    # On suppression the existing issue's JSON goes to stdout and the status is
+    # 0: both callers (github-interact.sh:260, security-scan.sh:1037) branch on
+    # exit status alone, and a non-zero return would send security-scan into its
+    # `||` retry — filing the duplicate this exists to prevent.
+    local _dup="" _dup_rc=0
+    _dup=$(_github_find_open_issue_by_title "$title") || _dup_rc=$?
+    if [[ $_dup_rc -eq 0 && -n "$_dup" ]]; then
+        local _dup_number _dup_url
+        _dup_number=$(printf '%s' "$_dup" | jq -r '.number // "?"')
+        _dup_url=$(printf '%s' "$_dup" | jq -r '.html_url // "?"')
+        marvin_log "WARN" "Duplicate suppressed: open issue #${_dup_number} already carries this title — ${_dup_url}" >&2
+        printf '%s' "$_dup"
+        return 0
+    elif [[ $_dup_rc -eq 2 ]]; then
+        marvin_log "WARN" "Duplicate check could not run (open-issue lookup failed) — creating anyway; a duplicate is possible" >&2
+    fi
 
     local labels_json
     labels_json=$(github_normalize_labels "$labels") || labels_json="[]"

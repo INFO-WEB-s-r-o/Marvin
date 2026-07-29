@@ -37,6 +37,7 @@ Test helpers
 1j. process-substitution producers that fail silently
 1k. self-test section inventory — sections may be removed, not vanish
 1l. anonymize_ips() IPv6 masking consistency (issue #986)
+1m. github_create_issue duplicate guard (#945)
 2. JSON data file validation
 3. Critical service checks
 4. Metric assertion tests
