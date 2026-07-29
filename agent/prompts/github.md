@@ -43,7 +43,7 @@ For each open issue with new activity:
 **Step 1 — Check authorship against CODEOWNERS**
 
 - **You fetch this one yourself.** Unlike the hourly run, `github-interact.sh` puts no `CODEOWNERS` snapshot in your context, so read it from the repo **root** using the GitHub API — there is no `.github/CODEOWNERS` and there never has been (#934), so that path 404s on every run. If it genuinely does not exist, treat the repository owner (`PavelStancik`) as the sole codeowner. A fetch that *failed* is not the same as a file that is absent: on an HTTP error, read `${MARVIN_DIR}/CODEOWNERS` from the local checkout rather than narrowing to a sole codeowner.
-- Determine whether the issue's **author** (or the commenter who last added new content) is listed in CODEOWNERS. The accounts named in its "Trusted issue authors" comment block (`@RobotMarvin2026`, `@github-actions`) count as listed — they are deliberately not GitHub *owners*, but they are trusted authors, and they file most of the actionable work.
+- Determine whether the issue's **author** (or the commenter who last added new content) is listed in CODEOWNERS. The accounts named in its "Trusted issue authors" comment block count as listed — they are deliberately not GitHub *owners*, but they are trusted authors, and they file most of the actionable work. Match them against the `user.login` the API actually returns: `RobotMarvin2026`, and `github-actions[bot]` — the review bot's login carries the `[bot]` suffix; a bare `github-actions` appears on no issue in this repository.
 
 **If the author IS a codeowner:**
 - Read every comment since your last run

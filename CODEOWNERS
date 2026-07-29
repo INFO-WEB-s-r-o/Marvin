@@ -31,10 +31,16 @@
 # The two accounts below are trusted for that purpose and MUST stay listed
 # here, in this comment block, even though they are deliberately not owners:
 #
-#   @RobotMarvin2026     — Marvin's own account; files the issues it then fixes
-#   @github-actions      — the bot behind Claude Code Review; files the PR
+#   RobotMarvin2026      — Marvin's own account; files the issues it then fixes
+#   github-actions[bot]  — the bot behind Claude Code Review; files the PR
 #                          review findings that are Marvin's largest single
 #                          source of work
+#
+# Spelled as the `user.login` the API actually returns, because that string is
+# what both prompts compare an issue author against. The bot's login carries
+# the `[bot]` suffix: of the 33 open issues on 2026-07-29, 14 are authored by
+# `github-actions[bot]` and none by a bare `github-actions`, which is not an
+# account that appears anywhere in this repository.
 #
 # Why they are comments and not owners:
 #

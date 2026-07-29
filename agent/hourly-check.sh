@@ -176,18 +176,38 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         # issues that are its largest source of work (this cost ~3h and one
         # money-burning issue on 2026-06-05).
         #
-        # -f so an HTTP error is an error, and a failure is reported AS a
-        # failure rather than collapsing into "the file does not exist".
-        if ! CODEOWNERS_CONTENT=$(curl -sf \
+        # An HTTP error must be reported AS a failure rather than collapsing
+        # into "the file does not exist" — but the two cases are not the same
+        # message, and a bare `curl -sf` cannot tell them apart: 404 and a
+        # DNS failure both exit non-zero and produce one indistinguishable
+        # string. The prompt has always had a "genuinely absent" branch; with
+        # a single failure message that branch describes a state this script
+        # cannot emit, which is the same dead-instruction shape #934 was.
+        # So capture the status code and name all three states.
+        CODEOWNERS_BODY=$(mktemp)
+        CODEOWNERS_HTTP=$(curl -s -o "${CODEOWNERS_BODY}" -w '%{http_code}' \
             -H "Authorization: token ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github.v3.raw" \
             "https://api.github.com/repos/INFO-WEB-s-r-o/Marvin/contents/CODEOWNERS" \
-            2>/dev/null); then
-            CODEOWNERS_CONTENT="FETCH FAILED — could not read CODEOWNERS (HTTP error or network failure).
+            2>/dev/null) || CODEOWNERS_HTTP="000"
+
+        case "${CODEOWNERS_HTTP}" in
+            200)
+                CODEOWNERS_CONTENT=$(cat "${CODEOWNERS_BODY}")
+                ;;
+            404)
+                CODEOWNERS_CONTENT="ABSENT — the repository has no CODEOWNERS file at its root (HTTP 404).
+This is the one case in which the sole-codeowner rule applies: treat
+PavelStancik as the only codeowner."
+                ;;
+            *)
+                CODEOWNERS_CONTENT="FETCH FAILED — could not read CODEOWNERS (HTTP ${CODEOWNERS_HTTP}).
 This is NOT the same as the file being absent. Do not fall back to a
 sole-codeowner assumption on the strength of this message; read
 ${MARVIN_DIR}/CODEOWNERS from the local checkout instead."
-        fi
+                ;;
+        esac
+        rm -f "${CODEOWNERS_BODY}"
 
         GITHUB_ISSUES="### CODEOWNERS file
 \`\`\`
