@@ -1869,8 +1869,21 @@ if ! _merged_tree=$(git -C "${MARVIN_DIR}" ls-tree -r "$_merged_ref" 2>/dev/null
     # rather than letting an unreadable ref collapse into "nothing unmerged".
     test_warn "merged-source provenance: cannot read ${_merged_ref} in ${MARVIN_DIR} — provenance NOT verified for any live drop-in"
 else
-    _live_dropins=$(find /etc/systemd/system -mindepth 2 -maxdepth 2 -path '*.d/*' -name '*.conf' 2>/dev/null | sort)
-    if [[ -z "$_live_dropins" ]]; then
+    # This assignment is at top-level scope inside an `else` branch, which set -e
+    # does NOT exempt (only an if/while *condition* is exempt), and `2>/dev/null`
+    # hides find's stderr but not its exit code — so under pipefail an unreadable
+    # cwd or a stat error would abort the whole suite here, taking §9h and all of
+    # §10 with it (#963). Guarded like the file's other find call sites (l.694,
+    # l.1798) — but with the status kept rather than discarded: a bare
+    # `|| _live_dropins=""` would feed the empty-list PASS below and report a
+    # broken enumeration as "no drop-ins installed", which is the one thing this
+    # block promises not to do. Partial output is still iterated; each file it did
+    # reach gets its own verdict, and the WARN says the list may be short.
+    _find_rc=0
+    _live_dropins=$(find /etc/systemd/system -mindepth 2 -maxdepth 2 -path '*.d/*' -name '*.conf' 2>/dev/null | sort) || _find_rc=$?
+    if (( _find_rc != 0 )); then
+        test_warn "merged-source provenance: enumerating /etc/systemd/system/*.d/ failed (find|sort exit ${_find_rc}) — the drop-in list may be incomplete, so provenance is NOT verified for any file missing from it"
+    elif [[ -z "$_live_dropins" ]]; then
         test_pass "merged-source provenance: no systemd drop-ins installed under /etc/systemd/system"
     fi
     while IFS= read -r _dropin; do
