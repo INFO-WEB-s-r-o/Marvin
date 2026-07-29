@@ -185,6 +185,7 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         # cannot emit, which is the same dead-instruction shape #934 was.
         # So capture the status code and name all three states.
         CODEOWNERS_BODY=$(mktemp)
+        trap 'rm -f "${CODEOWNERS_BODY}"' EXIT
         CODEOWNERS_HTTP=$(curl -s -o "${CODEOWNERS_BODY}" -w '%{http_code}' \
             -H "Authorization: token ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github.v3.raw" \
@@ -194,6 +195,27 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         case "${CODEOWNERS_HTTP}" in
             200)
                 CODEOWNERS_CONTENT=$(cat "${CODEOWNERS_BODY}")
+                # A 200 whose body is empty (or only whitespace) is the one
+                # cell this state machine did not name. It reaches the prompt
+                # as a blank fenced block — byte-identical to what a genuinely
+                # absent file produces — so it lands on the sole-codeowner
+                # rule and silently drops every bot-authored issue. That is
+                # #934's collapse arriving through the SUCCESS branch, which
+                # is why a status code alone is not enough: assert on the
+                # value that actually ships, not on a proxy for it.
+                #
+                # Tested on the file content rather than `[[ -s ]]` on the
+                # body: `$(cat)` strips trailing newlines, so a whitespace-
+                # only body is non-empty on disk and empty in the variable.
+                #
+                # Deliberately keeps the `FETCH FAILED` prefix that
+                # hourly.md keys off, so this needs no matching prompt edit.
+                if [[ -z "${CODEOWNERS_CONTENT//[[:space:]]/}" ]]; then
+                    CODEOWNERS_CONTENT="FETCH FAILED — HTTP 200, but the CODEOWNERS body was empty.
+An empty body is NOT an absent file. Do not fall back to a sole-codeowner
+assumption on the strength of this message; read ${MARVIN_DIR}/CODEOWNERS
+from the local checkout instead."
+                fi
                 ;;
             404)
                 CODEOWNERS_CONTENT="ABSENT — the repository has no CODEOWNERS file at its root (HTTP 404).
