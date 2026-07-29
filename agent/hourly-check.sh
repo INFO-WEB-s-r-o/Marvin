@@ -185,6 +185,11 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         # cannot emit, which is the same dead-instruction shape #934 was.
         # So capture the status code and name all three states.
         CODEOWNERS_BODY=$(mktemp)
+        # NOTE: bash EXIT traps do not stack — a second `trap ... EXIT` anywhere
+        # later in this script REPLACES this one, and the temp file would then
+        # leak silently rather than failing loudly. This is currently the only
+        # EXIT trap here (line 11's is ERR, a different signal, so it does not
+        # collide). If you add another, fold this `rm -f` into it.
         trap 'rm -f "${CODEOWNERS_BODY}"' EXIT
         CODEOWNERS_HTTP=$(curl -s -o "${CODEOWNERS_BODY}" -w '%{http_code}' \
             -H "Authorization: token ${GITHUB_TOKEN}" \
@@ -229,6 +234,10 @@ sole-codeowner assumption on the strength of this message; read
 ${MARVIN_DIR}/CODEOWNERS from the local checkout instead."
                 ;;
         esac
+        # Intentional, not redundant with the EXIT trap above: the trap is the
+        # backstop for the abnormal paths, this is best-effort early cleanup so
+        # the temp file does not outlive its last read through the long tail of
+        # this script. Removing either one is safe; removing both is not.
         rm -f "${CODEOWNERS_BODY}"
 
         GITHUB_ISSUES="### CODEOWNERS file
