@@ -960,6 +960,26 @@ else
         )
     }
 
+    # Same drive, reporting the duplicate marker rather than the number.
+    # Exit 0 now means "created OR suppressed", so this field is the only
+    # thing that separates them for a caller — github-interact.sh counts
+    # ACTION_COUNT and logs "Created issue" off it.
+    _dup_marker() {
+        local _fixture="$1" _title="$2"
+        (
+            # shellcheck source=/dev/null  # runtime-resolved (branch or live tree)
+            source "$_lib_github_dup" >/dev/null 2>&1 || exit 90
+            marvin_log() { :; }
+            github_list_issues() { printf '%s' "$_fixture"; }
+            github_api() {
+                [[ "$1" == "POST" ]] || return 1
+                printf '{"number":999,"html_url":"https://example.invalid/999"}'
+            }
+            github_create_issue "$_title" "a body" "" 2>/dev/null \
+                | jq -r '.marvin_duplicate_suppressed // "absent"'
+        )
+    }
+
     _dup_title='The same issue was filed twice, 30 seconds apart'
     _dup_open="[{\"number\":942,\"title\":\"${_dup_title}\",\"html_url\":\"https://example.invalid/942\",\"pull_request\":null}]"
     _dup_other='[{"number":900,"title":"something else entirely","html_url":"https://example.invalid/900","pull_request":null}]'
@@ -994,10 +1014,32 @@ else
     _g=$(_dup_probe "" "$_dup_title" "fail") || _g="<error>"
     _dup_assert "failed lookup does not block (fail open)" "999" "$_g"
 
-    if [[ "$_dup_failures" -eq 0 ]]; then
-        test_pass "dup-guard: github_create_issue suppresses same-title duplicates and fails open (7 cases)"
+    # --- a suppression must be distinguishable from a creation ---
+    # Without this the caller logs "Created issue: …" for an issue it did not
+    # create, corrupting the same log whose `Created issue #NNN` lines are the
+    # evidence #945 was built from.
+    _g=$(_dup_marker "$_dup_open" "$_dup_title") || _g="<error>"
+    _dup_assert "suppressed result is marked" "true" "$_g"
+    _g=$(_dup_marker "$_dup_other" "$_dup_title") || _g="<error>"
+    _dup_assert "genuinely created result is NOT marked" "absent" "$_g"
+
+    # And the caller must actually read the marker. Structural, not
+    # behavioural — the discrimination is inline in a 300-line script. Matched
+    # only on lines whose first non-blank character is not `#`, because a grep
+    # for the field name matches the paragraph explaining it (#889, #892).
+    _gi_path="$(dirname "$0")/github-interact.sh"
+    if [[ ! -f "$_gi_path" ]]; then
+        test_fail "dup-guard: github-interact.sh not found at ${_gi_path} — the caller-side check did NOT run"
+        _dup_failures=$((_dup_failures + 1))
+    elif ! grep -qE '^[[:space:]]*[^#[:space:]].*marvin_duplicate_suppressed' "$_gi_path"; then
+        test_fail "dup-guard: github-interact.sh has no CODE reference to marvin_duplicate_suppressed — a suppressed duplicate is being counted and logged as a creation (#945)"
+        _dup_failures=$((_dup_failures + 1))
     fi
-    unset -f _dup_probe _dup_assert
+
+    if [[ "$_dup_failures" -eq 0 ]]; then
+        test_pass "dup-guard: github_create_issue suppresses same-title duplicates, marks them, and fails open (10 cases)"
+    fi
+    unset -f _dup_probe _dup_marker _dup_assert
 fi
 
 # ─── 2. JSON data file validation ────────────────────────────────────────────

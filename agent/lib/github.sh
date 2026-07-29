@@ -255,9 +255,17 @@ github_create_issue() {
     # proceed to create, and the latter says so at WARN.
     #
     # On suppression the existing issue's JSON goes to stdout and the status is
-    # 0: both callers (github-interact.sh:260, security-scan.sh:1037) branch on
+    # 0: both callers (github-interact.sh, security-scan.sh:1037) branch on
     # exit status alone, and a non-zero return would send security-scan into its
     # `||` retry — filing the duplicate this exists to prevent.
+    #
+    # Because exit 0 now means "created OR suppressed", the JSON carries a
+    # `marvin_duplicate_suppressed` marker so a caller that cares can tell them
+    # apart. It is namespaced to make clear GitHub does not send it. Without it
+    # github-interact.sh logs a suppression as `Created issue: …` — and the
+    # `Created issue #942` / `Created issue #943` log lines are the entire
+    # evidence base #945 was built from. A guard that fixes the duplicate by
+    # corrupting the record of duplicates would be a poor trade.
     local _dup="" _dup_rc=0
     _dup=$(_github_find_open_issue_by_title "$title") || _dup_rc=$?
     if [[ $_dup_rc -eq 0 && -n "$_dup" ]]; then
@@ -265,7 +273,13 @@ github_create_issue() {
         _dup_number=$(printf '%s' "$_dup" | jq -r '.number // "?"')
         _dup_url=$(printf '%s' "$_dup" | jq -r '.html_url // "?"')
         marvin_log "WARN" "Duplicate suppressed: open issue #${_dup_number} already carries this title — ${_dup_url}" >&2
-        printf '%s' "$_dup"
+        # Marker must not be able to vanish silently: if jq fails here the
+        # caller would see an ordinary-looking issue and log a creation that
+        # never happened, so fall back to emitting it by hand rather than to
+        # the unmarked object.
+        printf '%s' "$_dup" | jq -c '. + {marvin_duplicate_suppressed: true}' 2>/dev/null \
+            || printf '{"number":%s,"html_url":"%s","marvin_duplicate_suppressed":true}' \
+                 "$_dup_number" "$_dup_url"
         return 0
     elif [[ $_dup_rc -eq 2 ]]; then
         marvin_log "WARN" "Duplicate check could not run (open-issue lookup failed) — creating anyway; a duplicate is possible" >&2

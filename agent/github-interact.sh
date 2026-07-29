@@ -257,9 +257,22 @@ ${SIGNATURE}
 </details>"
         fi
 
-        if github_create_issue "$ISSUE_TITLE" "$ISSUE_BODY" "${ISSUE_LABELS:-marvin-auto}"; then
-            ACTION_COUNT=$((ACTION_COUNT + 1))
-            marvin_log "INFO" "Created issue: ${ISSUE_TITLE}"
+        # github_create_issue returns 0 for "created" AND for "suppressed as a
+        # duplicate" (#945) — a non-zero return would fire security-scan.sh's
+        # `||` retry and file the duplicate the guard just stopped. So the two
+        # are told apart by the marker in the returned JSON, not by exit
+        # status. Counting a suppression as an action and logging it as
+        # `Created issue: …` would record a creation that never happened, in
+        # the one log whose `Created issue #NNN` lines are how #942/#943 were
+        # diagnosed in the first place.
+        ISSUE_RESULT=""
+        if ISSUE_RESULT=$(github_create_issue "$ISSUE_TITLE" "$ISSUE_BODY" "${ISSUE_LABELS:-marvin-auto}"); then
+            if printf '%s' "$ISSUE_RESULT" | jq -e '.marvin_duplicate_suppressed == true' >/dev/null 2>&1; then
+                marvin_log "INFO" "Duplicate suppressed, not counted as an action: ${ISSUE_TITLE}"
+            else
+                ACTION_COUNT=$((ACTION_COUNT + 1))
+                marvin_log "INFO" "Created issue: ${ISSUE_TITLE}"
+            fi
         else
             ERROR_COUNT=$((ERROR_COUNT + 1))
             marvin_log "ERROR" "Failed to create issue: ${ISSUE_TITLE}"
