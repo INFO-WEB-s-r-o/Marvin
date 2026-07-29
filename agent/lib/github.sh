@@ -273,13 +273,16 @@ github_create_issue() {
         _dup_number=$(printf '%s' "$_dup" | jq -r '.number // "?"')
         _dup_url=$(printf '%s' "$_dup" | jq -r '.html_url // "?"')
         marvin_log "WARN" "Duplicate suppressed: open issue #${_dup_number} already carries this title — ${_dup_url}" >&2
-        # Marker must not be able to vanish silently: if jq fails here the
-        # caller would see an ordinary-looking issue and log a creation that
-        # never happened, so fall back to emitting it by hand rather than to
-        # the unmarked object.
+        # The marker must not be able to vanish silently: without it the caller
+        # sees an ordinary-looking issue and logs a creation that never
+        # happened. The fallback is a CONSTANT — no interpolation, so there is
+        # no escaping question, and no second jq call, which would be a poor
+        # bet in the branch reached because jq just failed. It drops number and
+        # url, which no caller reads; the marker is the load-bearing field.
+        # (This path is close to unreachable: reaching here at all means the
+        # two jq calls in _github_find_open_issue_by_title already succeeded.)
         printf '%s' "$_dup" | jq -c '. + {marvin_duplicate_suppressed: true}' 2>/dev/null \
-            || printf '{"number":%s,"html_url":"%s","marvin_duplicate_suppressed":true}' \
-                 "$_dup_number" "$_dup_url"
+            || printf '{"marvin_duplicate_suppressed":true}'
         return 0
     elif [[ $_dup_rc -eq 2 ]]; then
         marvin_log "WARN" "Duplicate check could not run (open-issue lookup failed) — creating anyway; a duplicate is possible" >&2
