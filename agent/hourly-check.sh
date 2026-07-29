@@ -186,6 +186,25 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         #    Now paged; if the page bound is ever reached, that is REPORTED
         #    rather than assumed away, and a mid-run page failure fails the whole
         #    fetch rather than shipping the pages that happened to arrive.
+        # 5. Every call is time-bounded, matching `github_api()` in lib/github.sh
+        #    (#835, #948). This is a cron-triggered run: `set -euo pipefail`
+        #    bounds correctness, not wall-clock time, so an untimed curl against
+        #    a stalled or half-open connection hangs the hourly check for as long
+        #    as the kernel keeps the socket. With up to ISSUES_MAX_PAGES
+        #    sequential calls before `run_claude` is even reached, that hang
+        #    compounds. Bounded, a stall curl-times-out to 000, fails the fetch,
+        #    and the next hourly run is a cheap retry — which is how the rest of
+        #    this script is designed to fail. Worst case is therefore
+        #    ISSUES_MAX_PAGES × 20s = 200s of fetch, deliberately finite.
+        #
+        # The prompt-size bound is now implicit rather than a hard character cut:
+        # ISSUES_MAX_PAGES × ISSUES_PER_PAGE × ISSUE_BODY_CLIP, ~400 KB at the
+        # extreme. That is intentional — the 8,000-char cut this block replaced
+        # bounded the prompt by silently destroying the data, and a truncated
+        # queue that reads as complete is the defect, not the size. If the
+        # backlog ever grows enough for that ceiling to matter, lower
+        # ISSUE_BODY_CLIP or ISSUES_MAX_PAGES: both are named, and reaching the
+        # page bound is reported.
         ISSUES_PER_PAGE=100
         ISSUES_MAX_PAGES=10
         ISSUES_PAGES=""
@@ -195,6 +214,7 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         _page=1
         while true; do
             _raw=$(curl -s -w '\n%{http_code}' \
+                --connect-timeout 10 --max-time 20 \
                 -H "Authorization: token ${GITHUB_TOKEN}" \
                 -H "Accept: application/vnd.github.v3+json" \
                 "https://api.github.com/repos/INFO-WEB-s-r-o/Marvin/issues?state=open&per_page=${ISSUES_PER_PAGE}&page=${_page}") \
