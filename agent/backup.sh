@@ -184,24 +184,6 @@ _REQUIRED_CONFIGS=(
     /etc/systemd/system/marvin-web.service
 )
 
-# Resolve symlinks to the files they point at, and drop the duplicates that
-# produces. This is not cosmetic: checksumming follows a symlink, `tar` does
-# not. /etc/resolv.conf and every /etc/nginx/sites-enabled/* entry are links,
-# so archiving them verbatim stores a link and no content — and the membership
-# check below would still find the path in the listing and report the archive
-# complete. That is the exact false-pass this whole section exists to prevent,
-# so the resolution happens before the paths reach either tar or the check.
-_resolved_configs=()
-for cfg in "${_REQUIRED_CONFIGS[@]}"; do
-    _real=$(readlink -f -- "$cfg" 2>/dev/null) || _real=""
-    [[ -n "$_real" ]] || _real="$cfg"
-    _dup=false
-    for _seen in ${_resolved_configs[@]+"${_resolved_configs[@]}"}; do
-        [[ "$_seen" == "$_real" ]] && { _dup=true; break; }
-    done
-    [[ "$_dup" == "true" ]] || _resolved_configs+=("$_real")
-done
-_REQUIRED_CONFIGS=("${_resolved_configs[@]}")
 # OPTIONAL = archived when present, silent when not. Stock Debian files and
 # root's personal crontab (absent on this host — the schedule lives in
 # /etc/cron.d/marvin), so their absence is not a defect worth a daily WARN.
@@ -209,6 +191,43 @@ _OPTIONAL_CONFIGS=(
     /etc/crontab
     /var/spool/cron/crontabs/root
 )
+
+# Resolve symlinks to the files they point at, and drop the duplicates that
+# produces. This is not cosmetic: checksumming follows a symlink, `tar` does
+# not. /etc/resolv.conf and every /etc/nginx/sites-enabled/* entry are links,
+# so archiving them verbatim stores a link and no content — and the membership
+# check below would still find the path in the listing and report the archive
+# complete. That is the exact false-pass this whole section exists to prevent,
+# so the resolution happens before the paths reach either tar or the check.
+#
+# Applied to BOTH lists. Neither optional path is a symlink on this host today,
+# and "not a symlink today" is exactly the reasoning that produced the original
+# drift: a list correct for the host as it stood, with nothing re-checking it.
+# The resolution costs the same call either way, so the asymmetry buys nothing.
+# _resolve_seen carries across both calls, so an optional path that resolves
+# onto a required one is archived once rather than twice.
+_resolve_seen=()
+_resolve_out=()
+_resolve_configs() {
+    local cfg _real _seen _dup
+    _resolve_out=()
+    for cfg in "$@"; do
+        _real=$(readlink -f -- "$cfg" 2>/dev/null) || _real=""
+        [[ -n "$_real" ]] || _real="$cfg"
+        _dup=false
+        for _seen in ${_resolve_seen[@]+"${_resolve_seen[@]}"}; do
+            [[ "$_seen" == "$_real" ]] && { _dup=true; break; }
+        done
+        [[ "$_dup" == "true" ]] && continue
+        _resolve_seen+=("$_real")
+        _resolve_out+=("$_real")
+    done
+}
+
+_resolve_configs "${_REQUIRED_CONFIGS[@]}"
+_REQUIRED_CONFIGS=(${_resolve_out[@]+"${_resolve_out[@]}"})
+_resolve_configs "${_OPTIONAL_CONFIGS[@]}"
+_OPTIONAL_CONFIGS=(${_resolve_out[@]+"${_resolve_out[@]}"})
 _config_files=()
 for cfg in "${_REQUIRED_CONFIGS[@]}" "${_OPTIONAL_CONFIGS[@]}"; do
     [[ -f "$cfg" ]] && _config_files+=("$cfg")
@@ -258,7 +277,13 @@ for c in "${_config_files[@]}"; do
     echo "$c" >> "$_filelist"
 done
 
-backup_output=$(tar -czf "$BACKUP_FILE" \
+# umask 077 inside the substitution rather than a chmod after tar returns: this
+# archive now carries /etc/sudoers and /etc/pam.d/sshd (#944), and a chmod after
+# the fact leaves a window in which the file already exists, already holds that
+# content, and is still 0644. Containment remains the 0700 backups directory —
+# this is the second layer, not the first, which is why 0644 was survivable
+# until now and why it should not stay that way.
+backup_output=$(umask 077; tar -czf "$BACKUP_FILE" \
     --files-from="$_filelist" \
     --ignore-failed-read \
     --warning=no-file-changed \
