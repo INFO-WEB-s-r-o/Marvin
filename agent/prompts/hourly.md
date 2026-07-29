@@ -45,7 +45,7 @@ You have been given a list of open GitHub issues from `INFO-WEB-s-r-o/Marvin`.
 
 **Step 1 — Filter by authorship:**
 - `CODEOWNERS` is **already in your context** — `hourly-check.sh` fetches it from the repo **root** (there is no `.github/CODEOWNERS`) and pastes it above under the `### CODEOWNERS file` heading. Read that snapshot; do not fetch it yourself.
-  - If the snapshot reads `FETCH FAILED`, the fetch errored — **that is not the same as the file being absent.** Read `${MARVIN_DIR}/CODEOWNERS` from the local checkout rather than narrowing to a sole codeowner.
+  - If the snapshot reads `FETCH FAILED`, the fetch errored — **that is not the same as the file being absent.** Read `/home/marvin/git/CODEOWNERS` from the local checkout rather than narrowing to a sole codeowner.
   - If — and only if — the snapshot reads `ABSENT`, the file genuinely does not exist (HTTP 404); treat the repository owner (`PavelStancik`) as the sole codeowner.
 - Only act on issues where the **author** is listed in CODEOWNERS. The accounts named in its "Trusted issue authors" comment block count as listed — they are deliberately not GitHub *owners*, but they are trusted authors, and they file most of the actionable work. Match them against the `user.login` the API actually returns: `RobotMarvin2026`, and `github-actions[bot]` — the review bot's login carries the `[bot]` suffix; a bare `github-actions` appears on no issue in this repository.
 - For issues from non-codeowners: skip silently (the github agent already handles the courtesy reply).
