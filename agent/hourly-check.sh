@@ -271,8 +271,31 @@ fi
 # Recent hourly reports (so Claude can avoid repeating work)
 # ─────────────────────────────────────────────────────────────────────────────
 
-RECENT_REPORTS=$(ls -t "${LOGS_DIR}"/${TODAY}-hourly-*.md 2>/dev/null | head -3 | \
-    xargs -I{} sh -c 'echo "--- {} ---"; tail -20 "{}"' 2>/dev/null || echo "None yet today.")
+# Match only this task's own reports (${TODAY}-hourly-<epoch>.md). The bare
+# `-hourly-*` glob also matched ${TODAY}-hourly-check-<epoch>.md — the full run
+# transcript the runner writes beside each report — and the two sort adjacently,
+# so two of these three slots went to the SAME run and the anti-duplication
+# window was 2 runs, not 3.
+#
+# nullglob rather than `ls ... || echo "None yet today."`: that fallback
+# collapsed "the scan broke" into "no reports exist", and a run told there is no
+# history repeats the previous hour's work. An empty array here means the
+# directory is genuinely empty; anything else fails loudly under errexit.
+shopt -s nullglob
+RECENT_FILES=( "${LOGS_DIR}/${TODAY}"-hourly-[0-9]*.md )
+shopt -u nullglob
+
+if (( ${#RECENT_FILES[@]} == 0 )); then
+    RECENT_REPORTS="None yet today."
+else
+    # names end in a fixed-width epoch, so a reverse lexical sort is newest-first
+    mapfile -t RECENT_FILES < <(printf '%s\n' "${RECENT_FILES[@]}" | sort -r)
+    RECENT_REPORTS=""
+    for _report in "${RECENT_FILES[@]:0:3}"; do
+        RECENT_REPORTS+="--- ${_report} ---"$'\n'
+        RECENT_REPORTS+="$(tail -20 "${_report}")"$'\n'
+    done
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Build and run the prompt
