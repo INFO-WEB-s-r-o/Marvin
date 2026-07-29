@@ -3217,6 +3217,139 @@ fi
 
 unset _nt_dir _nt_findings _nt_scanned _nt_unreadable _nt_f _nt_code _nt_hits
 
+# ─── 9s. limit_req zones must be defined in a tracked file that something installs ───
+# `setup/nginx-rate-limits.conf` has been in this repo since 2026-06-08, holding
+# the four `limit_req_zone` definitions that every `limit_req` in every tracked
+# vhost depends on. Nothing installs it. The only reference in any script is
+# §9d's *diff* — a comparison, not a deploy — and the install instruction exists
+# solely as a comment in the file's own header (`cp setup/... /etc/nginx/conf.d/...`).
+# Sixteen months of production rate-limiting resting on a command someone typed
+# once by hand (#957).
+#
+# Two failure modes, one root cause:
+#
+#   1. A fresh `bootstrap.sh` never writes the zones, and its generated vhost
+#      carries zero `limit_req` — so a rebuilt host serves every location
+#      unthrottled, silently.
+#   2. The documented recovery path — deploy the tracked configs from this repo —
+#      does not yield a rate-limited server. It yields an nginx that refuses to
+#      start. Measured in an isolated nginx root at 2026-07-29 22:38Z:
+#
+#        setup/nginx-site.conf,       zone file absent  → [emerg] zero size shared memory zone "api"
+#        setup/nginx-site.conf,       zone file present → test is successful
+#        setup/nginx-monitoring.conf, zone file absent  → [emerg] zero size shared memory zone "monitoring"
+#        setup/nginx-monitoring.conf, zone file present → test is successful
+#
+# §9d cannot catch this. It degrades to WARN when either side is absent, so
+# "never installed" reads as a skip rather than a failure — the same shape as an
+# alert that cannot fire. A tripwire that only compares two files is blind to
+# the case where one of them was never born.
+#
+# Arm A asserts every `limit_req zone=NAME` used in a tracked config resolves to
+# a tracked `limit_req_zone ... zone=NAME` definition. That is the arm that stops
+# a future edit from adding a limiter to bootstrap's heredoc and bricking the
+# install at bootstrap's own `nginx -t`.
+#
+# Arm B is the one that fails on main today: those definitions must actually
+# reach a host. Satisfied by either shape — a tracked script that installs the
+# tracked zone file, or one that writes `limit_req_zone` directives inline. It
+# deliberately requires an install-shaped command (cp/install/tee/mv/rsync or a
+# redirect), because the target path is also *mentioned* by §9d's drift-pair
+# array, and a check that accepted a mention would call this file installed.
+#
+# Resolved via `dirname "$0"`, not ${MARVIN_DIR}: a branch-authored check that
+# resolves through MARVIN_DIR asserts against the DEPLOYED tree and passes while
+# the branch it ships with is broken (#855, #874). Every "could not look" path
+# is a FAIL that says so, never a pass by absence of evidence.
+
+marvin_log "INFO" "Self-test: checking limit_req zones are defined in a tracked file that something installs"
+
+_rl_setup="$(dirname "$0")/../setup"
+_rl_zone_target="/etc/nginx/conf.d/marvin-rate-limits.conf"
+_rl_scan_ok=1
+
+# Tracked nginx configs (the vhosts that USE zones, and the file that DEFINES them).
+_rl_confs=()
+while IFS= read -r _rl_f; do
+    [[ -n "$_rl_f" ]] && _rl_confs+=("$_rl_f")
+done < <(find "$_rl_setup" -maxdepth 1 -name '*.conf' -type f 2>/dev/null | sort)
+
+# Tracked shell scripts that could install anything.
+_rl_scripts=()
+while IFS= read -r _rl_f; do
+    [[ -n "$_rl_f" ]] && _rl_scripts+=("$_rl_f")
+done < <(find "$_rl_setup" "$(dirname "$0")" -maxdepth 1 -name '*.sh' -type f 2>/dev/null | sort)
+
+if [[ ${#_rl_confs[@]} -eq 0 ]]; then
+    test_fail "limit_req zones: found ZERO tracked *.conf files under ${_rl_setup} — the sweep did NOT run, this is not a clean result (#957)"
+elif [[ ${#_rl_scripts[@]} -eq 0 ]]; then
+    test_fail "limit_req zones: found ZERO tracked *.sh files to scan for an installer — the sweep did NOT run (#957)"
+else
+    # ── Arm A: every zone used is a zone defined, in tracked source ──
+    # `limit_req[[:space:]]+zone=` cannot match inside `limit_req_zone` (the
+    # next char there is `_`, not whitespace), so uses and defs stay disjoint.
+    _rl_uses="" _rl_defs=""
+    for _rl_f in "${_rl_confs[@]}" "${_rl_scripts[@]}"; do
+        if _rl_code=$(_code_only "$_rl_f"); then
+            _rl_uses+=$(printf '%s\n' "$_rl_code" | grep -oE 'limit_req[[:space:]]+zone=[A-Za-z0-9_]+' | sed 's/.*zone=//')$'\n'
+            _rl_defs+=$(printf '%s\n' "$_rl_code" | grep -oE 'limit_req_zone[^;]*zone=[A-Za-z0-9_]+' | sed 's/.*zone=//')$'\n'
+        else
+            # A file we could not read is a hole in the sweep, not an absence of
+            # findings — recorded, and reported below.
+            _rl_scan_ok=0
+        fi
+    done
+
+    _rl_used_zones=$(printf '%s\n' "$_rl_uses" | grep -vE '^[[:space:]]*$' | sort -u)
+    _rl_defined_zones=$(printf '%s\n' "$_rl_defs" | grep -vE '^[[:space:]]*$' | sort -u)
+
+    if [[ -z "$_rl_used_zones" ]]; then
+        # Every tracked vhost carries limit_req today; extracting none means the
+        # directive spelling changed or the scan broke, not that limits vanished.
+        test_fail "limit_req zones: extracted ZERO 'limit_req zone=' uses from ${#_rl_confs[@]} tracked config(s) — this assertion is inert and MUST be repaired (#957)"
+    else
+        _rl_orphans=""
+        while IFS= read -r _rl_z; do
+            [[ -n "$_rl_z" ]] || continue
+            printf '%s\n' "$_rl_defined_zones" | grep -qxF "$_rl_z" || _rl_orphans+="${_rl_z} "
+        done <<< "$_rl_used_zones"
+
+        if [[ -n "$_rl_orphans" ]]; then
+            test_fail "limit_req zones: used but never defined in tracked source: ${_rl_orphans% } — deploying this config gives '[emerg] zero size shared memory zone' and nginx will not start (#957)"
+        else
+            test_pass "limit_req zones: all $(printf '%s\n' "$_rl_used_zones" | wc -l | tr -d ' ') zone(s) used by tracked configs are defined in tracked source"
+        fi
+    fi
+
+    # ── Arm B: the definitions must actually reach a host ──
+    # Either shape counts: an install-shaped write of the tracked zone file's
+    # target, or a script that writes limit_req_zone directives inline.
+    _rl_installer=""
+    for _rl_f in "${_rl_scripts[@]}"; do
+        if _rl_code=$(_code_only "$_rl_f"); then
+            if printf '%s\n' "$_rl_code" \
+                | grep -E '(\b(cp|install|tee|mv|rsync)\b[^;|]*|>[[:space:]]*"?[^;|"]*)'"$(basename "$_rl_zone_target")" \
+                | grep -q .; then
+                _rl_installer+="$(basename "$_rl_f") "
+            elif printf '%s\n' "$_rl_code" | grep -q 'limit_req_zone[^;]*zone='; then
+                _rl_installer+="$(basename "$_rl_f"):inline "
+            fi
+        else
+            _rl_scan_ok=0
+        fi
+    done
+
+    if [[ -z "$_rl_installer" ]]; then
+        test_fail "limit_req zones: NOTHING installs the zone definitions — no tracked script writes ${_rl_zone_target} or defines limit_req_zone inline. A fresh bootstrap serves unthrottled, and deploying the tracked vhost fails 'nginx -t' (#957)"
+    else
+        test_pass "limit_req zones: definitions installed by ${_rl_installer% }"
+    fi
+
+    if [[ "$_rl_scan_ok" -ne 1 ]]; then
+        test_fail "limit_req zones: at least one tracked file could not be read — the sweep above is INCOMPLETE and its passes do not cover the whole tree (#957)"
+    fi
+fi
+
 # ─── 10. Security scoring system ──────────────────────────────────────────────
 # Grades the server A-F across multiple security dimensions
 

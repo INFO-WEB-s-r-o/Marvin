@@ -64,5 +64,6 @@ Test helpers
 9n. Agent and setup scripts must stay executable in the index
 9q. Monitored system paths keep a single source of truth (#944)
 9r. Network calls in cron-triggered scripts must be time-bounded
+9s. limit_req zones must be defined in a tracked file that something installs
 10. Security scoring system
 Report
