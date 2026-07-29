@@ -191,7 +191,16 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         # EXIT trap here (line 11's is ERR, a different signal, so it does not
         # collide). If you add another, fold this `rm -f` into it.
         trap 'rm -f "${CODEOWNERS_BODY}"' EXIT
+        # Time-bounded, matching `github_api()` in lib/github.sh (#835, #948).
+        # This runs from cron: `set -euo pipefail` bounds correctness, not
+        # wall-clock time, so an untimed curl against a stalled or half-open
+        # connection hangs the hourly check for as long as the kernel keeps the
+        # socket — before `run_claude` is reached, so the run produces nothing
+        # at all. Bounded, a stall curl-times-out and lands in the `*)` arm
+        # below as `HTTP 000`, which already says "this is NOT the same as the
+        # file being absent". The next hourly run is then a cheap retry.
         CODEOWNERS_HTTP=$(curl -s -o "${CODEOWNERS_BODY}" -w '%{http_code}' \
+            --connect-timeout 10 --max-time 20 \
             -H "Authorization: token ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github.v3.raw" \
             "https://api.github.com/repos/INFO-WEB-s-r-o/Marvin/contents/CODEOWNERS" \
