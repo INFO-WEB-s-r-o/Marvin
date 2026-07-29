@@ -27,26 +27,16 @@ mkdir -p "$SECURITY_DIR"
 # ─── Files to monitor ────────────────────────────────────────────────────────
 # Critical system configs, agent scripts, and security-sensitive files.
 # Directories are expanded into their files at scan time.
+#
+# The system (/etc) half lives in lib/monitored-paths.sh because backup.sh
+# needs the identical set — it archives what this script watches, so that a
+# CHANGED alert has a prior copy to diff against instead of being discharged
+# blind (#943, #944). Keeping one copy is the only way the two stay in sync.
+
+source "$(dirname "$0")/lib/monitored-paths.sh"
 
 MONITORED_PATHS=(
-    # SSH
-    /etc/ssh/sshd_config
-    # Firewall
-    /etc/ufw/user.rules
-    /etc/ufw/user6.rules
-    # Fail2ban
-    /etc/fail2ban/jail.local
-    # Nginx
-    /etc/nginx/nginx.conf
-    # Cron
-    /etc/cron.d/marvin
-    # PAM (auth stack)
-    /etc/pam.d/sshd
-    # Sudoers
-    /etc/sudoers
-    # Name resolution
-    /etc/hosts
-    /etc/resolv.conf
+    "${MARVIN_MONITORED_SYSTEM_PATHS[@]}"
     # Marvin agent scripts
     "${MARVIN_DIR}/agent/common.sh"
     "${MARVIN_DIR}/agent/health-monitor.sh"
@@ -56,17 +46,10 @@ MONITORED_PATHS=(
     "${MARVIN_DIR}/agent/security-scan.sh"
     "${MARVIN_DIR}/agent/self-test.sh"
     "${MARVIN_DIR}/agent/lib/github.sh"
+    # The list of monitored paths is itself a security-relevant file: editing it
+    # is how you would make this scan stop looking at something.
+    "${MARVIN_DIR}/agent/lib/monitored-paths.sh"
 )
-
-# Also include all nginx site configs
-for f in /etc/nginx/sites-enabled/*; do
-    [[ -f "$f" ]] && MONITORED_PATHS+=("$f")
-done
-
-# And all fail2ban jail configs
-for f in /etc/fail2ban/jail.d/*.conf; do
-    [[ -f "$f" ]] && MONITORED_PATHS+=("$f")
-done
 
 # ─── Compute checksums ───────────────────────────────────────────────────────
 

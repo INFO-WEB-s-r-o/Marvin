@@ -158,30 +158,50 @@ fi
 
 # 5. Key configuration files (system)
 #
-# REQUIRED = every system file file-integrity.sh monitors for tampering, plus
-# the nginx vhosts that define the whole public surface. A monitored file with
-# no backup is a file whose CHANGED alert can never be investigated: on
-# 2026-07-29 /etc/ufw/user.rules and user6.rules both alerted and no copy of
-# their previous contents existed anywhere on this host, so the alert could
-# only be discharged by a blind `file-integrity.sh --update` — which bakes an
-# unexamined change into the baseline. Keep this list in sync with
-# MONITORED_PATHS in agent/file-integrity.sh.
+# REQUIRED = every system file file-integrity.sh monitors for tampering. A
+# monitored file with no backup is a file whose CHANGED alert can never be
+# investigated: on 2026-07-29 /etc/ufw/user.rules and user6.rules both alerted
+# and no copy of their previous contents existed anywhere on this host, so the
+# alert could only be discharged by a blind `file-integrity.sh --update` —
+# which bakes an unexamined change into the baseline (#943).
 #
 # /etc/nginx/sites-available/robot-marvin was listed here from the start and
 # has never existed on this host (the vhost is `marvin`), so the site config
 # was silently absent from every backup ever taken. That is the failure the
 # post-archive check below exists to make impossible to repeat.
+#
+# The list is no longer written out here. Hand-copying it is what produced the
+# original drift and then reproduced it: the first version of this fix still
+# omitted /etc/pam.d/sshd, /etc/sudoers, /etc/hosts and /etc/resolv.conf, and
+# hardcoded the two nginx vhosts and jail.local where file-integrity.sh globs
+# sites-enabled/ and jail.d/ — so any site or jail added later would have been
+# monitored and never archived (#944). One source of truth, sourced by both.
+source "$(dirname "$0")/lib/monitored-paths.sh"
 _REQUIRED_CONFIGS=(
-    /etc/nginx/sites-available/marvin
-    /etc/nginx/sites-available/monitoring
-    /etc/nginx/nginx.conf
+    "${MARVIN_MONITORED_SYSTEM_PATHS[@]}"
+    # Not checksummed by file-integrity.sh, but the web unit is unrecoverable
+    # from anything else in the archive.
     /etc/systemd/system/marvin-web.service
-    /etc/fail2ban/jail.local
-    /etc/ufw/user.rules
-    /etc/ufw/user6.rules
-    /etc/ssh/sshd_config
-    /etc/cron.d/marvin
 )
+
+# Resolve symlinks to the files they point at, and drop the duplicates that
+# produces. This is not cosmetic: checksumming follows a symlink, `tar` does
+# not. /etc/resolv.conf and every /etc/nginx/sites-enabled/* entry are links,
+# so archiving them verbatim stores a link and no content — and the membership
+# check below would still find the path in the listing and report the archive
+# complete. That is the exact false-pass this whole section exists to prevent,
+# so the resolution happens before the paths reach either tar or the check.
+_resolved_configs=()
+for cfg in "${_REQUIRED_CONFIGS[@]}"; do
+    _real=$(readlink -f -- "$cfg" 2>/dev/null) || _real=""
+    [[ -n "$_real" ]] || _real="$cfg"
+    _dup=false
+    for _seen in ${_resolved_configs[@]+"${_resolved_configs[@]}"}; do
+        [[ "$_seen" == "$_real" ]] && { _dup=true; break; }
+    done
+    [[ "$_dup" == "true" ]] || _resolved_configs+=("$_real")
+done
+_REQUIRED_CONFIGS=("${_resolved_configs[@]}")
 # OPTIONAL = archived when present, silent when not. Stock Debian files and
 # root's personal crontab (absent on this host — the schedule lives in
 # /etc/cron.d/marvin), so their absence is not a defect worth a daily WARN.
