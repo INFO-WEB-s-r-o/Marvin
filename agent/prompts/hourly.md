@@ -44,7 +44,9 @@ You have been given a snapshot of recent entries from `/var/log/`. Your job:
 You have been given a list of open GitHub issues from `INFO-WEB-s-r-o/Marvin`.
 
 **Step 1 — Filter by authorship:**
-- Read `CODEOWNERS` (repo **root** — there is no `.github/CODEOWNERS`). If it genuinely does not exist, treat the repository owner (`PavelStancik`) as the sole codeowner. A fetch that *failed* is not the same as a file that is absent: if the snapshot says `FETCH FAILED`, read the local checkout rather than narrowing to a sole codeowner.
+- `CODEOWNERS` is **already in your context** — `hourly-check.sh` fetches it from the repo **root** (there is no `.github/CODEOWNERS`) and pastes it above under the `### CODEOWNERS file` heading. Read that snapshot; do not fetch it yourself.
+  - If the snapshot reads `FETCH FAILED`, the fetch errored — **that is not the same as the file being absent.** Read `${MARVIN_DIR}/CODEOWNERS` from the local checkout rather than narrowing to a sole codeowner.
+  - Only if the file genuinely does not exist, treat the repository owner (`PavelStancik`) as the sole codeowner.
 - Only act on issues where the **author** is listed in CODEOWNERS. The accounts named in its "Trusted issue authors" comment block (`@RobotMarvin2026`, `@github-actions`) count as listed — they are deliberately not GitHub *owners*, but they are trusted authors, and they file most of the actionable work.
 - For issues from non-codeowners: skip silently (the github agent already handles the courtesy reply).
 
