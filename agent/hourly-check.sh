@@ -177,13 +177,45 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         #    dead code and a 401/404 error body flowed on AS ISSUE DATA. The
         #    status code is now read explicitly, and a failed fetch is reported
         #    as a failure rather than as an empty queue.
-        ISSUES_RAW=$(curl -s -w '\n%{http_code}' \
-            -H "Authorization: token ${GITHUB_TOKEN}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/INFO-WEB-s-r-o/Marvin/issues?state=open&per_page=100") \
-            || ISSUES_RAW=""
-        ISSUES_CODE=$(printf '%s' "$ISSUES_RAW" | tail -n 1)
-        ISSUES_BODY=$(printf '%s' "$ISSUES_RAW" | sed '$d')
+        # 4. `per_page=100` with no pagination silently truncated. The cap counts
+        #    issues AND pull requests together while the PR filter runs after it,
+        #    so PRs burn slots that never become issues. Measured 2026-07-29: 48
+        #    of 100 used (30 issues + 18 PRs) — already half the cap. The failure
+        #    mode is the one this whole block exists to kill: a short queue that
+        #    reads as complete, under a note that says "no issue is omitted".
+        #    Now paged; if the page bound is ever reached, that is REPORTED
+        #    rather than assumed away, and a mid-run page failure fails the whole
+        #    fetch rather than shipping the pages that happened to arrive.
+        ISSUES_PER_PAGE=100
+        ISSUES_MAX_PAGES=10
+        ISSUES_PAGES=""
+        ISSUES_CODE=""
+        ISSUES_FETCH_OK=1
+        ISSUES_TRUNCATED=0
+        _page=1
+        while true; do
+            _raw=$(curl -s -w '\n%{http_code}' \
+                -H "Authorization: token ${GITHUB_TOKEN}" \
+                -H "Accept: application/vnd.github.v3+json" \
+                "https://api.github.com/repos/INFO-WEB-s-r-o/Marvin/issues?state=open&per_page=${ISSUES_PER_PAGE}&page=${_page}") \
+                || _raw=""
+            ISSUES_CODE=$(printf '%s' "$_raw" | tail -n 1)
+            _body=$(printf '%s' "$_raw" | sed '$d')
+            if [[ "$ISSUES_CODE" != "200" ]]; then ISSUES_FETCH_OK=0; break; fi
+            # `length` on an error OBJECT returns its key count, which would pass
+            # for a page size. Require an array before believing the count.
+            _n=$(printf '%s' "$_body" | jq 'if type=="array" then length else empty end' 2>/dev/null) || _n=""
+            if [[ -z "$_n" ]]; then ISSUES_FETCH_OK=0; break; fi
+            ISSUES_PAGES="${ISSUES_PAGES}${_body}"$'\n'
+            if (( _n < ISSUES_PER_PAGE )); then break; fi
+            if (( _page >= ISSUES_MAX_PAGES )); then ISSUES_TRUNCATED=1; break; fi
+            _page=$(( _page + 1 ))
+        done
+
+        ISSUES_BODY=""
+        if (( ISSUES_FETCH_OK == 1 )); then
+            ISSUES_BODY=$(printf '%s' "$ISSUES_PAGES" | jq -c -s 'add // []' 2>/dev/null) || ISSUES_BODY=""
+        fi
 
         # Measured against the live queue (30 open issues, 2026-07-29): clipping
         # bodies at 300/400/600/900 chars yields 19.7k/22.8k/29.0k/38.2k. Every
@@ -195,10 +227,15 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
 
         ISSUES_JSON=""
         ISSUES_NOTE=""
-        if [[ "$ISSUES_CODE" == "200" ]]; then
+        if [[ -n "$ISSUES_BODY" ]]; then
             ISSUES_JSON=$(printf '%s' "$ISSUES_BODY" | jq -c --argjson clip "$ISSUE_BODY_CLIP" '
                 [ .[]
                   | select(has("pull_request") | not)
+                  # Bind the issue before descending into .body: inside the clip
+                  # expression `.` is the body STRING, so a bare \(.number) there
+                  # is "Cannot index string with string" — which this block would
+                  # then report as a failed fetch.
+                  | . as $iss
                   | { number, title,
                       author: .user.login,
                       author_association,
@@ -207,7 +244,7 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
                       body: ( (.body // "")
                               | split("*🔐 GPG-signed")[0]
                               | if length > $clip
-                                then .[0:$clip] + "\n…[body clipped — read it in full with `gh issue view N`]"
+                                then .[0:$clip] + "\n…[body clipped — read it in full with `gh issue view \($iss.number)`]"
                                 else . end ) }
                 ]' 2>/dev/null) || ISSUES_JSON=""
         fi
@@ -220,8 +257,15 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         else
             ISSUES_COUNT=$(printf '%s' "$ISSUES_JSON" | jq 'length' 2>/dev/null || echo "?")
             ISSUES_PRS=$(printf '%s' "$ISSUES_BODY" | jq '[.[] | select(has("pull_request"))] | length' 2>/dev/null || echo "?")
-            ISSUES_NOTE="${ISSUES_COUNT} open issues, all of them (pull requests excluded: ${ISSUES_PRS}). Bodies over ${ISSUE_BODY_CLIP} chars are clipped and GPG signature blocks stripped; no issue is omitted."
-            marvin_log "INFO" "Fetched ${ISSUES_COUNT} open issues (${ISSUES_PRS} PRs filtered out)"
+            if (( ISSUES_TRUNCATED == 1 )); then
+                # A cap that is reached must say so. "no issue is omitted" is the
+                # one sentence this block must never print when it is untrue.
+                ISSUES_NOTE="**QUEUE TRUNCATED — MORE OPEN ISSUES EXIST THAN ARE LISTED.** Stopped at the ${ISSUES_MAX_PAGES}-page bound (${ISSUES_PER_PAGE}/page). ${ISSUES_COUNT} issues shown (pull requests excluded: ${ISSUES_PRS}); the rest were not fetched. Do not read the list below as the whole queue."
+                marvin_log "WARN" "Open-issue fetch hit the ${ISSUES_MAX_PAGES}-page bound — queue truncated at ${ISSUES_COUNT} issues, reported to the run as truncated"
+            else
+                ISSUES_NOTE="${ISSUES_COUNT} open issues, all of them (pull requests excluded: ${ISSUES_PRS}). Bodies over ${ISSUE_BODY_CLIP} chars are clipped and GPG signature blocks stripped; no issue is omitted."
+                marvin_log "INFO" "Fetched ${ISSUES_COUNT} open issues (${ISSUES_PRS} PRs filtered out)"
+            fi
         fi
 
         # Fetch CODEOWNERS. The file is at the repo ROOT — there is no
