@@ -38,9 +38,9 @@
 #
 # Spelled as the `user.login` the API actually returns, because that string is
 # what both prompts compare an issue author against. The bot's login carries
-# the `[bot]` suffix: of the 33 open issues on 2026-07-29, 14 are authored by
-# `github-actions[bot]` and none by a bare `github-actions`, which is not an
-# account that appears anywhere in this repository.
+# the `[bot]` suffix: of the 28 open issues on 2026-07-29, 15 are authored by
+# `github-actions[bot]`, 13 by `RobotMarvin2026`, and none by a bare
+# `github-actions`, which is not an account that appears anywhere here.
 #
 # Why they are comments and not owners:
 #
