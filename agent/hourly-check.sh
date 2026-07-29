@@ -302,9 +302,21 @@ else
     # every name is now a ten-digit epoch, so a reverse lexical sort is newest-first
     mapfile -t RECENT_FILES < <(printf '%s\n' "${RECENT_FILES[@]}" | sort -r)
     RECENT_REPORTS=""
+    # The read is guarded, and this guard is NOT the fallback removed above. That
+    # one collapsed a broken scan into "no reports exist" — a silent, plausible
+    # lie the next run acts on. This one swallows only the exit status: the
+    # failure is written into the block that ships, so a run whose slot could not
+    # be read is told so, instead of quietly seeing one report fewer.
+    #
+    # Unguarded, one unreadable file is fatal. Under `set -euo pipefail` the
+    # assignment takes the command substitution's status, and marvin_error_trap
+    # only logs — it does not suppress the exit. A file rotated away between the
+    # glob and the read would kill not just this block but the log snapshot, the
+    # Claude invocation and the report save for the entire cycle.
     for _report in "${RECENT_FILES[@]:0:3}"; do
         RECENT_REPORTS+="--- ${_report} ---"$'\n'
-        RECENT_REPORTS+="$(tail -20 "${_report}")"$'\n'
+        RECENT_REPORTS+="$(tail -20 "${_report}" 2>/dev/null \
+            || echo "!! UNREADABLE — this slot's content is missing, not empty")"$'\n'
     done
 fi
 
