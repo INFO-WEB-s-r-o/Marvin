@@ -2559,6 +2559,17 @@ location /api/outer/inner/ {
     fi
 fi
 
+# §9m's helpers are function definitions in the shell's global namespace, not
+# locals — the `if` above scopes when they are *defined*, not how long they
+# live. Left behind, they remain callable for the ~700 lines of sections that
+# follow, and a later section reaching for the name `_od_expand` would silently
+# get this one instead of failing with "command not found". The prefix makes
+# that unlikely; it does not make it detectable, which is the reason to clean
+# up rather than to rely on the prefix. `-f` only, and deliberately: the `_od_*`
+# *variables* are read by nothing after this point, and unsetting 49 of them by
+# hand is a list that goes stale the moment someone adds the 50th.
+unset -f _od_literals _od_expand _od_perm_case _od_attribute _od_nest_case
+
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
 # Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
 # artefact with byte-identical duplicates of the active /home/marvin/.gnupg/
