@@ -157,14 +157,40 @@ fi
 [[ -f "${DATA_DIR}/lessons-summary.md" ]] && BACKUP_PATHS+=("${DATA_DIR}/lessons-summary.md")
 
 # 5. Key configuration files (system)
+#
+# REQUIRED = every system file file-integrity.sh monitors for tampering, plus
+# the nginx vhosts that define the whole public surface. A monitored file with
+# no backup is a file whose CHANGED alert can never be investigated: on
+# 2026-07-29 /etc/ufw/user.rules and user6.rules both alerted and no copy of
+# their previous contents existed anywhere on this host, so the alert could
+# only be discharged by a blind `file-integrity.sh --update` — which bakes an
+# unexamined change into the baseline. Keep this list in sync with
+# MONITORED_PATHS in agent/file-integrity.sh.
+#
+# /etc/nginx/sites-available/robot-marvin was listed here from the start and
+# has never existed on this host (the vhost is `marvin`), so the site config
+# was silently absent from every backup ever taken. That is the failure the
+# post-archive check below exists to make impossible to repeat.
+_REQUIRED_CONFIGS=(
+    /etc/nginx/sites-available/marvin
+    /etc/nginx/sites-available/monitoring
+    /etc/nginx/nginx.conf
+    /etc/systemd/system/marvin-web.service
+    /etc/fail2ban/jail.local
+    /etc/ufw/user.rules
+    /etc/ufw/user6.rules
+    /etc/ssh/sshd_config
+    /etc/cron.d/marvin
+)
+# OPTIONAL = archived when present, silent when not. Stock Debian files and
+# root's personal crontab (absent on this host — the schedule lives in
+# /etc/cron.d/marvin), so their absence is not a defect worth a daily WARN.
+_OPTIONAL_CONFIGS=(
+    /etc/crontab
+    /var/spool/cron/crontabs/root
+)
 _config_files=()
-for cfg in \
-    /etc/nginx/sites-available/robot-marvin \
-    /etc/nginx/nginx.conf \
-    /etc/systemd/system/marvin-web.service \
-    /etc/fail2ban/jail.local \
-    /etc/crontab \
-    /var/spool/cron/crontabs/root; do
+for cfg in "${_REQUIRED_CONFIGS[@]}" "${_OPTIONAL_CONFIGS[@]}"; do
     [[ -f "$cfg" ]] && _config_files+=("$cfg")
 done
 
@@ -227,17 +253,47 @@ if [[ "$tar_exit" -gt 1 ]]; then
     exit 1
 fi
 
-# Validate the backup (quick integrity check)
-if ! tar -tzf "$BACKUP_FILE" > /dev/null 2>&1; then
-    marvin_log "ERROR" "Backup validation failed — archive is corrupt"
+# Validate the backup (quick integrity check) and keep the listing — it is the
+# only evidence of what the archive actually contains, and both checks below
+# assert against it rather than against what we intended to archive.
+_archive_list=$(tar -tzf "$BACKUP_FILE" 2>/dev/null) || _archive_list=""
+if [[ -z "$_archive_list" ]]; then
+    marvin_log "ERROR" "Backup validation failed — archive is corrupt or empty"
     rm -f "$BACKUP_FILE"
     exit 1
+fi
+
+# Verify every REQUIRED system config actually landed in the archive.
+#
+# Two independent layers drop a path in silence: the `[[ -f ]]` filter in
+# section 5 skips anything that does not exist, and tar's --ignore-failed-read
+# skips anything it cannot read. Either way the run reports success and a file
+# count, and an archive missing the firewall rules looks exactly like a
+# complete one. Asserting on the intent (the path list) would reproduce that
+# blindness, so this asserts on the delivered artifact.
+#
+# Exact-line match via bash globbing, not `grep -qx`: `printf | grep -q` closes
+# the pipe on first match and SIGPIPEs the producer, which pipefail then
+# reports as failure (lesson 2026-05-02, sigpipe-under-pipefail). tar stores
+# paths without the leading slash, hence ${cfg#/}.
+_config_absent=()
+for cfg in "${_REQUIRED_CONFIGS[@]}"; do
+    if [[ $'\n'"${_archive_list}"$'\n' != *$'\n'"${cfg#/}"$'\n'* ]]; then
+        if [[ -f "$cfg" ]]; then
+            _config_absent+=("${cfg} [on disk, not archived — unreadable?]")
+        else
+            _config_absent+=("${cfg} [not on disk]")
+        fi
+    fi
+done
+if [[ ${#_config_absent[@]} -gt 0 ]]; then
+    marvin_log "WARN" "Backup omitted ${#_config_absent[@]} required system config(s): ${_config_absent[*]}"
 fi
 
 # Measure backup size
 backup_size=$(stat -c %s "$BACKUP_FILE" 2>/dev/null || echo 0)
 backup_size_mb=$(( backup_size / 1048576 ))
-file_count=$(tar -tzf "$BACKUP_FILE" 2>/dev/null | wc -l)
+file_count=$(printf '%s\n' "$_archive_list" | wc -l)
 
 marvin_log "INFO" "Backup created: ${BACKUP_FILE} (${backup_size_mb}MB, ${file_count} files)"
 
