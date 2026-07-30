@@ -33,6 +33,7 @@
 #     MUTATE=no_scheme_port       stop defaulting the port from the scheme
 #     MUTATE=no_ipv6_brackets     parse IPv6 literals as host:port
 #     MUTATE=public_always_true   accept every address as public
+#     MUTATE=throttle_outranks_pin  put the throttle window ahead of pin_failed
 # Each must turn some assertion below RED. If a mutation changes nothing, the
 # test it was aimed at is not testing anything.
 # =============================================================================
@@ -77,7 +78,13 @@ _extract() {
 }
 
 UNIT="$(mktemp)"
-trap 'rm -f "$UNIT"' EXIT
+# A whole-script working copy. Section 5 asserts on the ORDER of branches in
+# the per-domain loop, which is script body rather than an extractable
+# function, so it cannot use $UNIT — and it must never assert against $SRC
+# directly, because a mutation has to be able to reorder it (#969).
+BODY="$(mktemp)"
+trap 'rm -f "$UNIT" "$BODY"' EXIT
+cp "$SRC" "$BODY"
 {
     echo '#!/usr/bin/env bash'
     _extract _is_public_ipv4
@@ -135,6 +142,40 @@ case "$MUTATE" in
             skip                      { next }
             { print }
         ' "$UNIT" > "${UNIT}.m" && mv "${UNIT}.m" "$UNIT" ;;
+    throttle_outranks_pin)
+        # Put the throttle window back ahead of the pin_failed test — the exact
+        # order this shipped with until #969. Section 5 must go red.
+        grep -q '^        if (( pin_failed == 1 )); then' "$BODY" \
+            || _die "mutation target 'if (( pin_failed == 1 ))' not found in the body"
+        # Swaps the two branches WHOLE — condition and body together — so the
+        # result is the real pre-#969 code and still parses. An earlier version
+        # of this mutation rewrote only the `if`/`elif` keywords, which left a
+        # dangling `elif` that bash would reject, and the assertion passed on
+        # it: a malformed mutation reads exactly like a vacuous assertion.
+        # Hence the `bash -n` on the result, below.
+        python3 - "$BODY" <<'PYEOF' || _die "could not reorder the branches"
+import sys
+p = sys.argv[1]
+lines = open(p, encoding='utf-8').read().split('\n')
+PIN  = '        if (( pin_failed == 1 )); then'
+THR  = '        elif [[ "$interval_min" -gt 0 ]] && (( now_epoch - last_epoch < interval_min * 60 )); then'
+ELSE = '        else'
+try:
+    i, j = lines.index(PIN), lines.index(THR)
+    k = lines.index(ELSE, j)
+except ValueError:
+    sys.exit(1)
+if not i < j < k:
+    sys.exit(1)
+pin_body, thr_body = lines[i + 1:j], lines[j + 1:k]
+new = (['        if [[ "$interval_min" -gt 0 ]] && (( now_epoch - last_epoch < interval_min * 60 )); then']
+       + thr_body
+       + ['        elif (( pin_failed == 1 )); then']
+       + pin_body)
+open(p, 'w', encoding='utf-8').write('\n'.join(lines[:i] + new + lines[k:]))
+PYEOF
+        bash -n "$BODY" || _die "mutation throttle_outranks_pin produced unparseable bash"
+        ;;
     *) _die "unknown MUTATE='$MUTATE' (try MUTATE=list)" ;;
 esac
 
@@ -315,6 +356,47 @@ _eq "derivation returns something" "derived" \
 _doc_names="$(sed -n 's/^#     MUTATE=\([a-z_][a-z0-9_]*\)  *.*/\1/p' "${BASH_SOURCE[0]}" \
     | grep -v '^list$' | sort | tr '\n' ' ')"
 _eq "header block lists what is implemented" "$_arm_names" "$_doc_names"
+
+# ═══ 5. Branch order in the per-domain HTTP block — #969 ════════════════════
+echo "─── unchecked outranks throttled (#969) ───"
+# A pinned domain whose public address could not be resolved must report
+# failing even when its throttle window is still open. If the throttle branch
+# is tested first it republishes the cached http_code — usually the last good
+# 200 — for a host this run never reached, which is #964's false green by way
+# of a stale cache read.
+#
+# Structural, not behavioural: the branch lives in the per-domain loop, not in
+# an extractable function, and driving it for real means a live curl and a
+# write to the production OUT_FILE.
+#
+# COMMENTS ARE STRIPPED FIRST. The block being asserted on carries a long
+# comment naming both `pin_failed` and `interval_min`, so a grep over the raw
+# file matches prose and would report the correct order for a script whose
+# CODE had it reversed — #899, in the file written to avoid #899.
+# The invariant is WHICH KEYWORD carries each test, not which line number.
+# Swapping two branches of an if/elif chain moves the conditions but not the
+# line positions, so comparing positions reports "correct" for both orders —
+# it did, before this was rewritten. In an if/elif chain the `if` is what runs
+# first, so that is what gets asserted.
+_code_only() { sed 's/[[:space:]]*#.*$//' "$1" | grep -vE '^[[:space:]]*$'; }
+_ord="$(_code_only "$BODY")"
+_pin_kw=$(grep -oE '^\s*(if|elif)\b' <<<"$(grep -E '(if|elif).*pin_failed == 1' <<<"$_ord" | head -1)" | tr -d ' ')
+_thr_kw=$(grep -oE '^\s*(if|elif)\b' <<<"$(grep -E '(if|elif).*now_epoch - last_epoch < interval_min' <<<"$_ord" | head -1)" | tr -d ' ')
+if [[ -z "$_pin_kw" || -z "$_thr_kw" ]]; then
+    # Neither "found nothing" nor a broken strip may pass as a clean order.
+    _eq "branch-order assertion actually ran" "both branches located" \
+        "DID NOT RUN: pin=[${_pin_kw:-none}] throttle=[${_thr_kw:-none}]"
+else
+    _eq "pin_failed is the FIRST branch tested" "if"   "$_pin_kw"
+    _eq "the throttle window is tested after it" "elif" "$_thr_kw"
+fi
+# The comment-stripping is itself asserted, so a future edit that breaks it
+# cannot quietly turn the check above into a prose match.
+_eq "comment stripping removes prose mentions" "stripped" \
+    "$( grep -qE '^\s*#.*pin_failed' "$BODY" \
+        && { grep -qE '#.*ORDER IS LOAD-BEARING' <<<"$_ord" \
+             && echo "NOT STRIPPED — assertion would match comments" || echo stripped; } \
+        || echo "no comment mentions pin_failed — arm is vacuous" )"
 
 # ─── Report ──────────────────────────────────────────────────────────────────
 echo

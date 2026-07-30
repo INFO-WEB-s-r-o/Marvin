@@ -342,15 +342,20 @@ for i in $(seq 0 $((domain_count - 1))); do
         [[ -f "$stamp_file" ]] && last_epoch=$(cat "$stamp_file" 2>/dev/null || echo 0)
         [[ "$last_epoch" =~ ^[0-9]+$ ]] || last_epoch=0
 
-        if [[ "$interval_min" -gt 0 ]] && (( now_epoch - last_epoch < interval_min * 60 )); then
-            if [[ -f "$OUT_FILE" ]]; then
-                prev=$(jq -c --arg id "$id" '.domains[]? | select(.id == $id)' "$OUT_FILE" 2>/dev/null | head -1) || true
-                if [[ -n "$prev" ]]; then
-                    http_code=$(jq -r '.http_code // "null"' <<<"$prev")
-                    http_ms=$(jq -r '.response_ms // "null"' <<<"$prev")
-                fi
-            fi
-        elif (( pin_failed == 1 )); then
+        # ORDER IS LOAD-BEARING: pin_failed is tested BEFORE the throttle
+        # window, not after (#969). Reversed — which is how this shipped
+        # through review round 8 — a domain setting both pin_public_dns and
+        # http_interval_minutes takes the throttle branch first whenever the
+        # window is open, republishing the cached http_code from OUT_FILE
+        # without ever consulting pin_failed and without emitting the WARN
+        # below. That cached value is very often the last good 200, so an
+        # unresolvable pin would surface as a confident "healthy" for a host
+        # this run never reached: #964's false green arriving by a third
+        # route — a stale cache read rather than an unpinned probe (#964) or
+        # a poisoned answer (#967). Unchecked outranks throttled, always.
+        # A structural assertion in agent/tests/ pins this order so it cannot
+        # be reversed back by a later edit.
+        if (( pin_failed == 1 )); then
             # A pinned domain whose public address is unknown is UNCHECKED, and
             # unchecked must not read as healthy. Report it as a connection
             # failure (000 → "failing" below) rather than falling back to an
@@ -363,6 +368,14 @@ for i in $(seq 0 $((domain_count - 1))); do
             # lookup, so on a domain that also sets http_interval_minutes one
             # dropped query would suppress the next REAL probe for the whole
             # window — delaying detection of a genuine outage (review of #965).
+        elif [[ "$interval_min" -gt 0 ]] && (( now_epoch - last_epoch < interval_min * 60 )); then
+            if [[ -f "$OUT_FILE" ]]; then
+                prev=$(jq -c --arg id "$id" '.domains[]? | select(.id == $id)' "$OUT_FILE" 2>/dev/null | head -1) || true
+                if [[ -n "$prev" ]]; then
+                    http_code=$(jq -r '.http_code // "null"' <<<"$prev")
+                    http_ms=$(jq -r '.response_ms // "null"' <<<"$prev")
+                fi
+            fi
         else
             http_pair=$(_http_check "$url" "$host" "$pin_ip")
             read -r http_code http_ms final_auth <<<"$http_pair"
