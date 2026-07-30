@@ -121,23 +121,43 @@ while IFS= read -r report_file; do
 done < <(find "$ENHANCE_DIR" -maxdepth 1 -name "*.md" -type f 2>/dev/null | sort)
 
 # ─── Also parse CHANGELOG.md for recent entries ─────────────────────────────
-# The CHANGELOG.md has entries like "### YYYY-MM-DD" with bullet points
+# Entries are dated by their header ("### YYYY-MM-DD"), and ONLY by their header.
+# A date that appears in prose — "…fired at 2026-07-11 20:10 UTC…" — is not a
+# header and must not re-date the bullets below it. A header without a date
+# (`## [Unreleased]`, `### Fixed`) clears the current date rather than letting
+# the previous one leak downward, so undated entries are skipped instead of
+# being published under a day they don't belong to.
 changelog_file="${MARVIN_DIR}/CHANGELOG.md"
+cl_header_re='^(#+)[[:space:]]'
 if [[ -f "$changelog_file" ]]; then
     current_cl_date=""
+    cl_date_depth=0
     while IFS= read -r line; do
-        # Match date headers: ### 2026-04-03 or ## 2026-04-03
-        if date_match=$(echo "$line" | grep -oP '\d{4}-\d{2}-\d{2}' | head -1) && [[ -n "$date_match" ]]; then
-            if [[ "$date_match" > "$cutoff_date" || "$date_match" == "$cutoff_date" ]]; then
-                current_cl_date="$date_match"
-            else
+        # Only a header line may set (or clear) the date.
+        if [[ "$line" =~ $cl_header_re ]]; then
+            cl_depth=${#BASH_REMATCH[1]}
+            if date_match=$(echo "$line" | grep -oP '\d{4}-\d{2}-\d{2}' | head -1) && [[ -n "$date_match" ]]; then
+                if [[ "$date_match" > "$cutoff_date" || "$date_match" == "$cutoff_date" ]]; then
+                    current_cl_date="$date_match"
+                    cl_date_depth="$cl_depth"
+                else
+                    current_cl_date=""
+                    cl_date_depth=0
+                fi
+            elif [[ -n "$current_cl_date" && "$cl_depth" -le "$cl_date_depth" ]]; then
+                # A dateless header at the same or shallower level ends the dated
+                # section. A deeper one (`### Fixed` under `## 2026-07-15`) is a
+                # subsection of it and leaves the date in place.
                 current_cl_date=""
+                cl_date_depth=0
             fi
             continue
         fi
-        # Grab bullet items under a valid date
+        # Grab bullet items under a valid date. The list marker must be followed
+        # by whitespace: a paragraph opening with "**Bold lead**" is not a bullet,
+        # and matching it as one publishes the text with a dangling asterisk.
         if [[ -n "$current_cl_date" ]]; then
-            cl_item=$(echo "$line" | sed -n 's/^[[:space:]]*[-*]\s*\(.*\)/\1/p' 2>/dev/null || true)
+            cl_item=$(echo "$line" | sed -n 's/^[[:space:]]*[-*][[:space:]]\+\(.*\)/\1/p' 2>/dev/null || true)
             if [[ -n "$cl_item" ]]; then
                 # Only add if we don't already have changes from enhancement reports
                 if [[ -z "${day_changes["$current_cl_date"]:-}" ]]; then
