@@ -836,6 +836,65 @@ fi
 # they match, and the divergence lives in a file that check never opens (#939).
 
 F2B_WATCH_KEYS="findtime maxretry bantime"
+
+# Both halves of the parser are functions rather than inline command
+# substitutions, so agent/tests/security-scan-4b-parser.test.sh can extract and
+# exercise them against fixtures instead of the reasoning living only in a
+# review thread (#987). The test extracts from the `F2B_WATCH_KEYS=` assignment
+# above through the second column-0 `}` below; nothing in between sits at
+# column 0. Keep it that way, or the extraction silently tests less than it
+# claims to.
+
+# Body of the `cat > /etc/fail2ban/jail.local << 'EOF'` heredoc, delimiters
+# stripped. An empty body means the heredoc moved or was renamed; that is a
+# broken check, not a clean host. Both ends of the range are anchored: a looser
+# marker would happily lock onto a heredoc writing some *other* file and report
+# on a policy nothing installs.
+_f2b_heredoc_body() {   # _f2b_heredoc_body <path-to-bootstrap.sh>
+    command sed -n "/^cat > \/etc\/fail2ban\/jail\.local << 'EOF'\$/,/^EOF\$/p" \
+        "$1" | command sed '1d;$d'
+}
+
+# stdin: a jail.local body. stdout: jail <TAB> key <TAB> derived value <TAB>
+# origin(jail|DEFAULT), sorted. Exits 1 with no output on a section header
+# configparser would reject.
+#
+# WATCH goes through the environment, not `awk -v`: -v escape-processes its
+# value, which has made an in-use guard fail open before (#923). Comment
+# handling mirrors fail2ban, which builds its parser with
+# inline_comment_prefixes=";" (configparserinc.py:137) and leaves the default
+# whole-line prefixes "#" and ";". So `; ` ends a value and `# ` does not —
+# `findtime = 3600  # an hour` really is the value "3600  # an hour" to
+# fail2ban, and deriving a bare 3600 here would invent a drift that the daemon
+# does not have. Section headers end at the *last* `]`, which is what
+# configparser's greedy SECTCRE resolves to; a header line with no `]` is one
+# configparser rejects outright, so refuse the file rather than guess at a name.
+_f2b_derive_policy() {
+    F2B_WATCH="$F2B_WATCH_KEYS" awk '
+        /^[ \t]*[#;]/ { next }
+        /^[ \t]*\[/ {
+            sec=$0; sub(/^[ \t]*\[/,"",sec)
+            if (!match(sec, /\]/)) { hdr_bad=1; next }
+            match(sec, /\][^]]*$/); sec=substr(sec, 1, RSTART-1)
+            next
+        }
+        /=/ {
+            k=$0; sub(/=.*/,"",k); gsub(/[ \t]/,"",k)
+            v=$0; sub(/^[^=]*=[ \t]*/,"",v); sub(/[ \t]+;.*$/,"",v); gsub(/[ \t]+$/,"",v)
+            vals[sec SUBSEP k]=v
+            if (sec != "DEFAULT" && sec != "") jails[sec]=1
+        }
+        END {
+            if (hdr_bad) exit 1
+            n=split(ENVIRON["F2B_WATCH"], w, " ")
+            for (j in jails) for (i=1; i<=n; i++) {
+                k=w[i]
+                if ((j SUBSEP k) in vals)              print j "\t" k "\t" vals[j SUBSEP k] "\tjail"
+                else if (("DEFAULT" SUBSEP k) in vals) print j "\t" k "\t" vals["DEFAULT" SUBSEP k] "\tDEFAULT"
+            }
+        }' | LC_ALL=C sort -t $'\t' -k1,1 -k2,2
+}
+
 f2b_policy_status="skipped"
 f2b_policy_checked=0
 f2b_policy_drift=0
@@ -867,51 +926,14 @@ elif [[ ! -r "$F2B_BOOTSTRAP" ]]; then
     f2b_policy_status="unavailable"
     marvin_log "WARN" "Cannot read ${F2B_BOOTSTRAP} — no tracked policy to compare against"
 else
-    # Body of the `cat > /etc/fail2ban/jail.local << 'EOF'` heredoc, delimiters
-    # stripped. An empty body means the heredoc moved or was renamed; that is a
-    # broken check, not a clean host.
-    f2b_src=$(command sed -n "/^cat > \/etc\/fail2ban\/jail\.local << 'EOF'\$/,/^EOF\$/p" \
-              "$F2B_BOOTSTRAP" | command sed '1d;$d')
+    f2b_src=$(_f2b_heredoc_body "$F2B_BOOTSTRAP")
 
     if [[ -z "$f2b_src" ]]; then
         f2b_policy_status="unparseable"
         marvin_log "WARN" "Could not locate the jail.local heredoc in ${F2B_BOOTSTRAP} — effective-policy check did not run"
     else
         # Emits: jail <TAB> key <TAB> derived value <TAB> origin(jail|DEFAULT).
-        # WATCH goes through the environment, not `awk -v`: -v escape-processes
-        # its value, which has made an in-use guard fail open before (#923).
-        # Comment handling mirrors fail2ban, which builds its parser with
-        # inline_comment_prefixes=";" (configparserinc.py:137) and leaves the
-        # default whole-line prefixes "#" and ";". So `; ` ends a value and `# `
-        # does not — `findtime = 3600  # an hour` really is the value "3600  # an
-        # hour" to fail2ban, and deriving a bare 3600 here would invent a drift
-        # that the daemon does not have. Section headers end at the *last* `]`,
-        # which is what configparser's greedy SECTCRE resolves to; a header line
-        # with no `]` is one configparser rejects outright, so refuse the file
-        # rather than guess at a name.
-        f2b_expected=$(printf '%s\n' "$f2b_src" | F2B_WATCH="$F2B_WATCH_KEYS" awk '
-            /^[ \t]*[#;]/ { next }
-            /^[ \t]*\[/ {
-                sec=$0; sub(/^[ \t]*\[/,"",sec)
-                if (!match(sec, /\]/)) { hdr_bad=1; next }
-                match(sec, /\][^]]*$/); sec=substr(sec, 1, RSTART-1)
-                next
-            }
-            /=/ {
-                k=$0; sub(/=.*/,"",k); gsub(/[ \t]/,"",k)
-                v=$0; sub(/^[^=]*=[ \t]*/,"",v); sub(/[ \t]+;.*$/,"",v); gsub(/[ \t]+$/,"",v)
-                vals[sec SUBSEP k]=v
-                if (sec != "DEFAULT" && sec != "") jails[sec]=1
-            }
-            END {
-                if (hdr_bad) exit 1
-                n=split(ENVIRON["F2B_WATCH"], w, " ")
-                for (j in jails) for (i=1; i<=n; i++) {
-                    k=w[i]
-                    if ((j SUBSEP k) in vals)              print j "\t" k "\t" vals[j SUBSEP k] "\tjail"
-                    else if (("DEFAULT" SUBSEP k) in vals) print j "\t" k "\t" vals["DEFAULT" SUBSEP k] "\tDEFAULT"
-                }
-            }' | LC_ALL=C sort -t $'\t' -k1,1 -k2,2) || f2b_expected=""
+        f2b_expected=$(printf '%s\n' "$f2b_src" | _f2b_derive_policy) || f2b_expected=""
 
         if [[ -z "$f2b_expected" ]]; then
             f2b_policy_status="unparseable"
