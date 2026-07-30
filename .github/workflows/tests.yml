@@ -58,16 +58,36 @@ jobs:
 
       - name: Prove the suites can fail (mutation check)
         # A suite that cannot fail is not evidence. Each named mutation breaks
-        # one behaviour under test; the suite MUST go red. If a mutation passes,
-        # the assertion aimed at it is vacuous and this step fails the build.
+        # one behaviour under test; the suite MUST go red.
+        #
+        # Two things this step gets right that the obvious version does not:
+        #
+        #  1. The names come from the suite (MUTATE=list), not from a copy kept
+        #     here. A hardcoded list drifts the moment a mutation is added, and
+        #     a mutation that is never named is never run.
+        #
+        #  2. "Non-zero" is NOT the pass condition. The suite exits 1 when an
+        #     assertion fails (the evidence we want) and 2 when the harness
+        #     itself dies — including on a MUTATE name it does not recognise.
+        #     Treating both as success is what would have made (1) invisible:
+        #     rename a mutation, and every run reports "failed as required"
+        #     while exercising nothing at all.
         run: |
+          suite=agent/tests/external-domains-parser.test.sh
+          mapfile -t muts < <(MUTATE=list bash "$suite")
+          if (( ${#muts[@]} == 0 )); then
+            echo "::error file=$suite::MUTATE=list named no mutations — nothing would be verified"
+            exit 1
+          fi
+          echo "discovered ${#muts[@]} mutation(s): ${muts[*]}"
           rc=0
-          for m in no_userinfo_strip no_scheme_port no_ipv6_brackets public_always_true; do
-            if MUTATE="$m" bash agent/tests/external-domains-parser.test.sh >/dev/null 2>&1; then
-              echo "::error::MUTATE=$m did NOT fail the suite — that assertion is vacuous"
-              rc=1
-            else
-              echo "MUTATE=$m -> suite failed as required"
-            fi
+          for m in "${muts[@]}"; do
+            MUTATE="$m" bash "$suite" >/dev/null 2>&1 && s=0 || s=$?
+            case "$s" in
+              1) echo "MUTATE=$m -> assertion failed, as required" ;;
+              0) echo "::error::MUTATE=$m did NOT fail the suite — that assertion is vacuous"; rc=1 ;;
+              2) echo "::error::MUTATE=$m broke the harness (exit 2) — not evidence any assertion works"; rc=1 ;;
+              *) echo "::error::MUTATE=$m exited $s — neither a clean pass nor a recognised failure"; rc=1 ;;
+            esac
           done
           exit $rc

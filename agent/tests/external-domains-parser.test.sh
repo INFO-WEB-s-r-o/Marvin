@@ -80,11 +80,25 @@ for fn in _is_public_ipv4 _http_check _public_ip; do
 done
 
 # ─── Mutations (falsification) ───────────────────────────────────────────────
+# The names are read back out of the case arms below rather than kept as a
+# second copy anywhere. CI drives its mutation loop from `MUTATE=list`, so a
+# hand-maintained list here would just move the drift one file to the left: a
+# mutation added below and forgotten here would never be exercised, and nothing
+# would say so.
+_mutation_names() {
+    local names
+    names=$(sed -n '/^# ─── Mutations (falsification)/,/^esac$/p' "${BASH_SOURCE[0]}" \
+        | sed -n 's/^    \([a-z_][a-z0-9_]*\)).*/\1/p' \
+        | grep -v '^list$')
+    [[ -n "$names" ]] || return 1
+    printf '%s\n' "$names"
+}
+
 MUTATE="${MUTATE:-}"
 case "$MUTATE" in
     "") ;;
     list)
-        echo "available mutations: no_userinfo_strip no_scheme_port no_ipv6_brackets public_always_true"
+        _mutation_names || _die "could not derive the mutation list from my own case arms"
         exit 0 ;;
     no_userinfo_strip)
         # The line that drops "user@" — its absence is how a redirect to
@@ -247,6 +261,24 @@ _stderr="$( : > "$STUB_DIG_COUNT"; STUB_DIG_1=127.0.0.1 STUB_DIG_2=127.0.0.1 STU
             PUBLIC_RESOLVERS="8.8.8.8 1.1.1.1 9.9.9.9" _public_ip pinned.example 2>&1 >/dev/null )"
 _eq "rejection is logged to stderr"        "logged" \
     "$( [[ "$_stderr" == *"non-public address"* ]] && echo logged || echo "MISSING:[$_stderr]" )"
+
+# ═══ 4. The falsification harness describes itself accurately ═══════════════
+# CI runs exactly the mutations `MUTATE=list` names. Two ways that stops being
+# true without anyone noticing: the derivation itself breaks and silently
+# returns nothing (CI would then verify zero mutations and stay green), or a
+# mutation is implemented but never written into the header block a human
+# reads. Both are the prose-vs-code drift this repo keeps rediscovering.
+echo "─── mutation list is derived, not remembered ───"
+_arm_names="$(_mutation_names | sort | tr '\n' ' ')"
+# Deliberately NOT compared against a literal list of names here: that would be
+# a third copy, and the drift would just move into this assertion. The header
+# block is an independent source, so an empty or broken derivation cannot agree
+# with it by accident.
+_eq "derivation returns something" "derived" \
+    "$( [[ -n "$_arm_names" ]] && echo derived || echo "EMPTY — CI would verify no mutations" )"
+_doc_names="$(sed -n 's/^#     MUTATE=\([a-z_][a-z0-9_]*\)  *.*/\1/p' "${BASH_SOURCE[0]}" \
+    | grep -v '^list$' | sort | tr '\n' ' ')"
+_eq "header block lists what is implemented" "$_arm_names" "$_doc_names"
 
 # ─── Report ──────────────────────────────────────────────────────────────────
 echo
