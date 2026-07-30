@@ -120,13 +120,27 @@ jobs:
             fi
             echo "discovered ${#muts[@]} mutation(s): ${muts[*]}"
             for m in "${muts[@]}"; do
-              MUTATE="$m" bash "$suite" >/dev/null 2>&1 && s=0 || s=$?
+              log=$(mktemp)
+              MUTATE="$m" bash "$suite" >"$log" 2>&1 && s=0 || s=$?
               case "$s" in
                 1) echo "MUTATE=$m -> assertion failed, as required" ;;
                 0) echo "::error::MUTATE=$m did NOT fail the suite — that assertion is vacuous"; rc=1 ;;
                 2) echo "::error::MUTATE=$m broke the harness (exit 2) — not evidence any assertion works"; rc=1 ;;
                 *) echo "::error::MUTATE=$m exited $s — neither a clean pass nor a recognised failure"; rc=1 ;;
               esac
+              # Exit 1 is the expected outcome and says all it needs to. Every
+              # other exit is a question whose answer sat in output this step
+              # discarded: exit 2 is `_die`, which NAMES the mutation target it
+              # could not find, and exit 0 needs the pass table to show which
+              # assertion should have caught the mutation and did not. Without
+              # this, a red run here says only "exited 2" and has to be
+              # reproduced locally before it means anything (review r10).
+              if (( s != 1 )); then
+                echo "--- MUTATE=$m suite output (exit $s) ---"
+                cat "$log"
+                echo "--- end MUTATE=$m output ---"
+              fi
+              rm -f "$log"
             done
           done
           exit $rc

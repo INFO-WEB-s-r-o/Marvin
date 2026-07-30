@@ -34,6 +34,7 @@
 #     MUTATE=no_ipv6_brackets     parse IPv6 literals as host:port
 #     MUTATE=public_always_true   accept every address as public
 #     MUTATE=throttle_outranks_pin  put the throttle window ahead of pin_failed
+#     MUTATE=status_ignores_pin   drop pin_failed from the published status
 # Each must turn some assertion below RED. If a mutation changes nothing, the
 # test it was aimed at is not testing anything.
 # =============================================================================
@@ -92,11 +93,13 @@ cp "$SRC" "$BODY"
     _extract _http_check
     echo
     _extract _public_ip
+    echo
+    _extract _domain_status
 } > "$UNIT"
 
 # Confirm we actually captured whole functions, not a fragment that happens to
 # parse in isolation.
-for fn in _is_public_ipv4 _http_check _public_ip; do
+for fn in _is_public_ipv4 _http_check _public_ip _domain_status; do
     grep -q "^${fn}() {" "$UNIT" || _die "extraction lost ${fn}()"
 done
 
@@ -175,6 +178,37 @@ new = (['        if [[ "$interval_min" -gt 0 ]] && (( now_epoch - last_epoch < i
 open(p, 'w', encoding='utf-8').write('\n'.join(lines[:i] + new + lines[k:]))
 PYEOF
         bash -n "$BODY" || _die "mutation throttle_outranks_pin produced unparseable bash"
+        ;;
+    status_ignores_pin)
+        # Delete the pin_failed arm from _domain_status, restoring the exact
+        # chain this shipped with through review round 9: the status decision
+        # starts at http_code, so a domain whose pin failed but whose checks
+        # never set http_code publishes "healthy". Section 6 must go red.
+        grep -q '^    if (( pin_failed == 1 )); then' "$UNIT" \
+            || _die "mutation target 'if (( pin_failed == 1 ))' not found in _domain_status"
+        python3 - "$UNIT" <<'PYEOF' || _die "could not drop the pin_failed arm"
+import sys
+p = sys.argv[1]
+lines = open(p, encoding='utf-8').read().split('\n')
+PIN = '    if (( pin_failed == 1 )); then'
+try:
+    i = lines.index(PIN)
+except ValueError:
+    sys.exit(1)
+# The arm is the `if` line plus its body, up to the next `elif` at the same
+# depth; that elif is promoted to `if` so the chain still parses. Rewriting
+# only the keyword would leave a dangling arm — unparseable bash, which reads
+# exactly like a vacuous assertion (#969, round 9).
+j = next((n for n in range(i + 1, len(lines))
+          if lines[n].startswith('    elif ')), None)
+if j is None:
+    sys.exit(1)
+promoted = '    if ' + lines[j][len('    elif '):]
+open(p, 'w', encoding='utf-8').write('\n'.join(lines[:i] + [promoted] + lines[j + 1:]))
+PYEOF
+        bash -n "$UNIT" || _die "mutation status_ignores_pin produced unparseable bash"
+        grep -q 'pin_failed == 1' "$UNIT" \
+            && _die "mutation status_ignores_pin left the pin_failed test in place"
         ;;
     *) _die "unknown MUTATE='$MUTATE' (try MUTATE=list)" ;;
 esac
@@ -397,6 +431,53 @@ _eq "comment stripping removes prose mentions" "stripped" \
         && { grep -qE '#.*ORDER IS LOAD-BEARING' <<<"$_ord" \
              && echo "NOT STRIPPED — assertion would match comments" || echo stripped; } \
         || echo "no comment mentions pin_failed — arm is vacuous" )"
+
+# ═══ 6. Published status — a failed pin outranks every check ═══════════════
+echo "─── an unreached host is never published healthy (#965 r10) ───"
+# The #969 fix put pin_failed ahead of the throttle window INSIDE the http
+# branch. That closes the throttle route and no other: the http branch is not
+# on every path. A domain with pin_public_dns and checks ["ssl"] skips it
+# entirely, so pin_failed was consulted nowhere, http_code/ssl_days/dns stayed
+# null/null/skipped, no failing condition matched — and the run published
+# "healthy" for a host whose address public DNS had refused to give us, with
+# probed_ip: null beside it. #964's false green by a fourth route.
+#
+# Behavioural, not structural: _domain_status is a function precisely so these
+# combinations can be EXECUTED rather than grepped for. Reviewed round 10 read
+# this as a missing log line; a log line would have left the status "healthy".
+_st() { _domain_status "$1" "$2" "$3" "$4"; }
+
+#                                                        pin http    ssl  dns
+_eq "pin failed, nothing checked"        "failing" "$(_st 1 null    null skipped)"
+_eq "pin failed, ssl-only domain"        "failing" "$(_st 1 null    52   skipped)"
+_eq "pin failed, dns also checked"       "failing" "$(_st 1 null    null failing)"
+_eq "pin failed outranks a 200"          "failing" "$(_st 1 200     52   ok)"
+_eq "pin failed outranks curl's 000"     "failing" "$(_st 1 000     null skipped)"
+
+# Mirror half: with the pin intact the new arm must change NOTHING. A guard
+# that reddens every row is not evidence, it is a broken predicate.
+_eq "pin ok, nothing checked"            "healthy" "$(_st 0 null    null skipped)"
+_eq "pin ok, everything healthy"         "healthy" "$(_st 0 200     52   ok)"
+_eq "pin ok, no pin attempted at all"    "healthy" "$(_st 0 204     null skipped)"
+_eq "http 500 still fails"               "failing" "$(_st 0 500     52   ok)"
+_eq "http 400 still fails"               "failing" "$(_st 0 400     52   ok)"
+_eq "http 000 still fails"               "failing" "$(_st 0 000     null skipped)"
+_eq "http 199 still fails"               "failing" "$(_st 0 199     52   ok)"
+_eq "http 301 is healthy"                "healthy" "$(_st 0 301     52   ok)"
+_eq "http 399 is healthy"                "healthy" "$(_st 0 399     52   ok)"
+_eq "dns failure still fails"            "failing" "$(_st 0 null    null failing)"
+# SSL thresholds, each paired with the value one step the other side of the
+# boundary, so an off-by-one in either comparison is caught by a row rather
+# than argued about.
+_eq "ssl 13 days is critical"            "critical" "$(_st 0 200    13   ok)"
+_eq "ssl 14 days is warning"             "warning"  "$(_st 0 200    14   ok)"
+_eq "ssl 29 days is warning"             "warning"  "$(_st 0 200    29   ok)"
+_eq "ssl 30 days is healthy"             "healthy"  "$(_st 0 200    30   ok)"
+_eq "ssl 0 days is critical"             "critical" "$(_st 0 200    0    ok)"
+# Precedence between the surviving conditions is unchanged by this fix; asserted
+# so the reorder that introduced pin_failed cannot have quietly shuffled them.
+_eq "http failure outranks ssl expiry"   "failing"  "$(_st 0 503    5    ok)"
+_eq "ssl expiry outranks dns failure"    "critical" "$(_st 0 200    5    failing)"
 
 # ─── Report ──────────────────────────────────────────────────────────────────
 echo

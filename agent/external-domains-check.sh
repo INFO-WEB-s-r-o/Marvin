@@ -291,6 +291,39 @@ _dns_resolves() {
     fi
 }
 
+# Decide the status published for one domain. Any 2xx or 3xx counts as
+# healthy; everything else (including curl's 000 on connection failure) is
+# failing.
+#
+# pin_failed is tested FIRST and is not conditional on any check running.
+# Every other route into "not actually reached" is discovered by a check that
+# ran — but a failed pin is discovered before any check runs, and which checks
+# are configured decides nothing about whether the host was reached. Until
+# review round 10 of #965 this test lived inside the http branch, so a domain
+# with pin_public_dns and checks ["ssl"] left http_code/ssl_days/dns at
+# null/null/skipped, matched no failing condition, and published "healthy" for
+# a host whose address public DNS had refused to give us: #964's false green by
+# a fourth route, silent and with probed_ip: null sitting right beside it.
+#
+# This is a function rather than inline script so agent/tests/ can execute it
+# on those combinations instead of grepping the loop body for their shape.
+_domain_status() {
+    local pin_failed="$1" http_code="$2" ssl_days="$3" dns_status="$4"
+    if (( pin_failed == 1 )); then
+        echo "failing"
+    elif [[ "$http_code" != "null" ]] && { [[ "$http_code" -lt 200 ]] || [[ "$http_code" -ge 400 ]]; }; then
+        echo "failing"
+    elif [[ "$ssl_days" != "null" ]] && [[ "$ssl_days" -lt 14 ]]; then
+        echo "critical"
+    elif [[ "$ssl_days" != "null" ]] && [[ "$ssl_days" -lt 30 ]]; then
+        echo "warning"
+    elif [[ "$dns_status" == "failing" ]]; then
+        echo "failing"
+    else
+        echo "healthy"
+    fi
+}
+
 # Walk config and build results --------------------------------------------
 
 results_jsonl="$(mktemp)"
@@ -316,6 +349,11 @@ for i in $(seq 0 $((domain_count - 1))); do
         pin_ip=$(_public_ip "$host")
         pin_attempted=1
         [[ -z "$pin_ip" ]] && pin_failed=1
+        # Logged HERE, not inside the http branch, because the http branch is
+        # not on every path. A domain with pin_public_dns and checks ["ssl"]
+        # skips it entirely, so a pin failure used to be published in total
+        # silence (review round 10 of #965).
+        (( pin_failed == 1 )) && marvin_log "WARN" "external-domains-check: ${host} needs a public-DNS pin and public DNS did not answer — reported as failing, NOT probed unpinned"
     fi
 
     http_code="null"; http_ms="null"; ssl_days="null"; dns_status="skipped"
@@ -361,7 +399,9 @@ for i in $(seq 0 $((domain_count - 1))); do
             # failure (000 → "failing" below) rather than falling back to an
             # unpinned probe that loopback would answer 200.
             http_code="000"; http_ms="0"
-            marvin_log "WARN" "external-domains-check: ${host} needs a public-DNS pin and public DNS did not answer — reported as failing, NOT probed unpinned"
+            # The WARN for this is emitted once at pin-resolution time, not
+            # here: an ssl-only pinned domain never enters this block at all
+            # and must still say so out loud (review round 10 of #965).
             # Deliberately NO stamp write here. The stamp means "a probe was
             # actually attempted against the network"; nothing was. Stamping it
             # would start a throttle window on the strength of a failed DNS
@@ -407,18 +447,7 @@ for i in $(seq 0 $((domain_count - 1))); do
         dns_status=$(_dns_resolves "$host" "$pin_ip" "$pin_attempted")
     fi
 
-    # Normalise statuses. Any 2xx or 3xx counts as healthy; everything else
-    # (including curl's 000 on connection failure) is failing.
-    status="healthy"
-    if [[ "$http_code" != "null" ]] && { [[ "$http_code" -lt 200 ]] || [[ "$http_code" -ge 400 ]]; }; then
-        status="failing"
-    elif [[ "$ssl_days" != "null" ]] && [[ "$ssl_days" -lt 14 ]]; then
-        status="critical"
-    elif [[ "$ssl_days" != "null" ]] && [[ "$ssl_days" -lt 30 ]]; then
-        status="warning"
-    elif [[ "$dns_status" == "failing" ]]; then
-        status="failing"
-    fi
+    status=$(_domain_status "$pin_failed" "$http_code" "$ssl_days" "$dns_status")
 
     jq -nc \
         --arg id "$id" \
