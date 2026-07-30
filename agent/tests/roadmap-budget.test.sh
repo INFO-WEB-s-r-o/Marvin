@@ -231,6 +231,98 @@ else
     printf '  \033[33mSKIP\033[0m  real roadmap not readable at %s\n' "$REAL_ROADMAP"
 fi
 
+# ═══ 6. The awk implementation must not change the answer ═══════════════════
+# The budget is spent in awk's length() and enforced against run_claude's bash
+# ${#} — characters. gawk honours the locale; mawk counts bytes whatever the
+# locale, and mawk is installed here as a lower-priority alternative, so an
+# `apt remove gawk` would swap the unit under this function without a word.
+#
+# The direction is safe (bytes >= chars drops more history, never an unchecked
+# item). What is NOT safe is assuming the two therefore agree: they agree only
+# while the byte/char gap stays smaller than one entry. This section measures
+# that margin instead of asserting the platform.
+echo "─── gawk vs mawk: the unit must not move the cut ───"
+_build_unit none
+
+_shim() {  # _shim <impl> -> prints a dir whose `awk` is <impl>
+    local impl="$1" d ; d=$(mktemp -d)
+    printf '#!/bin/sh\nexec %s "$@"\n' "$impl" > "$d/awk" ; chmod +x "$d/awk"
+    printf '%s' "$d"
+}
+
+MAWK_BIN=$(command -v mawk || true)
+GAWK_BIN=$(command -v gawk || true)
+
+printf '  \033[36mINFO\033[0m  %-52s %s\n' "/usr/bin/awk resolves to" "$(readlink -f "$(command -v awk)")"
+for _impl in "$GAWK_BIN" "$MAWK_BIN"; do
+    [[ -n "$_impl" ]] && printf '  \033[36mINFO\033[0m  %-52s %s\n' \
+        "$(basename "$_impl") length(\"—\") [1=chars, 3=bytes]" "$(LANG=C.UTF-8 "$_impl" 'BEGIN{print length("—")}')"
+done
+
+if [[ -z "$MAWK_BIN" || -z "$GAWK_BIN" ]]; then
+    # Not a pass. A comparison that could not run must not read as agreement.
+    printf '  \033[33mSKIP\033[0m  %-52s gawk=[%s] mawk=[%s] — cannot compare\n' \
+        "both awk implementations required" "$GAWK_BIN" "$MAWK_BIN"
+elif [[ ! -r "$REAL_ROADMAP" ]]; then
+    printf '  \033[33mSKIP\033[0m  real roadmap not readable at %s\n' "$REAL_ROADMAP"
+else
+    SH_G=$(_shim "$GAWK_BIN") ; SH_M=$(_shim "$MAWK_BIN")
+
+    OUT_G=$( PATH="$SH_G:$PATH" ; _bounded_roadmap "$REAL_ROADMAP" "$_ROADMAP_RECENT_BUDGET" )
+    OUT_M=$( PATH="$SH_M:$PATH" ; _bounded_roadmap "$REAL_ROADMAP" "$_ROADMAP_RECENT_BUDGET" )
+
+    _eq "real file: gawk and mawk keep the same entry count" \
+        "$(_count_entries "$OUT_G")" "$(_count_entries "$OUT_M")"
+    _eq "real file: gawk and mawk emit identical text" \
+        "same" "$([[ "$OUT_G" == "$OUT_M" ]] && echo same || echo DIVERGED)"
+
+    # How much margin is left before the unit choice DOES move the cut: the
+    # running counts at the last entry boundary both still accept. When this
+    # approaches zero the two are one appended entry away from disagreeing.
+    _cum() {  # _cum <impl> -> "<entry> <cum>" per boundary
+        tail -n +"$(grep -n -F -x "$_ROADMAP_LOG_HEADER" "$REAL_ROADMAP" | head -1 | cut -d: -f1)" "$REAL_ROADMAP" \
+            | LANG=C.UTF-8 "$1" '/^- \[x\] \*\*\[/ { n++; printf "%d %d\n", n, acc } { acc += length($0) + 1 }'
+    }
+    LAST_KEPT=$(_count_entries "$OUT_G")
+    CUM_G=$(_cum "$GAWK_BIN" | awk -v k="$LAST_KEPT" '$1==k{print $2}')
+    CUM_M=$(_cum "$MAWK_BIN" | awk -v k="$LAST_KEPT" '$1==k{print $2}')
+    if [[ -n "$CUM_G" && -n "$CUM_M" ]]; then
+        printf '  \033[36mINFO\033[0m  %-52s gawk=%s mawk=%s lead=%s margin=%s\n' \
+            "units at the last accepted boundary (budget $_ROADMAP_RECENT_BUDGET)" \
+            "$CUM_G" "$CUM_M" "$((CUM_M - CUM_G))" "$((_ROADMAP_RECENT_BUDGET - CUM_M))"
+    fi
+
+    # The mirror half: prove the comparison above CAN report DIVERGED. A fixture
+    # padded with em-dashes (3 bytes, 1 char) makes the byte/char gap larger
+    # than an entry, so the two implementations must land on different entries.
+    # If this arm agrees, the comparison is vacuous and nothing above is evidence.
+    MBF=$(mktemp)
+    {
+        echo '# Possible Enhancements' ; echo
+        echo '## Phase 1 — Survival' ; echo '- [ ] UNCHECKED-ITEM-1' ; echo
+        echo "$_ROADMAP_LOG_HEADER" ; echo
+        _pad=$(for _i in $(seq 1 200); do printf '—'; done)
+        for _i in $(seq 1 30); do
+            echo "- [x] **[2026-07-01]** ENTRY-${_i} ${_pad}"
+            echo "  ENTRY-${_i}-END" ; echo
+        done
+    } > "$MBF"
+    MB_G=$( PATH="$SH_G:$PATH" ; _bounded_roadmap "$MBF" 3000 )
+    MB_M=$( PATH="$SH_M:$PATH" ; _bounded_roadmap "$MBF" 3000 )
+    MB_KG=$(_count_entries "$MB_G") ; MB_KM=$(_count_entries "$MB_M")
+    if [[ "$MB_KG" == "$MB_KM" ]]; then
+        printf '  \033[31mFAIL\033[0m  %-52s MUTATION INEFFECTIVE — both kept %s\n' \
+            "multibyte fixture must split the two awks" "$MB_KG"; FAIL=$((FAIL+1))
+    else
+        printf '  \033[32mPASS\033[0m  %-52s MUTATION EFFECTIVE (gawk %s, mawk %s)\n' \
+            "multibyte fixture splits the two awks" "$MB_KG" "$MB_KM"; PASS=$((PASS+1))
+    fi
+    # Even diverged, the load-bearing invariant must hold under BOTH.
+    _eq "multibyte fixture: unchecked item survives under gawk" "1" "$(_count_unchecked "$MB_G")"
+    _eq "multibyte fixture: unchecked item survives under mawk" "1" "$(_count_unchecked "$MB_M")"
+    rm -rf "$SH_G" "$SH_M" "$MBF"
+fi
+
 echo
 echo "───────────────────────────────────────────"
 printf ' roadmap budget tests: %d pass, %d fail\n' "$PASS" "$FAIL"

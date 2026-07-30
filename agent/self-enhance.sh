@@ -162,10 +162,25 @@ ENHANCE_PROMPT=$(marvin_build_prompt "enhance" identity security-rules)
 # blunt slice this exists to avoid, just moved upstream.
 #
 # The budget counts in the SAME unit run_claude's cut uses. Both are characters
-# under the cron locale (LANG=C.UTF-8), because awk length() and bash ${#var}
-# each follow the locale — see the measurement in lib/claude.sh. Do not "fix"
-# either side to count bytes on its own; the two agreeing is the property that
-# matters, and this file's 2,101 multibyte bytes are 0.8% of the headroom.
+# under the cron locale (LANG=C.UTF-8): bash ${#var} follows the locale, and so
+# does GNU awk — see the measurement in lib/claude.sh. Do not "fix" either side
+# to count bytes on its own; the two agreeing is the property that matters.
+#
+# "awk" here means gawk specifically, NOT awk generally. mawk — which Ubuntu
+# ships as the lower-priority alternative and which IS installed on this host
+# (update-alternatives: gawk 10, mawk 5) — counts BYTES whatever the locale:
+# length("—") is 3 under mawk, 1 under gawk. So if gawk is ever removed this
+# awk silently becomes byte-oriented.
+#
+# That failure is safe in DIRECTION but not free in MARGIN. Safe, because
+# bytes >= chars, so mawk drops more completed history and never an unchecked
+# item (those live above the header and are emitted verbatim). Not free,
+# because the two only agree while the discrepancy stays smaller than one
+# entry: measured on this file at the entry-15 boundary, mawk's running count
+# leads gawk's by 502 units with 488 units left before it would drop an entry
+# early — and that lead grows with every entry appended. The agreement is a
+# 488-unit coincidence, not a construction. §6 of the test suite runs both
+# awks against the real roadmap and fails if their output diverges.
 _ROADMAP_LOG_HEADER='## Completed Enhancements Log'
 _ROADMAP_RECENT_BUDGET=60000
 
