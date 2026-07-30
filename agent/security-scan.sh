@@ -840,7 +840,22 @@ f2b_policy_status="skipped"
 f2b_policy_checked=0
 f2b_policy_drift=0
 f2b_policy_drift_list=""
-F2B_BOOTSTRAP="$(cd "$(dirname "$0")/.." && pwd)/setup/bootstrap.sh"
+# ${MARVIN_DIR}, not a $0-derived root, and the reason is not the path
+# convention. The daemon side of this comparison is always the deployed host's,
+# and the verdict is written to ${DATA_DIR}/security/scan-*.json — also
+# ${MARVIN_DIR} — where it gates overall_status. A $0-derived baseline follows
+# whatever checkout invoked the script, so a worktree run scores the deployed
+# host against a tree the deployed host does not have, and writes that verdict
+# into the deployed host's report. Both sides must name the same tree.
+#
+# Measured, since it inverts an earlier decline on this branch: run from a
+# worktree of THIS branch, live findtime=3600 is compared against this branch's
+# own bootstrap.sh (3600) and yields "match"; from ${MARVIN_DIR} it is compared
+# against main (600, inherited) and yields drift. Until this PR merges, drift is
+# the true answer — a clean rebuild from tracked source would not reproduce the
+# running policy. "Match" was not a false positive avoided, it was a false clean
+# written to the live report by the branch that caused the drift.
+F2B_BOOTSTRAP="${MARVIN_DIR}/setup/bootstrap.sh"
 
 if ! command -v fail2ban-client &>/dev/null; then
     f2b_policy_status="unavailable"
