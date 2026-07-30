@@ -48,29 +48,45 @@ _public_ip() {
     # grep exits 1 with no match, which under `pipefail` fails the assignment —
     # hence the explicit `|| ip=""`. Empty is a failure signal here, not a
     # default that lets the check continue.
-    ip=$(dig +short +time=3 +tries=1 "$host" A @8.8.8.8 2>/dev/null \
+    # +tries=2: one dropped UDP packet must not flip a healthy domain to
+    # "failing". This monitor only earns its place by being more trustworthy
+    # than the loopback check it replaces, and a resolver that cries wolf on
+    # ordinary jitter is not (review of #965).
+    ip=$(dig +short +time=3 +tries=2 "$host" A @8.8.8.8 2>/dev/null \
          | grep -Ex '[0-9]{1,3}(\.[0-9]{1,3}){3}' | tail -1) || ip=""
     printf '%s' "$ip"
 }
 
 _http_check() {
-    # Echoes: "<http_code> <time_total_ms>"
+    # Echoes: "<http_code> <time_total_ms> <final_host>"
     # With host+pin_ip, curl is forced to the public address instead of whatever
     # /etc/hosts says. TLS is unaffected: SNI and cert verification still use
     # the hostname, so this probes the same certificate over the real path.
+    #
+    # The third field exists because `--resolve` pins ONE host:port pair while
+    # `-L` will happily follow a redirect to a different hostname, and that hop
+    # resolves through the local resolver again — the pin silently stops
+    # applying mid-request. The caller compares it and refuses to call the
+    # result external if the probe ended up somewhere else (review of #965).
+    # NOTE: nothing in here may call marvin_log — this function's stdout is
+    # parsed by its caller, and a log line would be read as a field.
     local url="$1" host="${2:-}" pin_ip="${3:-}"
-    local out code rt_s rt_ms
+    local out code rt_s rt_ms url_eff final_host
     local -a pin=()
     if [[ -n "$host" && -n "$pin_ip" ]]; then
         pin=(--resolve "${host}:443:${pin_ip}" --resolve "${host}:80:${pin_ip}")
     fi
-    out=$(curl -so /dev/null -w '%{http_code} %{time_total}' \
-              --max-time 15 ${pin[@]+"${pin[@]}"} -L "$url" 2>/dev/null) || out="000 0"
-    [[ -z "$out" ]] && out="000 0"
-    code="${out%% *}"
-    rt_s="${out##* }"
+    out=$(curl -so /dev/null -w '%{http_code} %{time_total} %{url_effective}' \
+              --max-time 15 ${pin[@]+"${pin[@]}"} -L "$url" 2>/dev/null) || out="000 0 "
+    [[ -z "$out" ]] && out="000 0 "
+    read -r code rt_s url_eff <<<"$out"
     rt_ms=$(awk -v t="$rt_s" 'BEGIN{printf "%.0f", t * 1000}' 2>/dev/null) || rt_ms="0"
-    echo "$code $rt_ms"
+    # scheme://[user@]host[:port]/… → host
+    final_host="${url_eff#*://}"
+    final_host="${final_host%%/*}"
+    final_host="${final_host##*@}"
+    final_host="${final_host%%:*}"
+    echo "$code $rt_ms $final_host"
 }
 
 _ssl_days() {
@@ -130,7 +146,9 @@ for i in $(seq 0 $((domain_count - 1))); do
     # public interface, or routing (#964).
     pin_public=$(jq -r ".domains[$i].pin_public_dns // false" "$CONFIG_FILE")
     pin_ip=""; pin_failed=0
-    if [[ "$pin_public" == "true" ]]; then
+    # Only resolve when a check will actually connect. A pinned domain with just
+    # a "dns" check would otherwise spend a public query per run on nothing.
+    if [[ "$pin_public" == "true" ]] && jq -e '(index("http") // index("ssl")) != null' <<<"$checks" >/dev/null; then
         pin_ip=$(_public_ip "$host")
         [[ -z "$pin_ip" ]] && pin_failed=1
     fi
@@ -177,8 +195,17 @@ for i in $(seq 0 $((domain_count - 1))); do
             echo "$now_epoch" > "$stamp_file"
         else
             http_pair=$(_http_check "$url" "$host" "$pin_ip")
-            http_code="${http_pair%% *}"
-            http_ms="${http_pair##* }"
+            read -r http_code http_ms final_host <<<"$http_pair"
+            if [[ -n "$pin_ip" && -n "$final_host" && "$final_host" != "$host" ]]; then
+                # `--resolve` pinned ${host}; the request ended on ${final_host},
+                # whose address came from the local resolver — which is the very
+                # thing being routed around. Whatever this measured, it is not
+                # proof that ${host} is reachable from outside, so it must not
+                # be published as healthy. Fix by pinning the redirect target
+                # too, or by giving it its own config entry.
+                marvin_log "WARN" "external-domains-check: ${host} redirected to ${final_host}, outside the pin — result discarded, NOT published as reachable"
+                http_code="000"; http_ms="0"
+            fi
             echo "$now_epoch" > "$stamp_file"
         fi
     fi
