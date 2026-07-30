@@ -865,16 +865,31 @@ else
         # Emits: jail <TAB> key <TAB> derived value <TAB> origin(jail|DEFAULT).
         # WATCH goes through the environment, not `awk -v`: -v escape-processes
         # its value, which has made an in-use guard fail open before (#923).
+        # Comment handling mirrors fail2ban, which builds its parser with
+        # inline_comment_prefixes=";" (configparserinc.py:137) and leaves the
+        # default whole-line prefixes "#" and ";". So `; ` ends a value and `# `
+        # does not — `findtime = 3600  # an hour` really is the value "3600  # an
+        # hour" to fail2ban, and deriving a bare 3600 here would invent a drift
+        # that the daemon does not have. Section headers end at the *last* `]`,
+        # which is what configparser's greedy SECTCRE resolves to; a header line
+        # with no `]` is one configparser rejects outright, so refuse the file
+        # rather than guess at a name.
         f2b_expected=$(printf '%s\n' "$f2b_src" | F2B_WATCH="$F2B_WATCH_KEYS" awk '
-            /^[ \t]*#/  { next }
-            /^[ \t]*\[/ { sec=$0; gsub(/^[ \t]*\[|\][ \t]*$/,"",sec); next }
+            /^[ \t]*[#;]/ { next }
+            /^[ \t]*\[/ {
+                sec=$0; sub(/^[ \t]*\[/,"",sec)
+                if (!match(sec, /\]/)) { hdr_bad=1; next }
+                match(sec, /\][^]]*$/); sec=substr(sec, 1, RSTART-1)
+                next
+            }
             /=/ {
                 k=$0; sub(/=.*/,"",k); gsub(/[ \t]/,"",k)
-                v=$0; sub(/^[^=]*=[ \t]*/,"",v); gsub(/[ \t]+$/,"",v)
+                v=$0; sub(/^[^=]*=[ \t]*/,"",v); sub(/[ \t]+;.*$/,"",v); gsub(/[ \t]+$/,"",v)
                 vals[sec SUBSEP k]=v
                 if (sec != "DEFAULT" && sec != "") jails[sec]=1
             }
             END {
+                if (hdr_bad) exit 1
                 n=split(ENVIRON["F2B_WATCH"], w, " ")
                 for (j in jails) for (i=1; i<=n; i++) {
                     k=w[i]
