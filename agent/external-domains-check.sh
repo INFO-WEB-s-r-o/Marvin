@@ -73,10 +73,23 @@ _is_public_ipv4() {
         # octal, and "010" is not 8 here.
         (( 10#$o <= 255 )) || return 1
     done
-    o1=$((10#$o1)); o2=$((10#$o2))
+    o1=$((10#$o1)); o2=$((10#$o2)); o3=$((10#$o3))
     # One `if` rather than a chain of `(( … )) && return 1`: a false arithmetic
     # command at statement level exits 1, and under `set -e` that aborts the
     # script instead of falling through to the next range.
+    #
+    # The second group is the rest of the IANA special-purpose registry:
+    # TEST-NET-1/2/3 (RFC 5737), IETF protocol assignments (192.0.0.0/24) and
+    # the benchmarking range (RFC 2544). None of them are reachable across the
+    # public internet. Today they change no outcome — a pin to one of these
+    # would simply time out and the domain would be reported `failing` anyway —
+    # so this is not a bug fix. It is the same argument that put the octet
+    # bound above: the predicate is named "is this routable from outside", it
+    # is unit-tested as that, and it should answer that question on its own
+    # rather than leave a class of unroutable answers to be caught downstream
+    # by a connection error. The failure text differs too — "rejected, not
+    # pinning" names the cause, where a timeout looks like the site is down
+    # (#965 review r7).
     if (( o1 == 0                                 \
        || o1 == 10                                \
        || o1 == 127                               \
@@ -85,6 +98,13 @@ _is_public_ipv4() {
        || (o1 == 169 && o2 == 254)                \
        || (o1 == 100 && o2 >= 64 && o2 <= 127)    \
        || o1 >= 224 )); then
+        return 1
+    fi
+    if (( (o1 == 192 && o2 == 0   && o3 == 0)     \
+       || (o1 == 192 && o2 == 0   && o3 == 2)     \
+       || (o1 == 198 && o2 == 51  && o3 == 100)   \
+       || (o1 == 203 && o2 == 0   && o3 == 113)   \
+       || (o1 == 198 && (o2 == 18 || o2 == 19)) )); then
         return 1
     fi
     return 0

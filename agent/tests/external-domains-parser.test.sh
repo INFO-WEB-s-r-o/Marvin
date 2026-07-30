@@ -225,6 +225,28 @@ for ip in 80.211.223.26 8.8.8.8 1.1.1.1 9.9.9.9 223.255.255.255 \
           100.63.255.255 100.128.0.1 11.0.0.1 126.255.255.255 1.0.0.0; do
     _eq "accept ${ip}" "public" "$(_pub "$ip")"
 done
+echo "─── _is_public_ipv4 rejects the rest of the special-purpose registry ───"
+# TEST-NET-1/2/3, IETF protocol assignments and the benchmarking range. Each
+# reject is paired with both of its neighbouring /24s (or /15) so the test
+# proves a bounded range and not a whole prefix quietly disappearing: a rule
+# written as `o1 == 203` would pass every reject row below and be caught only
+# by the accept rows.
+for ip in 192.0.0.1 192.0.0.255 192.0.2.1 192.0.2.255 \
+          198.51.100.1 198.51.100.255 203.0.113.1 203.0.113.255 \
+          198.18.0.1 198.19.255.255; do
+    _eq "reject ${ip}" "rejected" "$(_pub "$ip")"
+done
+for ip in 192.0.1.1 192.0.3.1 192.1.2.1 198.51.99.1 198.51.101.1 \
+          198.52.100.1 203.0.112.1 203.0.114.1 203.1.113.1 \
+          198.17.255.255 198.20.0.1; do
+    _eq "accept neighbour ${ip}" "public" "$(_pub "$ip")"
+done
+# NOTE for a future reader tempted to "fix" the inconsistency: section 1 pins
+# _http_check fixtures to 203.0.113.9, which this section now rejects. Both are
+# correct. _http_check takes an already-resolved pin as an argument and never
+# consults _is_public_ipv4 — the screening happens once, in _public_ip. RFC 5737
+# is exactly what a documentation fixture should use.
+
 echo "─── _is_public_ipv4 rejects malformed input ───"
 for bad in "" "abc" "1.2.3" "1.2.3.4.5" "256.1.1.1" "1.256.1.1" "1.1.1.256" \
            "-1.1.1.1" "1.1.1" "1.1.1.a" "999.999.999.999" " 8.8.8.8"; do
