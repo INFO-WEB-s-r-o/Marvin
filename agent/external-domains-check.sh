@@ -51,6 +51,45 @@ marvin_log_json "INFO" "external-domains-check" "External domain monitor startin
 # Overridable only for testing (see the resolver arms in PR #965).
 : "${PUBLIC_RESOLVERS:=8.8.8.8 1.1.1.1 9.9.9.9}"
 
+# True only for an address the public internet could actually be answering
+# from. A dotted-quad shape is NOT enough: this whole file exists because
+# robot-marvin.cz resolves to 127.0.1.1 and an unpinned probe therefore never
+# leaves the machine (#964). If an authoritative record — or a spoofed answer
+# to one of the public resolvers — returns a private or loopback address, then
+# `--resolve host:443:127.0.0.1` pins curl straight back onto loopback, and
+# #964 returns through the ANSWER'S CONTENT instead of /etc/hosts. Same false
+# green, no code path guarding it (#967).
+#
+# Octets are bounded here even though the caller's regex could not emit >255
+# from a `dig … A` render: this predicate does the arithmetic anyway, so the
+# bound is free, and it must be correct on its own inputs rather than on a
+# guarantee made by one call site — it is unit-tested directly (#968).
+_is_public_ipv4() {
+    local ip="$1" o1 o2 o3 o4 o
+    IFS=. read -r o1 o2 o3 o4 <<<"$ip"
+    for o in "$o1" "$o2" "$o3" "$o4"; do
+        [[ "$o" =~ ^[0-9]{1,3}$ ]] || return 1
+        # 10# forces base 10: a zero-padded octet would otherwise be read as
+        # octal, and "010" is not 8 here.
+        (( 10#$o <= 255 )) || return 1
+    done
+    o1=$((10#$o1)); o2=$((10#$o2))
+    # One `if` rather than a chain of `(( … )) && return 1`: a false arithmetic
+    # command at statement level exits 1, and under `set -e` that aborts the
+    # script instead of falling through to the next range.
+    if (( o1 == 0                                 \
+       || o1 == 10                                \
+       || o1 == 127                               \
+       || (o1 == 172 && o2 >= 16 && o2 <= 31)     \
+       || (o1 == 192 && o2 == 168)                \
+       || (o1 == 169 && o2 == 254)                \
+       || (o1 == 100 && o2 >= 64 && o2 <= 127)    \
+       || o1 >= 224 )); then
+        return 1
+    fi
+    return 0
+}
+
 _public_ip() {
     local host="$1" ip resolver
     command -v dig &>/dev/null || return 0
@@ -78,6 +117,20 @@ _public_ip() {
         # outage, so add AAAA here before adding one (review of #965).
         ip=$(dig +short +time=3 +tries=2 "$host" A "@${resolver}" 2>/dev/null \
              | grep -Ex '[0-9]{1,3}(\.[0-9]{1,3}){3}' | tail -1) || ip=""
+        # A well-formed answer pointing somewhere unroutable is treated exactly
+        # like no answer: try the next resolver, and if none is public, return
+        # empty so the caller's existing pin_failed path reports failing. Never
+        # pin to it — see _is_public_ipv4 (#967).
+        #
+        # This notice goes to STDERR on purpose. This function's stdout IS the
+        # resolved address (both call sites are command substitutions), and
+        # marvin_log writes to stdout — a log line here would be captured and
+        # then pinned as if it were an IP.
+        if [[ -n "$ip" ]] && ! _is_public_ipv4 "$ip"; then
+            printf 'external-domains-check: %s resolved to non-public address %s via %s — rejected, not pinning (#967)\n' \
+                   "$host" "$ip" "$resolver" >&2
+            ip=""
+        fi
         [[ -n "$ip" ]] && { printf '%s' "$ip"; return 0; }
     done
     # All public resolvers failed. Print nothing: the caller reads empty as

@@ -1,0 +1,73 @@
+name: Shell Tests
+
+# Runs the regression suites under agent/tests/ on every pull request.
+#
+# Why this workflow exists: agent/self-test.sh has no automatic caller — no cron
+# entry, no script invokes it, and claude-review.yml runs zero tests — so an
+# assertion added there only runs when an agent session decides to run it. A
+# test that may never execute is indistinguishable from no test. This job is the
+# live caller (#968).
+#
+# NOTE for whoever reads a green tick here: the `main` ruleset currently has NO
+# required status checks, so a red run does not block a merge. It is a visible
+# signal, not a gate. Making it a gate is a repo-settings change and therefore
+# Pavel's call, not something this workflow can assert for itself.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+jobs:
+  shell-tests:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Syntax-check every shell script
+        run: |
+          rc=0
+          while IFS= read -r -d '' f; do
+            bash -n "$f" || { echo "::error file=$f::bash -n failed"; rc=1; }
+          done < <(find agent setup -name '*.sh' -type f -print0)
+          exit $rc
+
+      - name: Run agent/tests suites
+        run: |
+          shopt -s nullglob
+          suites=(agent/tests/*.test.sh)
+          # An empty glob must not pass as "all tests green" — that is the
+          # failure mode where a renamed directory reports success forever.
+          if (( ${#suites[@]} == 0 )); then
+            echo "::error::no suites matched agent/tests/*.test.sh"
+            exit 1
+          fi
+          echo "discovered ${#suites[@]} suite(s)"
+          rc=0
+          for s in "${suites[@]}"; do
+            echo "═══ $s ═══"
+            bash "$s" || { echo "::error file=$s::suite failed"; rc=1; }
+          done
+          exit $rc
+
+      - name: Prove the suites can fail (mutation check)
+        # A suite that cannot fail is not evidence. Each named mutation breaks
+        # one behaviour under test; the suite MUST go red. If a mutation passes,
+        # the assertion aimed at it is vacuous and this step fails the build.
+        run: |
+          rc=0
+          for m in no_userinfo_strip no_scheme_port no_ipv6_brackets public_always_true; do
+            if MUTATE="$m" bash agent/tests/external-domains-parser.test.sh >/dev/null 2>&1; then
+              echo "::error::MUTATE=$m did NOT fail the suite — that assertion is vacuous"
+              rc=1
+            else
+              echo "MUTATE=$m -> suite failed as required"
+            fi
+          done
+          exit $rc
