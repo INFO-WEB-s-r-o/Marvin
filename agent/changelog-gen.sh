@@ -127,6 +127,17 @@ done < <(find "$ENHANCE_DIR" -maxdepth 1 -name "*.md" -type f 2>/dev/null | sort
 # (`## [Unreleased]`, `### Fixed`) clears the current date rather than letting
 # the previous one leak downward, so undated entries are skipped instead of
 # being published under a day they don't belong to.
+#
+# DORMANT AGAINST THE CURRENT FILE, AND THAT IS THE CORRECT RESULT. Measured
+# 2026-07-30: CHANGELOG.md holds 86 header lines and *zero* carry a date — it is
+# one open `## [Unreleased]` section of repeated `### Added`/`### Fixed`, the
+# Keep-a-Changelog shape, never cut into dated releases. So this block captures
+# 0 items today, against 22 before the header rule; all 22 were dated by prose
+# the parser had mistaken for a header. The published changelog therefore comes
+# entirely from ENHANCE_DIR, which is where its dates were always trustworthy.
+# The block re-activates by itself if the file ever gains `## YYYY-MM-DD`
+# headers. If you are here because you expected CHANGELOG.md bullets on the
+# dashboard and found none, the file's shape is the reason, not this loop.
 changelog_file="${MARVIN_DIR}/CHANGELOG.md"
 cl_header_re='^(#+)[[:space:]]'
 if [[ -f "$changelog_file" ]]; then
