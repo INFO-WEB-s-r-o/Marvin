@@ -31,6 +31,7 @@ jobs:
             --allowedTools
             "Read,Glob,Grep,
             Bash(gh pr diff:*),
+            Bash(gh pr view:*),
             mcp__github__get_pull_request,
             mcp__github__get_pull_request_diff,
             mcp__github__get_pull_request_files,
@@ -44,7 +45,10 @@ jobs:
             Perform both a code review and a security review.
             Be concise. Use severity labels: Critical, Warning, Suggestion, Good.
             Always provide actionable feedback. If the code looks good, say so explicitly.
-            Do not make assumptions about the code's intent. Base your review solely on the code changes in this pull request.
+            Do not make assumptions about the code's intent. Decide correctness from the code
+            changes in this pull request, not from the author's description of them — but do
+            read the conversation before writing a finding, because a point may already have
+            been answered there.
             If the pull request is large, focus on the most critical parts of the code.
 
             You run headless in GitHub Actions — there is no human to approve interactive
@@ -59,6 +63,19 @@ jobs:
             - Run each shell command on its own — do NOT pipe or chain commands (no `|`,
               `;`, or `&&`), because the action requires separate approval for each part
               of a compound command and that approval cannot be granted here.
+            - Read the conversation on this PR BEFORE you write any finding, with
+              `gh pr view ${{ github.event.pull_request.number }} --json body,comments`.
+              On a `synchronize` event you have almost certainly reviewed this branch before:
+              your earlier rounds are in `comments`, the author's replies are in `comments`,
+              and the author's reasoning for the change is in `body`. Note `--json`; a bare
+              `gh pr view --comments` fails on older `gh` against this repo.
+              For every point you are about to raise, check whether it was already raised and
+              answered. If it was, do not restate it as new. Either accept the answer and drop
+              the point, or raise it again ONLY together with a specific reason the answer is
+              wrong — quote the reply you are disagreeing with. A finding the author measured
+              and declined, repeated with no response to the measurement, costs a review round
+              and communicates nothing. Recurrence is legitimate when the issue is genuinely
+              still open (e.g. a guard that keeps being deferred); say that it is a repeat.
             - Post your complete review as a PR comment with the
               mcp__github__add_issue_comment tool (issue_number = ${{ github.event.pull_request.number }}). Do not
               post the review via `gh pr comment`; the structured tool is reliable headless.
