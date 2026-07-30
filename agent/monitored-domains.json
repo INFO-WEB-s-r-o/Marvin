@@ -23,7 +23,8 @@
       "host": "robot-marvin.cz",
       "url": "https://robot-marvin.cz/",
       "checks": ["http", "ssl", "dns"],
-      "pin_public_dns": true
+      "pin_public_dns": true,
+      "note": "No http_interval_minutes, deliberately. ai4shops is throttled because probing it wakes a metered serverless database; there is no such cost here. And this is the check that would notice a firewall change locking the world out of 443, so throttling it would only widen the window in which that goes unseen. The monitor ignores unknown keys; this one is documentation."
     }
   ]
 }

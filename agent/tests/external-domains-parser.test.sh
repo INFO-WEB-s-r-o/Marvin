@@ -37,6 +37,20 @@
 # test it was aimed at is not testing anything.
 # =============================================================================
 
+# `-e` is absent where the rest of the repo uses `set -euo pipefail`. The
+# tempting explanation — that errexit would abort on the first failed
+# comparison instead of tallying every FAIL — is wrong, and was measured
+# before being written here: `_eq` decides with `if/else`, both branches
+# succeed, so an assertion failure is never a non-zero command and errexit has
+# nothing to fire on. Adding `-e` changes nothing. All five arms (unmutated
+# plus each of the four mutations) produce byte-identical tallies and exit
+# codes either way: 98/0 exit 0, 96/2, 91/7, 97/1, 54/44, each exit 1.
+#
+# So this is a free choice, not load-bearing, and that is the point of the
+# comment: leave it alone *or* change it, but do not do either believing it
+# protects the tally. What does protect the tally is `_eq` itself, and the CI
+# mutation step's insistence on exit 1 specifically — exit 2 is `_die`, a
+# broken harness, and is not accepted as evidence (#965 review r8).
 set -uo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/external-domains-check.sh"
