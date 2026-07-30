@@ -1858,6 +1858,13 @@ marvin_log "INFO" "Self-test: checking live systemd drop-ins trace to a merged s
 
 # Drop-ins owned by the distro / cloud-init. Listed by exact path, not by
 # pattern: a pattern broad enough to cover these would also cover ours.
+#
+# This list is a standing maintenance point, not a one-off record of today's
+# host. Any NEW distro- or cloud-init-owned drop-in that appears here will WARN
+# for classification until it is added — deliberately, because that WARN is the
+# only moment anyone is asked whether the file is really foreign. Adding an
+# entry is the cheap half; the expensive half would be a wildcard that silently
+# absorbed one of ours.
 _foreign_dropins=(
     "/etc/systemd/system/sshd-keygen@.service.d/disable-sshd-keygen-if-cloud-init-active.conf"
 )
@@ -1912,8 +1919,19 @@ else
         if printf '%s\n' "$_merged_tree" \
             | H="$_live_hash" awk '$2 == "blob" && $3 == ENVIRON["H"] { found = 1 } END { exit !found }'; then
             test_pass "merged-source provenance: ${_dropin} — reproducible from ${_merged_ref}"
+        # `cat-file -e` asks the object store, which is a wider question than
+        # "is it committed". Verified rather than assumed, in a scratch repo:
+        # a blob that was `git add`ed and never committed answers YES, and so
+        # does one whose only branch has since been deleted (dangling until gc).
+        # Neither is reachable from any commit. The wording below therefore says
+        # "exists in this repo" and names the branch case as the likely one
+        # instead of asserting it — an unmerged branch is by far the common
+        # cause here, but it is not the only thing that satisfies this probe.
+        # What the same experiment confirms is the load-bearing half: an
+        # untracked file hashed without -w answers NO, so this stays a real
+        # question about the store rather than one this check just seeded.
         elif git -C "${MARVIN_DIR}" cat-file -e "$_live_hash" 2>/dev/null; then
-            test_warn "merged-source provenance: ${_dropin} — its exact content IS committed in this repo but is NOT reachable from ${_merged_ref}: the source is sitting on a branch, and a rebuild from main would not produce this file (#961)"
+            test_warn "merged-source provenance: ${_dropin} — its exact content exists in this repo's object store but is NOT reachable from ${_merged_ref}: most likely a source sitting on an unmerged branch (a staged-but-uncommitted or recently-deleted-branch object would also land here), and a rebuild from main would not produce this file (#961)"
         else
             test_warn "merged-source provenance: ${_dropin} — no merged source: nothing in ${_merged_ref} has this content, and neither does any commit in this repo (#961)"
         fi
