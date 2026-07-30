@@ -78,20 +78,27 @@ _public_ip() {
 }
 
 _http_check() {
-    # Echoes: "<http_code> <time_total_ms> <final_host>"
+    # Echoes: "<http_code> <time_total_ms> <final_authority>"
     # With host+pin_ip, curl is forced to the public address instead of whatever
     # /etc/hosts says. TLS is unaffected: SNI and cert verification still use
     # the hostname, so this probes the same certificate over the real path.
     #
     # The third field exists because `--resolve` pins ONE host:port pair while
-    # `-L` will happily follow a redirect to a different hostname, and that hop
-    # resolves through the local resolver again — the pin silently stops
-    # applying mid-request. The caller compares it and refuses to call the
-    # result external if the probe ended up somewhere else (review of #965).
+    # `-L` will happily follow a redirect elsewhere, and that hop resolves
+    # through the local resolver again — the pin silently stops applying
+    # mid-request. The caller compares it and refuses to call the result
+    # external if the probe ended up off the pin (review of #965).
+    #
+    # It is the full authority (host:port), not the hostname: `--resolve` is
+    # scoped to the exact port it names, so a same-host redirect to another
+    # port — https://host:8443/… — leaves the pin while the hostname still
+    # matches, and that hop goes through the local resolver unnoticed (#966).
+    # Verified rather than assumed: with only `host:80` pinned, curl answers
+    # `http://host/` through the pin but fails to resolve `http://host:9099/`.
     # NOTE: nothing in here may call marvin_log — this function's stdout is
     # parsed by its caller, and a log line would be read as a field.
     local url="$1" host="${2:-}" pin_ip="${3:-}"
-    local out code rt_s rt_ms url_eff final_host
+    local out code rt_s rt_ms url_eff scheme auth final_host final_port
     local -a pin=()
     if [[ -n "$host" && -n "$pin_ip" ]]; then
         pin=(--resolve "${host}:443:${pin_ip}" --resolve "${host}:80:${pin_ip}")
@@ -101,12 +108,38 @@ _http_check() {
     [[ -z "$out" ]] && out="000 0 "
     read -r code rt_s url_eff <<<"$out"
     rt_ms=$(awk -v t="$rt_s" 'BEGIN{printf "%.0f", t * 1000}' 2>/dev/null) || rt_ms="0"
-    # scheme://[user@]host[:port]/… → host
-    final_host="${url_eff#*://}"
-    final_host="${final_host%%/*}"
-    final_host="${final_host##*@}"
-    final_host="${final_host%%:*}"
-    echo "$code $rt_ms $final_host"
+    # scheme://[user@]host[:port][/…] → "host:port". Authority ends at the first
+    # of / ? # — a path or query may itself contain ':' or '@'.
+    scheme="${url_eff%%://*}"
+    auth="${url_eff#*://}"
+    auth="${auth%%[/?#]*}"
+    auth="${auth##*@}"
+    if [[ -z "$auth" ]]; then
+        # curl failed before any URL was resolved. Emit two fields, as before:
+        # the caller reads an empty third field and leaves its verdict alone,
+        # because code is 000 and that already means failing.
+        echo "$code $rt_ms"
+        return
+    fi
+    if [[ "$auth" == \[*\]* ]]; then        # IPv6 literal: [::1]:8443
+        final_host="${auth%%\]*}]"
+        final_port="${auth##*\]}"
+    else
+        final_host="${auth%%:*}"
+        final_port="${auth#"$final_host"}"
+    fi
+    final_port="${final_port#:}"
+    if [[ -z "$final_port" ]]; then
+        case "${scheme,,}" in
+            https) final_port=443 ;;
+            http)  final_port=80 ;;
+            # Anything else (or a URL with no scheme at all) cannot have been
+            # covered by the pin. Emit a port that matches neither pinned pair
+            # so the caller fails closed instead of guessing.
+            *)     final_port="?" ;;
+        esac
+    fi
+    echo "$code $rt_ms ${final_host,,}:${final_port}"
 }
 
 _ssl_days() {
@@ -224,15 +257,21 @@ for i in $(seq 0 $((domain_count - 1))); do
             # window — delaying detection of a genuine outage (review of #965).
         else
             http_pair=$(_http_check "$url" "$host" "$pin_ip")
-            read -r http_code http_ms final_host <<<"$http_pair"
-            if [[ -n "$pin_ip" && -n "$final_host" && "$final_host" != "$host" ]]; then
-                # `--resolve` pinned ${host}; the request ended on ${final_host},
-                # whose address came from the local resolver — which is the very
-                # thing being routed around. Whatever this measured, it is not
-                # proof that ${host} is reachable from outside, so it must not
-                # be published as healthy. Fix by pinning the redirect target
-                # too, or by giving it its own config entry.
-                marvin_log "WARN" "external-domains-check: ${host} redirected to ${final_host}, outside the pin — result discarded, NOT published as reachable"
+            read -r http_code http_ms final_auth <<<"$http_pair"
+            if [[ -n "$pin_ip" && -n "$final_auth" \
+                  && "$final_auth" != "${host,,}:80" && "$final_auth" != "${host,,}:443" ]]; then
+                # `--resolve` pinned ${host}:80 and ${host}:443 and nothing else.
+                # The request ended on ${final_auth}, whose address came from the
+                # local resolver — which is the very thing being routed around.
+                # Whatever this measured, it is not proof that ${host} is
+                # reachable from outside, so it must not be published as healthy.
+                # Fix by pinning the redirect target too, or by giving it its own
+                # config entry.
+                #
+                # Comparing the whole authority catches both escapes with one
+                # test: a different hostname, and the same hostname on a port the
+                # pin does not cover (#966).
+                marvin_log "WARN" "external-domains-check: ${host} redirected to ${final_auth}, outside the pinned ${host}:80/${host}:443 — result discarded, NOT published as reachable"
                 http_code="000"; http_ms="0"
             fi
             echo "$now_epoch" > "$stamp_file"
