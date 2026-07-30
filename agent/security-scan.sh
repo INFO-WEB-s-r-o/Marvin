@@ -874,6 +874,12 @@ _gnupg_ownership_drift() {
     # A walk that aborted partway must not be scored as a walk that found
     # nothing (#882 class). find exits non-zero on any unreadable subtree, so
     # capture the status rather than swallowing it with `|| true`.
+    #
+    # `\! -user` only — group ownership is deliberately out of scope, not an
+    # oversight. The diagnosed failure is that marvin cannot write files it does
+    # not own inside its own 0700 homedir; the group bits cannot grant or deny
+    # that through a 0700 directory, so a group-drift finding would be noise
+    # with no matching symptom.
     walk=$(find "$home" -mindepth 1 \! -user "$owner" -printf '%y\t%u\t%p\n' 2>/dev/null) || rc=$?
     if [[ "$rc" -ne 0 ]]; then
         printf 'unknown\t0\t0\tfind exited %s while walking %s\n' "$rc" "$home"
@@ -884,6 +890,20 @@ _gnupg_ownership_drift() {
         # Here-string, not a pipe: a `while read` behind `|` counts in a
         # subshell and both counters come back zero (see lessons: a memo behind
         # a subshell is inert). IFS split on tab only, so paths keep spaces.
+        #
+        # Pathological filenames were raised in review and then measured, since
+        # `%p\n` is not an unambiguous record terminator. Both cases keep the
+        # count — the only thing that gates status — correct:
+        #   tab in name: `read`'s last variable takes the remainder verbatim,
+        #     so fpath is the full path, tab intact. Counted once, exactly right.
+        #   newline in name: the record splits across two lines. The first is
+        #     counted with fpath truncated at the newline; the continuation line
+        #     carries no tab, so fowner/fpath come back empty and the `-z`
+        #     guard above skips it rather than counting a phantom entry.
+        # So a newline costs one truncated *sample string*, never a miscount.
+        # Verified against this exact loop with real tab- and newline-named
+        # files: 2 drifted files, 2 counted. Not defended further — a name like
+        # that inside a GPG homedir is itself the finding.
         while IFS=$'\t' read -r ftype fowner fpath; do
             [[ -z "$fpath" ]] && continue
             if [[ "$ftype" == "s" ]]; then
