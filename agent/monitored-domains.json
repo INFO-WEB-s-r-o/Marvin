@@ -16,6 +16,14 @@
       "url": "https://ai4shops.com/",
       "checks": ["http", "ssl", "dns"],
       "http_interval_minutes": 60
+    },
+    {
+      "id": "robot-marvin",
+      "name": "Marvin (this host)",
+      "host": "robot-marvin.cz",
+      "url": "https://robot-marvin.cz/",
+      "checks": ["http", "ssl", "dns"],
+      "pin_public_dns": true
     }
   ]
 }

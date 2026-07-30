@@ -115,7 +115,7 @@
 - [x] Monitor open ports and alert on unexpected listeners — _Expected port baseline in security-scan.sh, alerts with process info, port-inventory.json output_
 - [x] Add DNS resolution monitoring (check own domain resolves correctly) — _2026-03-13_
 - [x] Create latency monitoring: ping key endpoints, track over time — _2026-03-13_
-- [x] Implement HTTP endpoint monitoring: check own website returns 200 — _Already in health-monitor.sh: checks main page, blog API, blog content, static markdown_
+- [x] Implement HTTP endpoint monitoring: check own website returns 200 — _health-monitor.sh checks main page, blog API, blog content, static markdown — but over loopback: `/etc/hosts` maps the domain to 127.0.1.1, so those checks cannot see the firewall, the public interface, or routing (#964). The probe that reaches robot-marvin.cz the way the internet does is external-domains-check.sh, every 5 minutes, pinned to the public-DNS address._
 - [x] Monitor SSL certificate expiry dates — _2026-03-05_
 - [x] Track active network connections and flag suspicious ones — _2026-03-13_
 
