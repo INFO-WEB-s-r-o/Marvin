@@ -42,19 +42,39 @@ marvin_log_json "INFO" "external-domains-check" "External domain monitor startin
 # bypasses every UFW rule (`before.rules`: `-A ufw-before-input -i lo -j
 # ACCEPT`), so it would return a confident 200 for a site the internet cannot
 # reach at all. That false green is the whole point of #964.
+# Public recursive resolvers, tried in order until one returns an A record.
+# EVERY entry must be a public resolver reachable off this host. The system
+# resolver is deliberately absent and must stay absent: it reads /etc/hosts,
+# which is the exact thing being routed around, and would hand back 127.0.1.1.
+# A "fallback" to it would reinstate #964 inside the fix for #964 — the probe
+# would loop back to this machine while still reporting itself as external.
+# Overridable only for testing (see the resolver arms in PR #965).
+: "${PUBLIC_RESOLVERS:=8.8.8.8 1.1.1.1 9.9.9.9}"
+
 _public_ip() {
-    local host="$1" ip
+    local host="$1" ip resolver
     command -v dig &>/dev/null || return 0
-    # grep exits 1 with no match, which under `pipefail` fails the assignment —
-    # hence the explicit `|| ip=""`. Empty is a failure signal here, not a
-    # default that lets the check continue.
-    # +tries=2: one dropped UDP packet must not flip a healthy domain to
-    # "failing". This monitor only earns its place by being more trustworthy
-    # than the loopback check it replaces, and a resolver that cries wolf on
-    # ordinary jitter is not (review of #965).
-    ip=$(dig +short +time=3 +tries=2 "$host" A @8.8.8.8 2>/dev/null \
-         | grep -Ex '[0-9]{1,3}(\.[0-9]{1,3}){3}' | tail -1) || ip=""
-    printf '%s' "$ip"
+    # One resolver being blocked, rate-limited or briefly down must not report
+    # every pinned domain as failing — that is a false alarm about the firewall,
+    # which is worse than useless on a monitor whose whole job is to be trusted
+    # about the firewall (review of #965). First usable answer wins; a healthy
+    # domain therefore still costs exactly one query.
+    for resolver in $PUBLIC_RESOLVERS; do
+        # grep exits 1 with no match, which under `pipefail` fails the
+        # assignment — hence the explicit `|| ip=""`. Empty is a failure signal
+        # here, not a default that lets the check continue. The strict pattern
+        # also keeps CNAME lines and dig's error text out of the result.
+        # +tries=2: one dropped UDP packet must not flip a healthy domain to
+        # "failing". This monitor only earns its place by being more trustworthy
+        # than the loopback check it replaces, and a resolver that cries wolf on
+        # ordinary jitter is not (review of #965).
+        ip=$(dig +short +time=3 +tries=2 "$host" A "@${resolver}" 2>/dev/null \
+             | grep -Ex '[0-9]{1,3}(\.[0-9]{1,3}){3}' | tail -1) || ip=""
+        [[ -n "$ip" ]] && { printf '%s' "$ip"; return 0; }
+    done
+    # All public resolvers failed. Print nothing: the caller reads empty as
+    # "unchecked" and reports failing. It must never degrade to a local lookup.
+    printf ''
 }
 
 _http_check() {
@@ -114,13 +134,17 @@ _ssl_days() {
 }
 
 _dns_resolves() {
-    local host="$1" ip
+    # Same resolver policy as the pin, via the same helper. This check had its
+    # own copy of the query — one hardcoded resolver and +tries=1, i.e. the two
+    # defects round 1 fixed in _public_ip, still live one function down. A
+    # single dropped packet or one blocked resolver marked a domain's DNS
+    # "failing"; now it takes all three failing to say so.
+    local host="$1"
     if ! command -v dig &>/dev/null; then
         echo "skipped"
         return
     fi
-    ip=$(dig +short +time=3 +tries=1 "$host" A @8.8.8.8 2>/dev/null | tail -1)
-    if [[ -n "$ip" ]]; then
+    if [[ -n "$(_public_ip "$host")" ]]; then
         echo "ok"
     else
         echo "failing"
@@ -192,7 +216,12 @@ for i in $(seq 0 $((domain_count - 1))); do
             # unpinned probe that loopback would answer 200.
             http_code="000"; http_ms="0"
             marvin_log "WARN" "external-domains-check: ${host} needs a public-DNS pin and public DNS did not answer — reported as failing, NOT probed unpinned"
-            echo "$now_epoch" > "$stamp_file"
+            # Deliberately NO stamp write here. The stamp means "a probe was
+            # actually attempted against the network"; nothing was. Stamping it
+            # would start a throttle window on the strength of a failed DNS
+            # lookup, so on a domain that also sets http_interval_minutes one
+            # dropped query would suppress the next REAL probe for the whole
+            # window — delaying detection of a genuine outage (review of #965).
         else
             http_pair=$(_http_check "$url" "$host" "$pin_ip")
             read -r http_code http_ms final_host <<<"$http_pair"
