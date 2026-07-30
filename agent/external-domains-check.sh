@@ -68,6 +68,14 @@ _public_ip() {
         # "failing". This monitor only earns its place by being more trustworthy
         # than the loopback check it replaces, and a resolver that cries wolf on
         # ordinary jitter is not (review of #965).
+        #
+        # The pattern shape-matches a dotted quad without bounding octets to
+        # 0-255, and asks for A records only. Both are deliberate: dig renders an
+        # A record from four bytes, so it cannot emit an octet above 255 for this
+        # query, and the anchors already reject the CNAME and error lines that
+        # are the real risk. An IPv6-only origin would resolve to nothing and be
+        # reported "failing" — fail-closed, but indistinguishable from an
+        # outage, so add AAAA here before adding one (review of #965).
         ip=$(dig +short +time=3 +tries=2 "$host" A "@${resolver}" 2>/dev/null \
              | grep -Ex '[0-9]{1,3}(\.[0-9]{1,3}){3}' | tail -1) || ip=""
         [[ -n "$ip" ]] && { printf '%s' "$ip"; return 0; }
@@ -172,9 +180,35 @@ _dns_resolves() {
     # defects round 1 fixed in _public_ip, still live one function down. A
     # single dropped packet or one blocked resolver marked a domain's DNS
     # "failing"; now it takes all three failing to say so.
-    local host="$1"
+    #
+    # When the caller already resolved this host for the pin, it passes that
+    # result in rather than letting this run a second, independent lookup. Two
+    # lookups can DISAGREE — a resolver blip between them is invisible to both —
+    # and either order publishes a row that contradicts itself:
+    #
+    #   pin ok, then dns blips → http 200 beside dns "failing", and the "failing"
+    #                            wins the status of a domain that just answered
+    #   pin blips, then dns ok → http 000 beside dns "ok", so the WARN says the
+    #                            pin was unresolvable while the row says DNS is
+    #                            fine — triage reads that as the site being down
+    #
+    # The second is the damaging one: it points the investigation at the server
+    # instead of at DNS. Reusing the pin's answer also halves the worst-case
+    # stall, since 3 resolvers x 2 tries x 3s is paid once, not twice (review of
+    # #965). Note the reuse has to be an argument, not a memo inside _public_ip:
+    # both call sites are command substitutions, so a cache written there lives
+    # in a subshell and dies with it.
+    #
+    # $2/$3 are the caller's pin result and whether it actually attempted one.
+    # "Attempted and got nothing" is authoritative — it must report failing, not
+    # retry — which is why the flag is separate from the (empty) address.
+    local host="$1" pin_ip="${2:-}" pin_attempted="${3:-0}"
     if ! command -v dig &>/dev/null; then
         echo "skipped"
+        return
+    fi
+    if [[ "$pin_attempted" == "1" ]]; then
+        [[ -n "$pin_ip" ]] && echo "ok" || echo "failing"
         return
     fi
     if [[ -n "$(_public_ip "$host")" ]]; then
@@ -202,11 +236,12 @@ for i in $(seq 0 $((domain_count - 1))); do
     # unpinned probe never leaves the machine and cannot see the firewall, the
     # public interface, or routing (#964).
     pin_public=$(jq -r ".domains[$i].pin_public_dns // false" "$CONFIG_FILE")
-    pin_ip=""; pin_failed=0
+    pin_ip=""; pin_failed=0; pin_attempted=0
     # Only resolve when a check will actually connect. A pinned domain with just
     # a "dns" check would otherwise spend a public query per run on nothing.
     if [[ "$pin_public" == "true" ]] && jq -e '(index("http") // index("ssl")) != null' <<<"$checks" >/dev/null; then
         pin_ip=$(_public_ip "$host")
+        pin_attempted=1
         [[ -z "$pin_ip" ]] && pin_failed=1
     fi
 
@@ -281,7 +316,9 @@ for i in $(seq 0 $((domain_count - 1))); do
         ssl_days=$(_ssl_days "$host" 443 "$pin_ip")
     fi
     if jq -e --arg c dns 'index($c)' <<<"$checks" >/dev/null; then
-        dns_status=$(_dns_resolves "$host")
+        # Pass the pin's answer through, so a pinned domain reports one
+        # consistent verdict instead of two independent lookups that can differ.
+        dns_status=$(_dns_resolves "$host" "$pin_ip" "$pin_attempted")
     fi
 
     # Normalise statuses. Any 2xx or 3xx counts as healthy; everything else
