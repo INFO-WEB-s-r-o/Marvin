@@ -144,7 +144,7 @@ ENHANCE_PROMPT=$(marvin_build_prompt "enhance" identity security-rules)
 # the roadmap 82% of this prompt and twice drove it past run_claude's ceiling:
 # 404,819 chars on 2026-07-20 and 497,498 on 2026-07-27, against 400,000.
 #
-# That ceiling is enforced by a blunt byte slice. On 07-27 the slice landed
+# That ceiling is enforced by a blunt slice. On 07-27 the slice landed
 # mid-security-scan.sh and discarded everything after it — including
 # self-test.sh, the one script that had genuinely failed that day and the
 # entire reason the failure-script selector exists. The budgeting added that
@@ -156,10 +156,16 @@ ENHANCE_PROMPT=$(marvin_build_prompt "enhance" identity security-rules)
 # below the completed-log header.
 #
 # The completed log is written newest-first, so "recent" is a prefix of it and
-# needs no date parsing: keep WHOLE entries up to a byte budget, then stop and
+# needs no date parsing: keep WHOLE entries up to a size budget, then stop and
 # say how many were left out. Whole entries, because a mid-entry cut presents a
 # severed sentence as if it were the complete record — the same defect as the
-# byte slice this exists to avoid, just moved upstream.
+# blunt slice this exists to avoid, just moved upstream.
+#
+# The budget counts in the SAME unit run_claude's cut uses. Both are characters
+# under the cron locale (LANG=C.UTF-8), because awk length() and bash ${#var}
+# each follow the locale — see the measurement in lib/claude.sh. Do not "fix"
+# either side to count bytes on its own; the two agreeing is the property that
+# matters, and this file's 2,101 multibyte bytes are 0.8% of the headroom.
 _ROADMAP_LOG_HEADER='## Completed Enhancements Log'
 _ROADMAP_RECENT_BUDGET=60000
 
@@ -353,7 +359,7 @@ if [[ -x "$(dirname "$0")/lessons-learned.sh" ]]; then
 fi
 
 # ─── Prompt assembly, budgeted against run_claude's hard ceiling ────────────
-# run_claude truncates at MARVIN_CLAUDE_MAX_PROMPT_CHARS with a blunt byte cut
+# run_claude truncates at MARVIN_CLAUDE_MAX_PROMPT_CHARS with a blunt cut
 # that slices mid-file and drops everything after it. Assemble the parts we
 # cannot do without first, measure what is left, and spend the remainder on
 # script bodies deliberately — naming whatever did not fit, rather than letting

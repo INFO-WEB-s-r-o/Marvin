@@ -6,7 +6,7 @@
 # the model. Getting it wrong is not cosmetic in either direction:
 #
 #   too much  → the prompt passes run_claude's 400,000-char ceiling and is cut
-#               by a blunt byte slice (this happened 2026-07-20 and 07-27; the
+#               by a blunt slice (this happened 2026-07-20 and 07-27; the
 #               07-27 slice discarded the one script that had actually failed)
 #   too little → an unchecked roadmap item silently disappears, and a session
 #               picking "from the earliest incomplete phase" cannot tell the
@@ -65,8 +65,11 @@ _build_unit() {   # _build_unit [mutation]
             # Emit only the completed-log side: drops the phase sections, i.e.
             # every unchecked item. The unchecked-survival assertions MUST fail.
             drop_phases)   _extract | sed 's|^    head -n "\$((header_line - 1))" "\$file"$|    : # MUTATED: phases dropped|' ;;
-            # Slice by bytes with no regard for entry boundaries — the blunt cut
-            # this function exists to avoid. Boundary assertions MUST fail.
+            # Stop at the line that crosses the budget, with no regard for entry
+            # boundaries — a mid-entry cut, the class of blunt cut this function
+            # exists to avoid. (Label kept for continuity; the mechanism is a
+            # line-boundary cut, which is what severs an entry here.) Boundary
+            # assertions MUST fail.
             byte_slice)    _extract | sed 's|^        over { next }$|        { if (bytes >= budget) next }|' ;;
             # Never report what was left out. The omission-notice assertion MUST fail.
             silent_drop)   _extract | sed 's|^            if (dropped > 0) {$|            if (0) {|' ;;
