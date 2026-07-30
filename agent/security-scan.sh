@@ -858,6 +858,13 @@ _gnupg_ownership_drift() {
         return 0
     fi
 
+    # The "UNKNOWN" arm is live, not dead: GNU coreutils 9.4 `stat -c '%U'`
+    # prints the literal string UNKNOWN for an unmapped UID and exits 0, so the
+    # -z arm above does not cover it. Measured on this host, uid 60999:
+    #   stat -c '%U' -> UNKNOWN (rc=0)
+    #   /usr/bin/find … \! -user UNKNOWN -> "not the name of a known user" rc=1
+    # Without this arm the owner string reaches find, which aborts, and the
+    # verdict is still `unknown` but blames the walk instead of the lookup.
     owner=$(stat -c '%U' "$home" 2>/dev/null) || owner=""
     if [[ -z "$owner" || "$owner" == "UNKNOWN" ]]; then
         printf 'unknown\t0\t0\tcannot resolve owner of %s\n' "$home"
