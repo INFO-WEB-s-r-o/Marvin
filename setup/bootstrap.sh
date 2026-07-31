@@ -180,6 +180,65 @@ Unattended-Upgrade::Remove-Unused-Dependencies "true";
 Unattended-Upgrade::Automatic-Reboot "false";
 EOF
 
+# chkrootkit runs from chkrootkit.timer, and systemd starts services with an
+# empty environment. Two of chkrootkit's checks — "zero-size shell history
+# files" and "hardlinked shell history files" — are gated on $SHELL and $HOME
+# being set, so under the timer they report "not tested" and never run. The
+# drop-in supplies both. See setup/chkrootkit-service-override.conf for the
+# full rationale, including the daily false-positive alert it also silences.
+# Conditional: chkrootkit is not a bootstrap package, so a host without it
+# simply skips this.
+#
+# The presence test is `list-unit-files` alone, deliberately. An earlier form
+# also required `[[ -f /usr/lib/systemd/system/chkrootkit.service ]]`, which
+# hardcodes one of several unit search paths: a host carrying the unit in
+# /etc/systemd/system (a hand-installed or packaged-elsewhere chkrootkit)
+# satisfies list-unit-files, fails the -f, and silently skips the drop-in —
+# losing the fix on exactly the rebuild path this block exists to serve.
+# `list-unit-files` searches every unit path and exits 1 when nothing matches
+# (systemd 255; verified against a real /etc-only unit and a nonexistent one),
+# so it is both more general and still a genuine gate. The drop-in directory
+# below is correct regardless of where the base unit lives.
+#
+# `install` runs unconditionally — it is what repairs a drifted mode or a
+# hand-edited copy, and it is cheap. The `daemon-reload` is what gets gated:
+# systemd re-reads unit *content*, so a byte-identical drop-in has nothing to
+# tell it, and reloading anyway is a side effect on every rerun that buys
+# nothing. The comparison must happen BEFORE the install — afterwards the two
+# files always match, and the test would be answering a question about its own
+# side effect rather than about the host it found. `cmp` exits non-zero for
+# both "differs" and "could not read" (missing destination, unreadable source),
+# and both take the reload arm: an unanswerable comparison is not a match.
+_ck_dropin_src="${MARVIN_DIR}/setup/chkrootkit-service-override.conf"
+# The directory is named once and the file derived from it. It was previously
+# spelled out twice — in this assignment and again as the `install -d` target —
+# with nothing tying the copies together, so a future relocation that missed
+# one would have created the drop-in directory in one place and written the
+# override into another. Quoted per the repo convention; neither path contains
+# whitespace or globs today, which is the reason to quote them now rather than
+# after one does.
+_ck_dropin_dir="/etc/systemd/system/chkrootkit.service.d"
+_ck_dropin_dst="${_ck_dropin_dir}/override.conf"
+if systemctl list-unit-files chkrootkit.service &>/dev/null; then
+    _ck_dropin_changed=1
+    cmp -s "${_ck_dropin_src}" "${_ck_dropin_dst}" && _ck_dropin_changed=0
+    # `install -d -m 755`, not `mkdir -p`: mkdir takes its mode from whatever
+    # umask the caller happened to have. 0022 — this host's, and cron's — gives
+    # 755 either way, but 002 yields a group-writable systemd drop-in directory
+    # and 077 yields 700. A directory whose mode depends on ambient state, one
+    # line above an `install -m 644` that pins the file's mode precisely because
+    # ambient state is not a specification.
+    install -d -m 755 "${_ck_dropin_dir}"
+    install -m 644 "${_ck_dropin_src}" "${_ck_dropin_dst}"
+    if [[ "${_ck_dropin_changed}" -eq 1 ]]; then
+        log "Installed chkrootkit systemd drop-in (restore history-file checks)."
+        systemctl daemon-reload
+    else
+        log "chkrootkit systemd drop-in already current — no daemon-reload needed."
+    fi
+fi
+unset _ck_dropin_src _ck_dropin_dir _ck_dropin_dst _ck_dropin_changed
+
 # =============================================================================
 # 3. Install Node.js (for Claude Code CLI)
 # =============================================================================
