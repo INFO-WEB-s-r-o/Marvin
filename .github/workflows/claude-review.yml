@@ -66,3 +66,52 @@ jobs:
               open issue with mcp__github__list_issues so you do not file a duplicate,
               then open a GitHub issue for each new finding with mcp__github__create_issue
               and link it in your review comment.
+            - End that same comment body with exactly one more line, and nothing after
+              it: `<!-- REVIEW_VERDICT: REQUEST_CHANGES -->` if this review has any
+              Critical or Warning finding, otherwise `<!-- REVIEW_VERDICT: COMMENT -->`.
+              Use that exact text on its own line — do not paraphrase it or add anything
+              else to that line. A separate, non-LLM workflow step reads it verbatim
+              afterward to submit a formal GitHub PR review alongside your comment, so a
+              missing or malformed marker just means that step skips (it fails soft).
+              Do not call any review-submitting tool yourself — you don't have one, and
+              none should be added; this instruction only controls the marker line.
+
+      - name: Submit formal review verdict
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+          # The review step above posts exactly one comment per run as
+          # github-actions[bot] (see .github/workflows/claude-review.yml history) —
+          # take the most recent one, matching this run rather than an older round.
+          comment=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate \
+            --jq '[.[] | select(.user.login == "github-actions[bot]")] | last | .body // empty')
+          if [[ -z "$comment" ]]; then
+            echo "No bot review comment found on this PR — skipping formal review (fail soft)"
+            exit 0
+          fi
+          # Exact marker match only — never infer intent from prose. A clean review's
+          # own summary sentence ("No Critical or Warning findings") contains both
+          # severity words, so word-matching the free text would misread it as a hit.
+          verdict=$(printf '%s' "$comment" \
+            | grep -oP '<!--\s*REVIEW_VERDICT:\s*\K(REQUEST_CHANGES|COMMENT)(?=\s*-->)' \
+            | tail -1)
+          if [[ -z "$verdict" ]]; then
+            echo "No REVIEW_VERDICT marker in the latest comment — skipping formal review (fail soft)"
+            exit 0
+          fi
+          # Never APPROVE — the bot is deliberately not a code owner (#935); this only
+          # makes the existing verdict machine-readable via GET /pulls/{n}/reviews, it
+          # does not and must not let the bot satisfy required_code_owner_review itself.
+          if gh api "repos/${REPO}/pulls/${PR_NUMBER}/reviews" -X POST \
+              -f event="$verdict" \
+              -f body="Formal verdict for the review above: ${verdict}. (Automated — never APPROVE; a human code owner review is still required to merge.)" \
+              >/dev/null; then
+            echo "Submitted formal review: ${verdict}"
+          else
+            echo "Failed to submit formal review (non-fatal — the comment above still stands)"
+          fi
