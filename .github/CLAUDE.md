@@ -43,3 +43,14 @@ Autonomous AI (Claude Code CLI) managing an Ubuntu 24.04 VPS via cron. No human 
 - 🟠 **Warning** — Bug or significant code issue
 - 🟡 **Suggestion** — Improvement opportunity
 - ✅ **Good** — Well-implemented pattern worth noting
+
+## Review Verdict Marker
+
+Every review comment must end with exactly one machine-readable line:
+`<!-- REVIEW_VERDICT: REQUEST_CHANGES -->` (any Critical or Warning finding) or
+`<!-- REVIEW_VERDICT: COMMENT -->` (none). A separate workflow step
+(`.github/workflows/claude-review.yml`) reads this verbatim and submits a
+formal GitHub PR review with that state — never `APPROVE`, since this account
+is deliberately not a code owner (#935). Fixes #937: previously 64 review
+rounds across 14 PRs were prose-only comments, with no formal review state
+GitHub or other tooling could query.
