@@ -77,7 +77,17 @@ BANNED_IPS=$(fail2ban-client status sshd 2>/dev/null \
 # Private/reserved candidates are excluded via common.sh's _is_private_ip
 # rather than a second hand-copied regex, so the two can't drift out of
 # sync (#994).
-_ALL_IPS=$(grep -oP '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}' "${WORKDIR}/journal.log" | sort -u || true)
+#
+# IPv6 sources are extracted too (#1001) — sshd logs the address exactly as
+# getnameinfo() rendered it, so RFC 5952 canonical forms (leading/trailing/
+# mid-address "::", or the full 8-group form) cover what actually appears.
+# The alternation requires either a literal "::" or all 7 colons, which is
+# what keeps it from matching a bare "HH:MM:SS" journal timestamp — a
+# timestamp has exactly 2 single colons and no "::".
+IPV6_RE='([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|::(ffff(:0{1,4})?:)?((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9])'
+_ALL_IPS=$( { grep -oP '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}' "${WORKDIR}/journal.log" || true
+              grep -oP "(?<![0-9a-fA-F:.])(?:${IPV6_RE})(?![0-9a-fA-F:.])" "${WORKDIR}/journal.log" || true
+            } | sort -u)
 CANDIDATE_IPS=""
 for ip in ${_ALL_IPS}; do
     _is_private_ip "${ip}" || CANDIDATE_IPS+="${ip} "
@@ -91,7 +101,12 @@ echo "| IP | accepted | countable failures | banned | classification |"
 echo "|---|---|---|---|---|"
 
 for ip in ${CANDIDATE_IPS}; do
-    accepted_count=$(grep -F "${ip}" "${WORKDIR}/journal.log" | grep -c "Accepted " || true)
+    # Anchored so a shorter IP can't match as a substring of a longer one
+    # (#1000) — e.g. unanchored "5.6.7.8" also matches "15.6.7.8" and
+    # "5.6.7.80". No character that can extend an IPv4 or IPv6 literal
+    # (hex digit, colon, dot) is allowed on either side of the match.
+    ip_anchored="(?<![0-9a-fA-F:.])${ip//./\.}(?![0-9a-fA-F:.])"
+    accepted_count=$(grep -P "${ip_anchored}" "${WORKDIR}/journal.log" | grep -c "Accepted " || true)
     is_banned="no"
     if grep -qF " ${ip} " <<< " ${BANNED_IPS} "; then
         is_banned="yes"
@@ -102,7 +117,7 @@ for ip in ${CANDIDATE_IPS}; do
         continue
     fi
 
-    grep -F "${ip}" "${WORKDIR}/journal.log" > "${WORKDIR}/ip.log" || true
+    grep -P "${ip_anchored}" "${WORKDIR}/journal.log" > "${WORKDIR}/ip.log" || true
     summary=$(fail2ban-regex "${WORKDIR}/ip.log" "${SSHD_FILTER}" 2>/dev/null | grep -E '^Lines: ' || true)
     matched=$(grep -oP '(?<=, )\d+(?= matched)' <<< "${summary}" || echo 0)
     matched=${matched:-0}
