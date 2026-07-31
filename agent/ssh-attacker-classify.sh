@@ -32,13 +32,15 @@
 # minutes, not seconds. Fine for a once-a-morning run; not for hourly polling.
 # =============================================================================
 set -euo pipefail
+source "$(dirname "$0")/common.sh"
+trap marvin_error_trap ERR
 
 MIN_FAILURES=5
 if [[ $# -gt 0 ]]; then
     if [[ "$1" == "--min-failures" ]]; then
         MIN_FAILURES="${2:-5}"
     else
-        echo "Usage: $0 [--min-failures N]" >&2
+        marvin_log "ERROR" "ssh-attacker-classify.sh: usage: $0 [--min-failures N]"
         exit 1
     fi
 fi
@@ -47,11 +49,11 @@ SSHD_FILTER="/etc/fail2ban/filter.d/sshd.conf"
 JOURNAL_MATCH="_COMM=sshd"
 
 if ! command -v fail2ban-regex &>/dev/null; then
-    echo "fail2ban-regex not found — cannot classify" >&2
+    marvin_log "ERROR" "ssh-attacker-classify.sh: fail2ban-regex not found — cannot classify"
     exit 1
 fi
 if [[ ! -f "${SSHD_FILTER}" ]]; then
-    echo "${SSHD_FILTER} not found — cannot classify" >&2
+    marvin_log "ERROR" "ssh-attacker-classify.sh: ${SSHD_FILTER} not found — cannot classify"
     exit 1
 fi
 
@@ -63,7 +65,7 @@ journalctl "${JOURNAL_MATCH}" --no-pager -o short-iso > "${WORKDIR}/journal.log"
 WINDOW_START=$(head -1 "${WORKDIR}/journal.log" 2>/dev/null | awk '{print $1}')
 WINDOW_END=$(tail -1 "${WORKDIR}/journal.log" 2>/dev/null | awk '{print $1}')
 if [[ -z "${WINDOW_START}" || -z "${WINDOW_END}" ]]; then
-    echo "No sshd journal entries found — nothing to classify" >&2
+    marvin_log "WARN" "ssh-attacker-classify.sh: no sshd journal entries found — nothing to classify"
     exit 0
 fi
 
@@ -72,10 +74,14 @@ BANNED_IPS=$(fail2ban-client status sshd 2>/dev/null \
     | sed 's/.*Banned IP list:[[:space:]]*//' \
     || true)
 
-CANDIDATE_IPS=$(grep -oP '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}' "${WORKDIR}/journal.log" \
-    | sort -u \
-    | grep -Ev '^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.)' \
-    || true)
+# Private/reserved candidates are excluded via common.sh's _is_private_ip
+# rather than a second hand-copied regex, so the two can't drift out of
+# sync (#994).
+_ALL_IPS=$(grep -oP '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}' "${WORKDIR}/journal.log" | sort -u || true)
+CANDIDATE_IPS=""
+for ip in ${_ALL_IPS}; do
+    _is_private_ip "${ip}" || CANDIDATE_IPS+="${ip} "
+done
 
 echo "## SSH attacker classification"
 echo
