@@ -280,8 +280,17 @@ if jq -n \
         error_trend_7d: $error_trend,
         component_health: $components
     }' > "$_analysis_tmp"; then
-    # mktemp defaults to 0600 — restore world-readable perms so nginx/dashboard
-    # consumers can still fetch /api/logs/analysis-*.json after the atomic mv.
+    # mktemp defaults to 0600 — restore the 644 that every other file under
+    # data/ carries, so non-root local readers (lessons-learned.sh, self-test
+    # §9b/§9d) can still read it after the atomic mv.
+    #
+    # This previously read "so nginx/dashboard consumers can still fetch
+    # /api/logs/analysis-*.json", which has been false since #861 made
+    # `location /api/` an allowlist: /api/logs/analysis-latest.json returns 403,
+    # verified live. The permission is still correct, the old reason was not —
+    # and tying 644 to an HTTP consumer that no longer exists invites both
+    # "nothing fetches it, so tighten to 600" (breaks the local readers) and
+    # "restore the endpoint" (re-publishes internal analysis, incl. attacker IPs).
     chmod 644 "$_analysis_tmp"
     mv -f "$_analysis_tmp" "$ANALYSIS_FILE"
 else

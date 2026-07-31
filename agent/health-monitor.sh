@@ -895,10 +895,20 @@ _yesterday=$(date -u -d "${TODAY} - 1 day" +%Y-%m-%d 2>/dev/null || true)
     && mv "${METRICS_DIR}/recent.json.tmp" "${METRICS_DIR}/recent.json" \
     || true
 
-# ─── Recent structured logs for dashboard ────────────────────────────────────
+# ─── Recent structured logs (local consumers only) ───────────────────────────
 # Parse today's log into a JSON array at data/logs/recent.json.
 # Format: [{timestamp, level, message}, ...] — last 500 entries.
-# Served at /api/logs/recent.json for dashboard log viewer / search.
+#
+# NOT served over HTTP. This said "Served at /api/logs/recent.json for dashboard
+# log viewer / search" from 2026-03-18 until 2026-07-28, which stopped being
+# true when #861 turned `location /api/` from a denylist into an allowlist
+# (deployed 2026-07-27 05:40Z). The whole /api/logs/ namespace now returns 403,
+# verified live, and no dashboard log viewer exists — the frontend fetches only
+# /api/blog* and /api/reports/weekly-card-latest.svg.
+#
+# Do NOT "fix" that 403 by adding logs/ to the allowlist. These are raw internal
+# operational log lines; publishing all of data/ under /api/ is the exact defect
+# #861 was opened to close. Local readers use the file on disk.
 mkdir -p "${DATA_DIR}/logs"
 if [[ -f "${LOGS_DIR}/${TODAY}.log" ]]; then
     awk -F'[][]' '

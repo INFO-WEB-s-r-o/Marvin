@@ -1538,6 +1538,71 @@ else
     test_warn "hourly nginx window: ${_hc} not readable — #860/#866 checks skipped"
 fi
 
+# ─── 9l. UFW findings must reach the security-scan score (#893) ──────────────
+# §9j asserts the egress-coverage half of the same rule. This is the ingress
+# half, and it exists because the ingress half was already lost once: PR #884
+# rewrote the `overall_status` elif chain and dropped `ufw_unexpected_count` and
+# `ufw_scan_ok` out of it. Both variables were still computed, still logged, and
+# still written into the JSON report — only the one field consumers actually
+# read stopped reflecting them. It merged. For six hours, an inactive firewall
+# (#881) and a world-open port with no EXPECTED_PORTS entry (#849, 8042/tcp for
+# 154 days) both scored `overall_status="clean"`.
+#
+# Nothing structural stops that happening again — the terms sit in one long
+# condition that every future edit to this chain rewrites wholesale. So assert
+# it, scoped to the gate block itself (`overall_status="clean"` up to the report
+# heredoc) so a mention of the variable anywhere else in the file — the logging
+# block above it, the JSON below it, both of which survived #884 intact — cannot
+# satisfy the check. That scoping is the whole point: an unscoped grep for
+# `ufw_scan_ok` passes against the exact broken file this section is named for.
+#
+# Section letter 9l, not 9k: #890 held 9k when this was written and has since
+# merged, so §9k now sits on main and directly above. Checked against main AND
+# the open branches, per the trap recorded in §9j's own comment (#889/#891).
+#
+# That check is what the letter reservation was for, and it is not what the
+# merge did. `git merge main` on this branch (24c1bed) resolved the conflict in
+# self-test.sh by writing §9l over §9k's lines rather than beside them — the
+# reservation was honoured in the letter and lost in the resolution, and the
+# diff showed it as one 59→61 hunk with nothing named in the PR body or the
+# CHANGELOG. Same shape as #889. Restored verbatim from main above (#907).
+
+marvin_log "INFO" "Self-test: checking UFW findings participate in the security scan's overall_status"
+
+_ufw_scan="$(dirname "$0")/security-scan.sh"
+
+if [[ ! -r "$_ufw_scan" ]]; then
+    # "Could not read the file" is not "the gate is fine". Say which one it is.
+    test_fail "UFW scoring: cannot read ${_ufw_scan} — the overall_status gate was NOT verified (this is a check that could not run, not a clean result)"
+else
+    # Comment lines are dropped, not just the block scoped. Found by mutation:
+    # with comments included, deleting the `elif [[ "$ufw_scan_ok" != true ]]`
+    # arm outright still PASSED, because the explanatory comment directly above
+    # it names the variable. A check satisfied by prose about the code rather
+    # than the code is the #875 defect class, and it would have reported clean
+    # against a gate with the arm cut out from under it.
+    _ufw_gate=$(awk '
+        /^overall_status="clean"/ { f = 1 }
+        /^cat > "\$REPORT_FILE"/  { f = 0 }
+        f && !/^[[:space:]]*#/    { print }
+    ' "$_ufw_scan" 2>/dev/null) || _ufw_gate=""
+
+    if [[ -z "$_ufw_gate" ]]; then
+        test_fail "UFW scoring: could not isolate the overall_status gate block in security-scan.sh — the anchors (overall_status=\"clean\" … cat > \"\\\$REPORT_FILE\") no longer match, so this assertion is inert and MUST be repaired, not ignored"
+    else
+        _ufw_missing=""
+        grep -q 'ufw_unexpected_count' <<< "$_ufw_gate" || _ufw_missing="ufw_unexpected_count"
+        grep -q 'ufw_scan_ok' <<< "$_ufw_gate" \
+            || _ufw_missing="${_ufw_missing:+${_ufw_missing}, }ufw_scan_ok"
+
+        if [[ -z "$_ufw_missing" ]]; then
+            test_pass "UFW scoring: both ufw_unexpected_count and ufw_scan_ok participate in overall_status"
+        else
+            test_fail "UFW scoring: ${_ufw_missing} absent from the overall_status gate — UFW findings are computed and logged but no longer scored, so an inactive firewall (#881) or an unexpected open port (#849) reports overall_status=\"clean\" (#893)"
+        fi
+    fi
+fi
+
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
 # Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
 # artefact with byte-identical duplicates of the active /home/marvin/.gnupg/
@@ -1614,6 +1679,7 @@ done
 # both exist — a host without SSL configured has no live hook and is skipped.
 _deployhook_drift_pairs=(
     "${MARVIN_DIR}/setup/letsencrypt-deploy-hook.sh /etc/letsencrypt/renewal-hooks/deploy/reload-services.sh letsencrypt-deploy-hook"
+    "${MARVIN_DIR}/setup/chkrootkit-service-override.conf /etc/systemd/system/chkrootkit.service.d/override.conf chkrootkit-systemd-override"
 )
 for _pair in "${_deployhook_drift_pairs[@]}"; do
     read -r _src _live _label <<< "$_pair"

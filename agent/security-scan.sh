@@ -924,7 +924,7 @@ if [[ "$rkhunter_status" == "infected" || "$chkrootkit_status" == "infected" ]];
     overall_status="infected"
 elif [[ "$fim_status" == "alert" ]]; then
     overall_status="alert"
-elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security_actionable" -gt 0 || "$unexpected_count" -gt 0 || "$suspicious_count" -gt 0 || "$high_rate_count" -gt 0 || "$outbound_unexpected" -gt 0 || "$outbound_day_unexpected" -gt 0 ]]; then
+elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$upgradable_security_actionable" -gt 0 || "$unexpected_count" -gt 0 || "$suspicious_count" -gt 0 || "$high_rate_count" -gt 0 || "$outbound_unexpected" -gt 0 || "$outbound_day_unexpected" -gt 0 || "$ufw_unexpected_count" -gt 0 ]]; then
     overall_status="warnings"
 # A control that could not look must not be scored as a control that looked and
 # found nothing (#882, same defect class as #881). Absent/degraded/failed egress
@@ -932,6 +932,12 @@ elif [[ "$rkhunter_status" == "warnings" || "$world_writable_count" -gt 0 || "$u
 # box, and 30 consecutive days of exactly that went unnoticed because it scored
 # "clean" every time.
 elif [[ "$outbound_coverage_status" != "ok" ]]; then
+    overall_status="warnings"
+# Same rule, ingress side (#849/#881, dropped by #884's rewrite of this chain and
+# restored in #893). `ufw_scan_ok=false` covers ufw absent, `ufw status`
+# unreadable, AND the firewall being inactive — each of which means this scan
+# cannot speak to what is reachable from outside. It must not score "clean".
+elif [[ "$ufw_scan_ok" != true ]]; then
     overall_status="warnings"
 fi
 
