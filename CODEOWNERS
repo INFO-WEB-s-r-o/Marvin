@@ -8,11 +8,16 @@
 
 # Yes, even the parts Marvin wrote. Especially those.
 
-- @pavelstancik
+# GitHub Actions bot / Marvin's own account are listed too, so Marvin can act
 
-# GitHub Actions bot — creates issues from Claude Code Review (PR reviews).
+# on issues the Claude Code Review action opens against a PR.
 
-# Marvin should be able to act on these.
+#
 
-- @RobotMarvin2026
-- @github-actions
+# NOTE: CODEOWNERS syntax is "<pattern> <owner>...", not a bullet list. A bare
+
+# "- @user" matches a literal file named "-", never a real path, so no PR
+
+# could ever satisfy required_code_owner_review (#935).
+
+* @pavelstancik @RobotMarvin2026 @github-actions
