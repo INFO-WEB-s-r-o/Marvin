@@ -16,9 +16,13 @@
 # failure/ignore split always matches what the running jail would decide —
 # no separate copy of the failregex to drift out of sync.
 #
-# A host with any Accepted line is reported as an administrator and
-# excluded from the attacker table by construction, however many lines it
-# has. A host already in fail2ban's ban list is reported as such (not
+# A host with an Accepted line and zero countable failures is reported as
+# an administrator. A host with an Accepted line *and* countable failures
+# is reported as "mixed" with its failure count still visible — a shared
+# address (CGNAT, VPN exit, reassigned cloud IP) or an attacker who
+# authenticates once and then probes other accounts from the same source
+# does not get folded into "administrator" with the failures hidden (#992).
+# A host already in fail2ban's ban list is reported as such (not
 # re-flagged as "walking free").
 #
 # Usage: agent/ssh-attacker-classify.sh [--min-failures N]
@@ -29,11 +33,14 @@
 # =============================================================================
 set -euo pipefail
 
-MIN_FAILURES="${1:-}"
-if [[ "${MIN_FAILURES}" == "--min-failures" ]]; then
-    MIN_FAILURES="${2:-5}"
-else
-    MIN_FAILURES=5
+MIN_FAILURES=5
+if [[ $# -gt 0 ]]; then
+    if [[ "$1" == "--min-failures" ]]; then
+        MIN_FAILURES="${2:-5}"
+    else
+        echo "Usage: $0 [--min-failures N]" >&2
+        exit 1
+    fi
 fi
 
 SSHD_FILTER="/etc/fail2ban/filter.d/sshd.conf"
@@ -51,7 +58,7 @@ fi
 WORKDIR=$(mktemp -d)
 trap 'rm -rf "${WORKDIR}"' EXIT
 
-journalctl ${JOURNAL_MATCH} --no-pager -o short-iso > "${WORKDIR}/journal.log" 2>/dev/null || true
+journalctl "${JOURNAL_MATCH}" --no-pager -o short-iso > "${WORKDIR}/journal.log" 2>/dev/null || true
 
 WINDOW_START=$(head -1 "${WORKDIR}/journal.log" 2>/dev/null | awk '{print $1}')
 WINDOW_END=$(tail -1 "${WORKDIR}/journal.log" 2>/dev/null | awk '{print $1}')
@@ -84,13 +91,8 @@ for ip in ${CANDIDATE_IPS}; do
         is_banned="yes"
     fi
 
-    if [[ "${accepted_count}" -gt 0 ]]; then
-        echo "| ${ip} | ${accepted_count} | — | ${is_banned} | administrator (excluded by construction) |"
-        continue
-    fi
-
     if [[ "${is_banned}" == "yes" ]]; then
-        echo "| ${ip} | 0 | (already banned, not recounted) | yes | already-banned |"
+        echo "| ${ip} | ${accepted_count} | (already banned, not recounted) | yes | already-banned |"
         continue
     fi
 
@@ -98,6 +100,15 @@ for ip in ${CANDIDATE_IPS}; do
     summary=$(fail2ban-regex "${WORKDIR}/ip.log" "${SSHD_FILTER}" 2>/dev/null | grep -E '^Lines: ' || true)
     matched=$(grep -oP '(?<=, )\d+(?= matched)' <<< "${summary}" || echo 0)
     matched=${matched:-0}
+
+    if [[ "${accepted_count}" -gt 0 ]]; then
+        if [[ "${matched}" -eq 0 ]]; then
+            echo "| ${ip} | ${accepted_count} | 0 | no | administrator |"
+        else
+            echo "| ${ip} | ${accepted_count} | ${matched} | no | mixed (accepted + failures) |"
+        fi
+        continue
+    fi
 
     if [[ "${matched}" -ge "${MIN_FAILURES}" ]]; then
         classification="unbanned-attacker-candidate"
