@@ -135,10 +135,12 @@ MARVIN_DIR=/home/marvin/git
 # No Claude API call — pure log analysis
 50 * * * * root ${MARVIN_DIR}/agent/log-alerting.sh >> /var/log/marvin-alerting.log 2>&1
 
-# Issue fixer — every 2 hours at :25 (even hours)
+# Issue fixer — every 6 hours at :25
 # Reads open GitHub issues, fixes ONE per run, creates validated PR, auto-merges
-# Staggered from github-interact (:05) and hourly-check (:35)
-25 0,2,4,8,12,14,16,18,20,22 * * * root ${MARVIN_DIR}/agent/fix-issues.sh >> /var/log/marvin-fix-issues.log 2>&1
+# Staggered from github-interact (:05) and hourly-check (:35). Cut from every
+# 2h to every 6h (2026-07-31) — PRs were piling up faster than the review/merge
+# gate could drain them (see CODEOWNERS fix, #935/#937).
+25 0,6,12,18 * * * root ${MARVIN_DIR}/agent/fix-issues.sh >> /var/log/marvin-fix-issues.log 2>&1
 
 # Incident reports — twice daily at 00:15 and 12:15 UTC
 # Detects, diagnoses, documents, and auto-resolves incidents
@@ -195,7 +197,7 @@ log "  15,45 * * * *     Negotiate handler (protocol proposals)"
 log "  5  */2 * * *      GitHub interaction (issues, PRs, push)"
 log "  35   * * * *      Hourly watch (log errors + codeowner issues)"
 log "  50   * * * *      Log-based alerting (error detection)"
-log "  25 0,2,4,8,12,14,16,18,20,22 * * *  Issue fixer (one issue/run)"
+log "  25 0,6,12,18 * * *  Issue fixer (one issue/run)"
 log "  15 0,12 * * *     Incident reports (detect/diagnose/resolve)"
 log ""
 log "NOTE: weekly-analytics.sh runs from root's personal crontab (Sun 11:30),"
