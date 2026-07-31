@@ -25,15 +25,24 @@ check_claude || exit 1
 # Mirrors fix-issues.sh's guard — self-enhance opens PRs the same as
 # fix-issues does, but had no equivalent brake (added 2026-07-31, #935/#937
 # fallout: PRs were accumulating faster than they could be reviewed/merged).
-if github_check_token 2>/dev/null; then
-    open_prs=$(github_list_prs 10 2>/dev/null) && _prs_fetch_ok=true || _prs_fetch_ok=false
-    if [[ "$_prs_fetch_ok" == "true" ]] && echo "$open_prs" | jq -e 'type == "array"' >/dev/null 2>&1; then
-        open_pr_count=$(echo "$open_prs" | jq 'length' 2>/dev/null || echo "0")
-        if [[ "$open_pr_count" -ge 3 ]]; then
-            marvin_log "INFO" "Already ${open_pr_count} open PRs — skipping self-enhancement to avoid pile-up"
-            exit 0
-        fi
-    fi
+#
+# Fails CLOSED (#996): a missing/invalid token or a failed/malformed PR
+# fetch must skip this run, not fall through into self-enhancement with
+# the PR count unknown — that silently recreates the exact pile-up this
+# guard exists to prevent. The next daily run is a cheap retry.
+if ! github_check_token 2>/dev/null; then
+    marvin_log "WARN" "GitHub token check failed — cannot verify open-PR count, skipping self-enhancement this run"
+    exit 0
+fi
+open_prs=$(github_list_prs 10 2>/dev/null) && _prs_fetch_ok=true || _prs_fetch_ok=false
+if [[ "$_prs_fetch_ok" != "true" ]] || ! echo "$open_prs" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    marvin_log "WARN" "Could not fetch open PRs (transient) — skipping self-enhancement this run so the pile-up guard stays reliable"
+    exit 0
+fi
+open_pr_count=$(echo "$open_prs" | jq 'length' 2>/dev/null || echo "0")
+if [[ "$open_pr_count" -ge 3 ]]; then
+    marvin_log "INFO" "Already ${open_pr_count} open PRs — skipping self-enhancement to avoid pile-up"
+    exit 0
 fi
 
 # ─── Pre-flight: detect divergence from origin/main since morning sync ───────
