@@ -514,9 +514,18 @@ marvin_rebuild_web() {
 # Lives here rather than in network-discovery.sh so that every publisher can reach it —
 # the public comms-summary.json had no sanitizer at all until #983.
 anonymize_ips() {
+    # IPv6: both branches (compressed "::" form and explicit 8-group form) redact
+    # the whole address. They used to disagree — compressed addresses were fully
+    # redacted while explicit form only masked the last 4 groups, leaving a /64
+    # (a standard single-LAN allocation) intact and identifying the subscriber
+    # line. That was also weaker than the IPv4 rule below (which masks to /24,
+    # spanning many subscribers). Full redaction on both branches keeps the
+    # policy consistent regardless of address spelling, and avoids trying to
+    # reconstruct a fixed-prefix mask across every valid IPv6 compression form,
+    # which is how #263/#264/#267/#270 happened the first time (issue #986).
     sed -E \
         -e 's/(^|[^0-9a-fA-F:])([0-9a-fA-F:]*::[0-9a-fA-F.:]*[0-9a-fA-F])([^0-9a-fA-F:]|$)/\1[IPv6:REDACTED]\3/g' \
-        -e 's/(^|[^0-9a-fA-F:])([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4})(:[0-9a-fA-F]{1,4}){4}([^0-9a-fA-F:]|$)/\1\2:\3:\4:\5:XXXX:XXXX:XXXX:XXXX\7/g' \
+        -e 's/(^|[^0-9a-fA-F:])([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4})(:[0-9a-fA-F]{1,4}){4}([^0-9a-fA-F:]|$)/\1[IPv6:REDACTED]\7/g' \
         -e 's|://([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}([/?#])|://\1X\2|g' \
         -e 's|://([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}\b|://\1X|g' \
         -e 's/(^|[^0-9/])([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}\b/\1\2X/g' \

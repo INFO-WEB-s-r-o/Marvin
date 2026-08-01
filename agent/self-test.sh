@@ -848,6 +848,59 @@ else
     fi
 fi
 
+# ─── 1l. anonymize_ips() IPv6 masking consistency (issue #986) ───────────────
+# The two IPv6 branches used to disagree: a compressed-form address ("::")
+# was fully redacted while an explicit 8-group address only had its last 4
+# groups masked, leaving the /64 (a standard single-LAN allocation) intact —
+# weaker than the IPv4 rule three lines below it, which masks to a /24. Fixed
+# by having both branches redact the whole address. This asserts the two
+# spellings of the same address now produce the identical result, and that
+# IPv4 masking (a different, deliberately looser policy) is unaffected.
+#
+# Sourced via `dirname "$0"` (as §1g does) so the check is meaningful on a
+# branch worktree, not only post-merge.
+
+marvin_log "INFO" "Self-test: checking anonymize_ips() IPv6/IPv4 masking"
+
+_lib_common="$(dirname "$0")/common.sh"
+if [[ ! -f "$_lib_common" ]]; then
+    test_fail "anonymize_ips: common.sh not found at ${_lib_common}"
+else
+    _anon() {
+        # shellcheck source=/dev/null  # path is runtime-resolved (branch or live tree)
+        ( source "$_lib_common" >/dev/null 2>&1 && printf '%s' "$1" | anonymize_ips )
+    }
+    _anon_failures=0
+    while IFS='|' read -r _in _want; do
+        [[ -z "$_want" ]] && continue
+        _got=$(_anon "$_in") || _got="<error>"
+        if [[ "$_got" != "$_want" ]]; then
+            test_fail "anonymize_ips: '${_in}' -> ${_got} (expected ${_want})"
+            _anon_failures=$((_anon_failures + 1))
+        fi
+    done <<'ANON_CASES'
+2001:0db8:85a3:1234:5678:9abc:def0:1111|[IPv6:REDACTED]
+2a01:430:17:1::ffff:4a1|[IPv6:REDACTED]
+2001:0db8:0000:0000:0000:0000:0000:0001|[IPv6:REDACTED]
+2001:db8::1|[IPv6:REDACTED]
+::1|[IPv6:REDACTED]
+203.0.113.47|203.0.113.X
+ANON_CASES
+    # The two spellings of the same address (full-form vs. compressed) must
+    # collapse to the identical redaction — that agreement is the actual bug
+    # #986 reported, not just each branch individually returning REDACTED.
+    _full_form=$(_anon "2001:0db8:0000:0000:0000:0000:0000:0001") || _full_form="<error>"
+    _compressed=$(_anon "2001:db8::1") || _compressed="<error>"
+    if [[ "$_full_form" != "$_compressed" ]]; then
+        test_fail "anonymize_ips: full-form (${_full_form}) and compressed (${_compressed}) spellings of the same address disagree"
+        _anon_failures=$((_anon_failures + 1))
+    fi
+    if [[ "$_anon_failures" -eq 0 ]]; then
+        test_pass "anonymize_ips: IPv6 full-form and compressed addresses redact identically (#986)"
+    fi
+    unset -f _anon
+fi
+
 # ─── 2. JSON data file validation ────────────────────────────────────────────
 
 marvin_log "INFO" "Self-test: validating JSON data files"
