@@ -848,7 +848,7 @@ else
     fi
 fi
 
-# ─── 1l. anonymize_ips() IPv6 masking consistency (issue #986) ───────────────
+# ─── 1l. anonymize_ips() IPv6/IPv4 masking consistency (issues #986, #1003) ──
 # The two IPv6 branches used to disagree: a compressed-form address ("::")
 # was fully redacted while an explicit 8-group address only had its last 4
 # groups masked, leaving the /64 (a standard single-LAN allocation) intact —
@@ -856,6 +856,11 @@ fi
 # by having both branches redact the whole address. This asserts the two
 # spellings of the same address now produce the identical result, and that
 # IPv4 masking (a different, deliberately looser policy) is unaffected.
+#
+# The /proxy/... case guards #1003: the IPv4 catch-all used to spare any IP
+# preceded by "/" (to avoid mangling UA version strings like
+# "Chrome/140.0.0.0"), which let a slash-prefixed IP in a path-like field
+# reach a public endpoint unredacted.
 #
 # Sourced via `dirname "$0"` (as §1g does) so the check is meaningful on a
 # branch worktree, not only post-merge.
@@ -885,6 +890,7 @@ else
 2001:db8::1|[IPv6:REDACTED]
 ::1|[IPv6:REDACTED]
 203.0.113.47|203.0.113.X
+/proxy/203.0.113.77|/proxy/203.0.113.X
 ANON_CASES
     # The two spellings of the same address (full-form vs. compressed) must
     # collapse to the identical redaction — that agreement is the actual bug

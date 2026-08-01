@@ -523,11 +523,21 @@ anonymize_ips() {
     # policy consistent regardless of address spelling, and avoids trying to
     # reconstruct a fixed-prefix mask across every valid IPv6 compression form,
     # which is how #263/#264/#267/#270 happened the first time (issue #986).
+    # The catch-all IPv4 pass (last rule below) used to spare any IP preceded
+    # by "/", so that a User-Agent version string like "Chrome/140.0.0.0"
+    # wouldn't get mangled. But that exemption is indistinguishable from a
+    # path-like field such as "/proxy/203.0.113.77" — both have an
+    # alphanumeric character immediately before the "/" — so a real IP
+    # sitting after any single "/" passed straight through unredacted onto
+    # public endpoints (issue #1003). There's no cheap regex that tells a
+    # version string apart from a path, and this function guards a privacy
+    # boundary, not a cosmetic one: redact both. A stray version string
+    # coming out as "Chrome/140.0.0.X" is a harmless side effect.
     sed -E \
         -e 's/(^|[^0-9a-fA-F:])([0-9a-fA-F:]*::[0-9a-fA-F.:]*[0-9a-fA-F])([^0-9a-fA-F:]|$)/\1[IPv6:REDACTED]\3/g' \
         -e 's/(^|[^0-9a-fA-F:])([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4})(:[0-9a-fA-F]{1,4}){4}([^0-9a-fA-F:]|$)/\1[IPv6:REDACTED]\7/g' \
         -e 's|://([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}([/?#])|://\1X\2|g' \
         -e 's|://([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}\b|://\1X|g' \
-        -e 's/(^|[^0-9/])([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}\b/\1\2X/g' \
+        -e 's/(^|[^0-9])([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}\b/\1\2X/g' \
         2>/dev/null || printf '%s\n' "[IP anonymization failed — output withheld for privacy]"
 }
