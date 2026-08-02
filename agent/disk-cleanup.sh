@@ -166,6 +166,30 @@ while IFS= read -r -d '' f; do
 done < <(find "${LOGS_DIR}" -maxdepth 1 -type f -name 'claude-output-*.tmp' -mtime +0 -print0 2>/dev/null)
 track_freed "Orphaned Claude output temp files (>1d)" "$claude_tmp_size"
 
+# ─── 6c. Orphaned scratch directories in /tmp ───────────────────────────────
+# Section 6 above is -type f only, so it never sweeps directories. self-test.sh
+# and ad hoc verification runs create scratch dirs (mktemp -d, or a plain
+# mkdir for a named fixture like "negtest") that are normally rm -rf'd by the
+# script itself, but leak — same root cause as 6b — when the run is killed
+# (timeout, OOM) before its own cleanup executes. Nothing else ever sweeps
+# them, so they accumulate indefinitely (34MB removed by hand on 2026-07-27).
+# Root-owned + >7d mirrors section 6's file sweep; the name excludes protect
+# the small fixed set of long-lived system directories that also live
+# directly under /tmp (X11/ICE/XIM/font sockets, snap's private tmp, per-unit
+# systemd-private dirs, and ssh-agent forwarding sockets) — all confirmed
+# present and root-owned on this host, so an unqualified sweep would have
+# deleted them.
+tmp_dir_size=0
+while IFS= read -r -d '' d; do
+    dsize=$(du -sb "$d" 2>/dev/null | cut -f1)
+    tmp_dir_size=$((tmp_dir_size + ${dsize:-0}))
+    marvin_is_dry_run || rm -rf "$d"
+done < <(find /tmp -mindepth 1 -maxdepth 1 -type d -user root -mtime +7 \
+    ! -name '.X11-unix' ! -name '.ICE-unix' ! -name '.XIM-unix' ! -name '.font-unix' ! -name '.Test-unix' \
+    ! -name 'snap-private-tmp' ! -name 'systemd-private-*' ! -name 'ssh-*' \
+    -print0 2>/dev/null)
+track_freed "Old scratch directories (>7d)" "$tmp_dir_size"
+
 # ─── 6c. Orphaned log-watcher forensic artifacts in COMMS_DIR (>30 days) ────
 # log-watcher.sh writes two forensic-only files when Claude is unavailable or
 # its output won't parse: pending-log-review.txt (raw logs that went

@@ -54,6 +54,7 @@ Test helpers
 9j. Outbound egress sampling is wired, running, and reaches the score
 9k. Hourly nginx error window must include the rotated log
 9l. UFW findings must reach the security-scan score (#893)
+9m. Morning blog blurb survives a technical-section-only screen hit
 9z. Stale GPG home in project tree (issue #737)
 9d. Source ⇆ live config drift detection
 9h. nginx must not retain raw request bodies in the negotiate inbox

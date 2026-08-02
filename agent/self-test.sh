@@ -1662,6 +1662,51 @@ else
     fi
 fi
 
+# ─── 9m. Morning blog blurb survives a technical-section-only screen hit ──────
+# 2026-08-02: a routine "used the `.env` PAT directly" aside in the internal
+# GitHub-issues section of the morning report tripped screen_blog_content()'s
+# sensitive-file-path pattern, and because morning-check.sh screened the whole
+# $OUTPUT (technical report + public blurb) as one blob, the entire day's post
+# was dropped — including a fully compliant blurb. Fixed by splitting the two
+# at the ---MORNING_BLOG_EN--- marker and screening them separately, mirroring
+# evening-report.sh's existing per-language screening. Two things can silently
+# undo that: (a) the split logic itself regressing, and (b) morning-check.sh
+# going back to a single screen_blog_content call on the combined text. Assert
+# both — a grep for "screen_blog_content" alone would pass against the old,
+# broken, single-call version too (same class of false-clean §9l's comment
+# describes: prose/incidental mentions satisfying a check that isn't actually
+# wired the way it claims).
+
+marvin_log "INFO" "Self-test: checking morning blog technical/blurb screening is split, not monolithic"
+
+_morning_sh="$(dirname "$0")/morning-check.sh"
+
+if [[ ! -r "$_morning_sh" ]]; then
+    test_fail "morning blurb screening: cannot read ${_morning_sh} — NOT verified"
+else
+    _morning_screen_calls=$(grep -c 'screen_blog_content "\$MORNING_BLURB"\|screen_blog_content "\$MORNING_TECH"\|screen_blog_content "\$file_blurb"\|screen_blog_content "\$file_tech"' "$_morning_sh" 2>/dev/null || true)
+    _morning_screen_calls="${_morning_screen_calls:-0}"
+
+    if [[ "$_morning_screen_calls" -lt 4 ]]; then
+        test_fail "morning blurb screening: expected separate screen_blog_content calls for MORNING_BLURB/MORNING_TECH and file_blurb/file_tech, found ${_morning_screen_calls} — technical-only hits will drop the whole day's post again (regression of the 2026-08-02 fix)"
+    else
+        # Functional half: reproduce the actual 2026-08-02 failure input through
+        # the same split-then-screen primitive morning-check.sh now uses.
+        _mb_output=$'## GitHub Issues\n- gh CLI still broken/401, used the `.env` PAT directly\n\n---MORNING_BLOG_EN---\n\nA clean poetic blurb about waking up.\n\n---MORNING_BLOG_CS---\n\nCisty blurb.'
+        _mb_blurb=$(printf '%s\n' "$_mb_output" | sed -n '/---MORNING_BLOG_EN---/,$p')
+        _mb_tech=$(printf '%s\n' "$_mb_output" | sed '/---MORNING_BLOG_EN---/,$d')
+
+        if ! screen_blog_content "$_mb_blurb" "self-test-morning-blurb" >/dev/null 2>&1; then
+            test_fail "morning blurb screening: clean blurb was blocked by the split screen — false positive on content containing no sensitive patterns"
+        elif screen_blog_content "$_mb_tech" "self-test-morning-tech" >/dev/null 2>&1; then
+            test_fail "morning blurb screening: technical section containing a sensitive-file-path match ('.env') was NOT blocked — screen_blog_content regressed"
+        else
+            test_pass "morning blurb screening: technical-section hit is isolated from the blurb (blurb clean, tech blocked, ${_morning_screen_calls} split screen call sites present)"
+        fi
+        rm -f "${BLOCKED_BLOGS_DIR:-/home/marvin/blocked-blogs}"/self-test-morning-tech-*.txt 2>/dev/null || true
+    fi
+fi
+
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
 # Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
 # artefact with byte-identical duplicates of the active /home/marvin/.gnupg/
