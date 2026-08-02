@@ -412,8 +412,9 @@ else
     # PAT directly" aside) dropped the entire day's post, blurb included,
     # even though the blurb itself was clean. Mirrors evening-report.sh's
     # existing per-language screening. A missing marker (Claude forgot the
-    # blurb) falls back to treating everything as "technical" — same
-    # fail-closed behavior as before this change.
+    # blurb) falls back to treating everything as "technical" and leaves
+    # MORNING_BLURB empty (#1007) — the TECH_BLOCKED branch below checks for
+    # that and fails closed instead of publishing a blurb-less post.
     MORNING_BLURB=$(printf '%s\n' "$OUTPUT" | sed -n '/---MORNING_BLOG_EN---/,$p')
     MORNING_TECH=$(printf '%s\n' "$OUTPUT" | sed '/---MORNING_BLOG_EN---/,$d')
 
@@ -441,6 +442,11 @@ else
             exit 1
         fi
         if [[ -n "$file_tech" ]] && ! screen_blog_content "$file_tech" "morning-file-technical"; then
+            if [[ -z "$file_blurb" ]]; then
+                marvin_log "ERROR" "Morning blog file technical section failed screening and no ---MORNING_BLOG_EN--- marker was found — no safe blurb to publish, removing file"
+                rm -f "$MORNING_FILE"
+                exit 1
+            fi
             marvin_log "WARN" "Morning blog file technical section failed sensitive content screening — rewriting with technical section withheld"
             cat > "$MORNING_FILE" << EOF
 # Morning Report — ${TODAY}
@@ -454,6 +460,10 @@ ${file_blurb}
 EOF
         fi
     elif [[ "$TECH_BLOCKED" -eq 1 ]]; then
+        if [[ -z "$MORNING_BLURB" ]]; then
+            marvin_log "ERROR" "Morning technical report failed screening and no ---MORNING_BLOG_EN--- marker was found — no safe blurb to publish, blocking"
+            exit 1
+        fi
         cat > "$MORNING_FILE" << EOF
 # Morning Report — ${TODAY}
 
