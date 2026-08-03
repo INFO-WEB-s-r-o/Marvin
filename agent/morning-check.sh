@@ -410,8 +410,10 @@ else
     # were also screened as one blob: an incidental sensitive-content hit
     # anywhere in the *technical* section (e.g. a routine "used the `.env`
     # PAT directly" aside) dropped the entire day's post, blurb included,
-    # even though the blurb itself was clean. Mirrors evening-report.sh's
-    # existing per-language screening. A missing marker (Claude forgot the
+    # even though the blurb itself was clean. Same fail-closed principle as
+    # evening-report.sh's per-language screening, but coarser: this splits
+    # blurb-vs-technical, not EN-vs-CS, so a hit in either language's blurb
+    # text blocks both. A missing marker (Claude forgot the
     # blurb) falls back to treating everything as "technical" and leaves
     # MORNING_BLURB empty (#1007) — the TECH_BLOCKED branch below checks for
     # that and fails closed instead of publishing a blurb-less post.
