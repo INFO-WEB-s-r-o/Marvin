@@ -123,7 +123,7 @@ git checkout main 2>/dev/null || true
 # exit code and validate the payload is a JSON array; on failure skip this run
 # so dedup stays reliable — the next 2-hourly cron is a cheap retry. This is
 # the input-side complement to the output-side duplicate guard added 2026-07-20.
-open_prs=$(github_list_prs 10 2>/dev/null) && _prs_fetch_ok=true || _prs_fetch_ok=false
+open_prs=$(github_list_prs 100 2>/dev/null) && _prs_fetch_ok=true || _prs_fetch_ok=false
 if [[ "$_prs_fetch_ok" != "true" ]] || ! echo "$open_prs" | jq -e 'type == "array"' >/dev/null 2>&1; then
     marvin_log "WARN" "Could not fetch open PRs (transient) — skipping this run so per-issue dedup stays reliable; next 2-hourly run will retry"
     exit 0
@@ -350,10 +350,10 @@ marvin_log "INFO" "Attempting fix for issue: #${FIXED_ISSUE:-unknown} — ${FIXE
 # Best-effort: if this re-fetch also fails ("[]"), we fall through — no worse
 # than the pre-existing input path, which had the same failure mode.
 if [[ -n "$FIXED_ISSUE" ]]; then
-    # Fetch 20 here (vs 10 at the top of the run): by the time Claude has
-    # finished, more PRs may have landed, so widen the window to reduce the
-    # chance the just-created duplicate hides past the fetch limit.
-    _fresh_prs=$(github_list_prs 20 2>/dev/null || echo "[]")
+    # Re-fetch at the same 100-PR ceiling as the input-side check above (#1013:
+    # per_page=10/20 dropped the 22 oldest of a 32-strong backlog from both
+    # passes, since GitHub sorts open PRs newest-first).
+    _fresh_prs=$(github_list_prs 100 2>/dev/null || echo "[]")
     _existing_pr_nums=$(_extract_pr_issue_numbers "$_fresh_prs")
     if [[ ",${_existing_pr_nums}," == *",${FIXED_ISSUE},"* ]]; then
         marvin_log "WARN" "Issue #${FIXED_ISSUE} already has an open PR — aborting before push to avoid a duplicate (${FIXED_TITLE})"
