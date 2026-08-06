@@ -138,10 +138,101 @@ _validate_post_enhance() {
 # Read the enhancement prompt (modular: task prompt + shared modules)
 ENHANCE_PROMPT=$(marvin_build_prompt "enhance" identity security-rules)
 
-# Read the enhancement roadmap
+# ─── The enhancement roadmap, bounded ───────────────────────────────────────
+# POSSIBLE_ENHANCEMENTS.md is append-only and now 288 KB, of which 268 KB (93%,
+# 249 entries) is the "Completed Enhancements Log". Passing the whole file made
+# the roadmap 82% of this prompt and twice drove it past run_claude's ceiling:
+# 404,819 chars on 2026-07-20 and 497,498 on 2026-07-27, against 400,000.
+#
+# That ceiling is enforced by a blunt slice. On 07-27 the slice landed
+# mid-security-scan.sh and discarded everything after it — including
+# self-test.sh, the one script that had genuinely failed that day and the
+# entire reason the failure-script selector exists. The budgeting added that
+# session stopped the selector from over-spending; it did not shrink the thing
+# actually consuming the budget, which is this file.
+#
+# What a session picks from is the phase sections — every unchecked item, all
+# 19 KB — so those go in VERBATIM AND IN FULL, always. Bounding happens only
+# below the completed-log header.
+#
+# The completed log is written newest-first, so "recent" is a prefix of it and
+# needs no date parsing: keep WHOLE entries up to a size budget, then stop and
+# say how many were left out. Whole entries, because a mid-entry cut presents a
+# severed sentence as if it were the complete record — the same defect as the
+# blunt slice this exists to avoid, just moved upstream.
+#
+# The budget counts in the SAME unit run_claude's cut uses. Both are characters
+# under the cron locale (LANG=C.UTF-8): bash ${#var} follows the locale, and so
+# does GNU awk — see the measurement in lib/claude.sh. Do not "fix" either side
+# to count bytes on its own; the two agreeing is the property that matters.
+#
+# "awk" here means gawk specifically, NOT awk generally. mawk — which Ubuntu
+# ships as the lower-priority alternative and which IS installed on this host
+# (update-alternatives: gawk 10, mawk 5) — counts BYTES whatever the locale:
+# length("—") is 3 under mawk, 1 under gawk. So if gawk is ever removed this
+# awk silently becomes byte-oriented.
+#
+# That failure is safe in DIRECTION but not free in MARGIN. Safe, because
+# bytes >= chars, so mawk drops more completed history and never an unchecked
+# item (those live above the header and are emitted verbatim). Not free,
+# because the two only agree while the discrepancy stays smaller than one
+# entry: measured on this file at the entry-15 boundary, mawk's running count
+# leads gawk's by 502 units with 488 units left before it would drop an entry
+# early — and that lead grows with every entry appended. The agreement is a
+# 488-unit coincidence, not a construction. §6 of the test suite runs both
+# awks against the real roadmap and fails if their output diverges.
+_ROADMAP_LOG_HEADER='## Completed Enhancements Log'
+_ROADMAP_RECENT_BUDGET=60000
+
+# Echoes the roadmap for the prompt. NOTE: stdout here IS the roadmap text, so
+# nothing in this function may call marvin_log without redirecting to stderr —
+# marvin_log writes to stdout (lib/logging.sh), and a log line would be
+# captured and rendered to the model as though it were roadmap content.
+_bounded_roadmap() {
+    local file="$1" budget="$2" header_line
+    header_line=$(grep -n -F -x "$_ROADMAP_LOG_HEADER" "$file" | head -1 | cut -d: -f1) || header_line=""
+
+    if [[ -z "$header_line" ]]; then
+        # The file was restructured and the boundary is gone. Emit it whole
+        # rather than guess where the log starts: an over-long prompt is
+        # recoverable (run_claude warns and truncates), a roadmap silently
+        # missing its unchecked items is not — there would be nothing to pick
+        # from and no sign anything was lost. Say so out loud, because a quiet
+        # fallback here reads exactly like a bound that worked.
+        marvin_log "WARN" "self-enhance: roadmap header '${_ROADMAP_LOG_HEADER}' not found — passing the roadmap UNBOUNDED ($(wc -c <"$file") bytes); prompt may be truncated" >&2
+        cat "$file"
+        return
+    fi
+
+    # Everything above the completed log: verbatim, unconditionally.
+    head -n "$((header_line - 1))" "$file"
+
+    # The completed log: whole entries while under budget, then a named remainder.
+    tail -n +"$header_line" "$file" | awk -v budget="$budget" '
+        # Entry boundary. Counted before the budget gate so that entries we
+        # drop are still counted and can be reported.
+        /^- \[x\] \*\*\[/ {
+            entries++
+            if (bytes >= budget) over = 1
+        }
+        over { next }
+        {
+            print
+            bytes += length($0) + 1
+            if (/^- \[x\] \*\*\[/) kept++
+        }
+        END {
+            dropped = entries - kept
+            if (dropped > 0) {
+                printf "\n_(%d older completed entries omitted from this prompt to keep it inside the prompt budget. They are NOT gone: the full history is in POSSIBLE_ENHANCEMENTS.md on disk. Append new entries there as usual.)_\n", dropped
+            }
+        }
+    '
+}
+
 ENHANCEMENTS=""
 if [[ -f "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" ]]; then
-    ENHANCEMENTS=$(cat "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md")
+    ENHANCEMENTS=$(_bounded_roadmap "${MARVIN_DIR}/POSSIBLE_ENHANCEMENTS.md" "$_ROADMAP_RECENT_BUDGET")
 fi
 
 # Gather context: list all scripts with sizes, include only the most relevant ones
@@ -283,7 +374,7 @@ if [[ -x "$(dirname "$0")/lessons-learned.sh" ]]; then
 fi
 
 # ─── Prompt assembly, budgeted against run_claude's hard ceiling ────────────
-# run_claude truncates at MARVIN_CLAUDE_MAX_PROMPT_CHARS with a blunt byte cut
+# run_claude truncates at MARVIN_CLAUDE_MAX_PROMPT_CHARS with a blunt cut
 # that slices mid-file and drops everything after it. Assemble the parts we
 # cannot do without first, measure what is left, and spend the remainder on
 # script bodies deliberately — naming whatever did not fit, rather than letting

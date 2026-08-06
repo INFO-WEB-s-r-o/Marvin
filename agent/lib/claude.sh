@@ -99,12 +99,20 @@ ${prompt}"
 
     # Guard against context overflow: truncate if prompt exceeds ~400K chars (~100K tokens).
     #
-    # This is a HARD BYTE CUT, not a considered selection: it slices mid-line,
+    # This is a HARD, BLUNT CUT, not a considered selection: it slices mid-line,
     # mid-file, mid-word, and everything after the boundary is gone with only a
     # WARN to say so. A caller that assembles a large prompt must budget itself
     # against this limit rather than discover it here — see self-enhance.sh,
     # whose 2026-07-27 run was cut mid-`security-scan.sh` and silently lost the
     # one script that had actually failed that day.
+    #
+    # The unit is CHARACTERS, not bytes — this comment said "BYTE CUT" until
+    # 2026-07-30. Bash substring expansion follows the locale, and cron gets
+    # LANG=C.UTF-8 from /etc/default/locale via pam_env (/etc/pam.d/cron:13).
+    # Measured: a 10-em-dash prompt (30 B) cut at 5 keeps 5 chars / 15 B, with
+    # the codepoint intact. So budget with ${#var} or awk length(), which follow
+    # the same locale and therefore agree with this cut for free; forcing either
+    # to count bytes would make the budget DISagree with the cut it protects.
     #
     # Exported (rather than a `local`) so those callers can budget against the
     # real number instead of hardcoding a second copy that drifts out of sync.
