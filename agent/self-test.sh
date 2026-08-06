@@ -2996,6 +2996,118 @@ else
     fi
 fi
 
+# ─── 9q. Monitored system paths keep a single source of truth (#944) ──────────
+# backup.sh and file-integrity.sh need the identical set of /etc files: one
+# checksums them and alerts CHANGED, the other archives them so that alert has a
+# prior copy to diff against. For years each kept its own hand-written copy and
+# they drifted — backup.sh was missing /etc/sudoers and /etc/pam.d/sshd, the two
+# files a compromise touches first, so their CHANGED alert could only ever be
+# discharged blind (#943, #944). The first attempt at that fix hand-copied the
+# list a third time and reproduced the same omission, which is what moved it
+# into lib/monitored-paths.sh.
+#
+# The invariant asserted here is structural, not a set comparison. Comparing the
+# two lists now compares two expansions of one variable — a tautology that would
+# pass however wrong the file got. What can still regress is a consumer going
+# back to declaring its own copy, or a third consumer arriving that never
+# sources the library at all. That is what this reads.
+#
+# Deliberately NOT "no monitored path appears literally in a consumer": both
+# consumers name such paths in legitimate code — file-integrity.sh maps
+# /etc/nginx/sites-enabled/marvin to its committed counterpart in a case
+# statement, and backup.sh names /etc/systemd/system/marvin-web.service, which
+# nothing checksums. That check would FAIL on correct code today; it was written
+# and discarded for that reason rather than shipped and discovered later.
+#
+# Resolved via `dirname "$0"`, not ${MARVIN_DIR}: the latter is hardcoded to the
+# deployed tree, so a branch-authored section would grade main instead of the
+# branch it ships on and report green for a change it never read.
+
+marvin_log "INFO" "Self-test: checking monitored system paths have one source of truth"
+
+_mp_lib="$(dirname "$0")/lib/monitored-paths.sh"
+_mp_var="MARVIN_MONITORED_SYSTEM_PATHS"
+
+if [[ ! -r "$_mp_lib" ]]; then
+    test_fail "monitored-paths library is missing: ${_mp_lib} — backup.sh and file-integrity.sh have nothing to share (#944)"
+elif ! _mp_lib_code=$(_code_only "$_mp_lib"); then
+    # Not a pass: the scan failed. Reporting "no defect" for a file that could
+    # not be read is the exact failure mode _code_only was written to close.
+    test_fail "monitored-paths library unreadable or comment-only — this check did NOT run: ${_mp_lib}"
+elif [[ "$_mp_lib_code" != *"${_mp_var}=("* ]]; then
+    test_fail "monitored-paths library does not define ${_mp_var} — the shared list is gone and both consumers expand an empty array (#944)"
+else
+    test_pass "monitored-paths library defines ${_mp_var}"
+fi
+
+# Both known consumers must source the library AND expand it. Sourcing without
+# expanding is the more plausible regression of the two: the `source` line
+# survives a rewrite untouched while the array beneath it is replaced by hand,
+# which is precisely how the first version of this fix looked.
+_mp_fails=0
+for _mpc in "$(dirname "$0")/backup.sh" "$(dirname "$0")/file-integrity.sh"; do
+    _mpc_name=$(basename "$_mpc")
+    if ! _mpc_code=$(_code_only "$_mpc"); then
+        test_fail "${_mpc_name}: unreadable — the monitored-path source-of-truth check did NOT run for it"
+        _mp_fails=$((_mp_fails + 1))
+        continue
+    fi
+    if [[ "$_mpc_code" != *"lib/monitored-paths.sh"* ]]; then
+        test_fail "${_mpc_name} does not source lib/monitored-paths.sh — its monitored path list is a hand-copy waiting to drift again (#944)"
+        _mp_fails=$((_mp_fails + 1))
+    fi
+    if [[ "$_mpc_code" != *"\${${_mp_var}[@]}"* ]]; then
+        test_fail "${_mpc_name} never expands \${${_mp_var}[@]} — it sources the shared list and then does not use it (#944)"
+        _mp_fails=$((_mp_fails + 1))
+    fi
+done
+if [[ "$_mp_fails" -eq 0 ]]; then
+    test_pass "backup.sh and file-integrity.sh both source and expand the shared monitored-path list"
+fi
+
+# The third-consumer case, which is the one the library exists to survive: any
+# agent script naming the variable must source the library rather than assume
+# something else already did. Scans all of agent/, so a script added later is
+# covered the day it lands with no edit here.
+#
+# self-test.sh is skipped because it names the variable in order to check for
+# it — it is an auditor of the list, not a consumer of it. monitored-paths.sh is
+# skipped because it is the definition.
+_mp_orphans=0
+_mp_scanned=0
+_mp_unreadable=0
+while IFS= read -r _mps; do
+    [[ -n "$_mps" ]] || continue
+    case "$(basename "$_mps")" in
+        monitored-paths.sh|self-test.sh) continue ;;
+    esac
+    if ! _mps_code=$(_code_only "$_mps"); then
+        _mp_unreadable=$((_mp_unreadable + 1))
+        continue
+    fi
+    _mp_scanned=$((_mp_scanned + 1))
+    [[ "$_mps_code" == *"${_mp_var}"* ]] || continue
+    if [[ "$_mps_code" != *"lib/monitored-paths.sh"* ]]; then
+        test_fail "$(basename "$_mps") uses ${_mp_var} without sourcing lib/monitored-paths.sh — it reads whatever happens to be in scope (#944)"
+        _mp_orphans=$((_mp_orphans + 1))
+    fi
+done < <(find "$(dirname "$0")" -name '*.sh' -type f 2>/dev/null | sort)
+
+# procsub-guarded (#944) — §1j caught this site when the section was first run,
+# which is the ratchet working: `find | sort` is a real pipeline, and if it dies
+# the loop body never executes and a scan that read nothing reports the same
+# clean as a scan that read everything. The guard is the count below, not this
+# comment: agent/ always holds scripts, so zero scanned means the producer
+# failed, and that is a FAIL naming itself as inert rather than a silent pass.
+if [[ "$_mp_scanned" -eq 0 ]]; then
+    test_fail "monitored-path consumer scan read ZERO scripts — the scan broke; this assertion is inert and MUST be repaired (#944)"
+elif [[ "$_mp_orphans" -eq 0 ]]; then
+    test_pass "no agent script uses ${_mp_var} without sourcing the library (${_mp_scanned} scanned)"
+fi
+if [[ "$_mp_unreadable" -gt 0 ]]; then
+    test_warn "monitored-path consumer scan skipped ${_mp_unreadable} unreadable or comment-only script(s) — not counted as clean"
+fi
+
 # ─── 10. Security scoring system ──────────────────────────────────────────────
 # Grades the server A-F across multiple security dimensions
 

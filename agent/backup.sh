@@ -157,14 +157,79 @@ fi
 [[ -f "${DATA_DIR}/lessons-summary.md" ]] && BACKUP_PATHS+=("${DATA_DIR}/lessons-summary.md")
 
 # 5. Key configuration files (system)
+#
+# REQUIRED = every system file file-integrity.sh monitors for tampering. A
+# monitored file with no backup is a file whose CHANGED alert can never be
+# investigated: on 2026-07-29 /etc/ufw/user.rules and user6.rules both alerted
+# and no copy of their previous contents existed anywhere on this host, so the
+# alert could only be discharged by a blind `file-integrity.sh --update` —
+# which bakes an unexamined change into the baseline (#943).
+#
+# /etc/nginx/sites-available/robot-marvin was listed here from the start and
+# has never existed on this host (the vhost is `marvin`), so the site config
+# was silently absent from every backup ever taken. That is the failure the
+# post-archive check below exists to make impossible to repeat.
+#
+# The list is no longer written out here. Hand-copying it is what produced the
+# original drift and then reproduced it: the first version of this fix still
+# omitted /etc/pam.d/sshd, /etc/sudoers, /etc/hosts and /etc/resolv.conf, and
+# hardcoded the two nginx vhosts and jail.local where file-integrity.sh globs
+# sites-enabled/ and jail.d/ — so any site or jail added later would have been
+# monitored and never archived (#944). One source of truth, sourced by both.
+source "$(dirname "$0")/lib/monitored-paths.sh"
+_REQUIRED_CONFIGS=(
+    "${MARVIN_MONITORED_SYSTEM_PATHS[@]}"
+    # Not checksummed by file-integrity.sh, but the web unit is unrecoverable
+    # from anything else in the archive.
+    /etc/systemd/system/marvin-web.service
+)
+
+# OPTIONAL = archived when present, silent when not. Stock Debian files and
+# root's personal crontab (absent on this host — the schedule lives in
+# /etc/cron.d/marvin), so their absence is not a defect worth a daily WARN.
+_OPTIONAL_CONFIGS=(
+    /etc/crontab
+    /var/spool/cron/crontabs/root
+)
+
+# Resolve symlinks to the files they point at, and drop the duplicates that
+# produces. This is not cosmetic: checksumming follows a symlink, `tar` does
+# not. /etc/resolv.conf and every /etc/nginx/sites-enabled/* entry are links,
+# so archiving them verbatim stores a link and no content — and the membership
+# check below would still find the path in the listing and report the archive
+# complete. That is the exact false-pass this whole section exists to prevent,
+# so the resolution happens before the paths reach either tar or the check.
+#
+# Applied to BOTH lists. Neither optional path is a symlink on this host today,
+# and "not a symlink today" is exactly the reasoning that produced the original
+# drift: a list correct for the host as it stood, with nothing re-checking it.
+# The resolution costs the same call either way, so the asymmetry buys nothing.
+# _resolve_seen carries across both calls, so an optional path that resolves
+# onto a required one is archived once rather than twice.
+_resolve_seen=()
+_resolve_out=()
+_resolve_configs() {
+    local cfg _real _seen _dup
+    _resolve_out=()
+    for cfg in "$@"; do
+        _real=$(readlink -f -- "$cfg" 2>/dev/null) || _real=""
+        [[ -n "$_real" ]] || _real="$cfg"
+        _dup=false
+        for _seen in ${_resolve_seen[@]+"${_resolve_seen[@]}"}; do
+            [[ "$_seen" == "$_real" ]] && { _dup=true; break; }
+        done
+        [[ "$_dup" == "true" ]] && continue
+        _resolve_seen+=("$_real")
+        _resolve_out+=("$_real")
+    done
+}
+
+_resolve_configs "${_REQUIRED_CONFIGS[@]}"
+_REQUIRED_CONFIGS=(${_resolve_out[@]+"${_resolve_out[@]}"})
+_resolve_configs "${_OPTIONAL_CONFIGS[@]}"
+_OPTIONAL_CONFIGS=(${_resolve_out[@]+"${_resolve_out[@]}"})
 _config_files=()
-for cfg in \
-    /etc/nginx/sites-available/robot-marvin \
-    /etc/nginx/nginx.conf \
-    /etc/systemd/system/marvin-web.service \
-    /etc/fail2ban/jail.local \
-    /etc/crontab \
-    /var/spool/cron/crontabs/root; do
+for cfg in "${_REQUIRED_CONFIGS[@]}" "${_OPTIONAL_CONFIGS[@]}"; do
     [[ -f "$cfg" ]] && _config_files+=("$cfg")
 done
 
@@ -212,7 +277,13 @@ for c in "${_config_files[@]}"; do
     echo "$c" >> "$_filelist"
 done
 
-backup_output=$(tar -czf "$BACKUP_FILE" \
+# umask 077 inside the substitution rather than a chmod after tar returns: this
+# archive now carries /etc/sudoers and /etc/pam.d/sshd (#944), and a chmod after
+# the fact leaves a window in which the file already exists, already holds that
+# content, and is still 0644. Containment remains the 0700 backups directory —
+# this is the second layer, not the first, which is why 0644 was survivable
+# until now and why it should not stay that way.
+backup_output=$(umask 077; tar -czf "$BACKUP_FILE" \
     --files-from="$_filelist" \
     --ignore-failed-read \
     --warning=no-file-changed \
@@ -227,17 +298,47 @@ if [[ "$tar_exit" -gt 1 ]]; then
     exit 1
 fi
 
-# Validate the backup (quick integrity check)
-if ! tar -tzf "$BACKUP_FILE" > /dev/null 2>&1; then
-    marvin_log "ERROR" "Backup validation failed — archive is corrupt"
+# Validate the backup (quick integrity check) and keep the listing — it is the
+# only evidence of what the archive actually contains, and both checks below
+# assert against it rather than against what we intended to archive.
+_archive_list=$(tar -tzf "$BACKUP_FILE" 2>/dev/null) || _archive_list=""
+if [[ -z "$_archive_list" ]]; then
+    marvin_log "ERROR" "Backup validation failed — archive is corrupt or empty"
     rm -f "$BACKUP_FILE"
     exit 1
+fi
+
+# Verify every REQUIRED system config actually landed in the archive.
+#
+# Two independent layers drop a path in silence: the `[[ -f ]]` filter in
+# section 5 skips anything that does not exist, and tar's --ignore-failed-read
+# skips anything it cannot read. Either way the run reports success and a file
+# count, and an archive missing the firewall rules looks exactly like a
+# complete one. Asserting on the intent (the path list) would reproduce that
+# blindness, so this asserts on the delivered artifact.
+#
+# Exact-line match via bash globbing, not `grep -qx`: `printf | grep -q` closes
+# the pipe on first match and SIGPIPEs the producer, which pipefail then
+# reports as failure (lesson 2026-05-02, sigpipe-under-pipefail). tar stores
+# paths without the leading slash, hence ${cfg#/}.
+_config_absent=()
+for cfg in "${_REQUIRED_CONFIGS[@]}"; do
+    if [[ $'\n'"${_archive_list}"$'\n' != *$'\n'"${cfg#/}"$'\n'* ]]; then
+        if [[ -f "$cfg" ]]; then
+            _config_absent+=("${cfg} [on disk, not archived — unreadable?]")
+        else
+            _config_absent+=("${cfg} [not on disk]")
+        fi
+    fi
+done
+if [[ ${#_config_absent[@]} -gt 0 ]]; then
+    marvin_log "WARN" "Backup omitted ${#_config_absent[@]} required system config(s): ${_config_absent[*]}"
 fi
 
 # Measure backup size
 backup_size=$(stat -c %s "$BACKUP_FILE" 2>/dev/null || echo 0)
 backup_size_mb=$(( backup_size / 1048576 ))
-file_count=$(tar -tzf "$BACKUP_FILE" 2>/dev/null | wc -l)
+file_count=$(printf '%s\n' "$_archive_list" | wc -l)
 
 marvin_log "INFO" "Backup created: ${BACKUP_FILE} (${backup_size_mb}MB, ${file_count} files)"
 

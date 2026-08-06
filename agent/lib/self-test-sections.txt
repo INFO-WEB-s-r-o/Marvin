@@ -62,5 +62,6 @@ Test helpers
 9d. Source ⇆ live config drift detection
 9h. nginx must not retain raw request bodies in the negotiate inbox
 9n. Agent and setup scripts must stay executable in the index
+9q. Monitored system paths keep a single source of truth (#944)
 10. Security scoring system
 Report
