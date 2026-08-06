@@ -578,7 +578,31 @@ while IFS= read -r -d '' f; do
 done < <(find "${LOGS_DIR}" -maxdepth 1 -type f -name 'claude-output-*.tmp' -mtime +0 -print0 2>/dev/null)
 track_freed "Orphaned Claude output temp files (>1d)" "$claude_tmp_size"
 
-# ─── 6c. Orphaned log-watcher forensic artifacts in COMMS_DIR (>30 days) ────
+# ─── 6c. Orphaned scratch directories in /tmp ───────────────────────────────
+# Section 6 above is -type f only, so it never sweeps directories. self-test.sh
+# and ad hoc verification runs create scratch dirs (mktemp -d, or a plain
+# mkdir for a named fixture like "negtest") that are normally rm -rf'd by the
+# script itself, but leak — same root cause as 6b — when the run is killed
+# (timeout, OOM) before its own cleanup executes. Nothing else ever sweeps
+# them, so they accumulate indefinitely (34MB removed by hand on 2026-07-27).
+# Root-owned + >7d mirrors section 6's file sweep; the name excludes protect
+# the small fixed set of long-lived system directories that also live
+# directly under /tmp (X11/ICE/XIM/font sockets, snap's private tmp, per-unit
+# systemd-private dirs, and ssh-agent forwarding sockets) — all confirmed
+# present and root-owned on this host, so an unqualified sweep would have
+# deleted them.
+tmp_dir_size=0
+while IFS= read -r -d '' d; do
+    dsize=$(du -sb "$d" 2>/dev/null | cut -f1)
+    tmp_dir_size=$((tmp_dir_size + ${dsize:-0}))
+    marvin_is_dry_run || rm -rf "$d"
+done < <(find /tmp -mindepth 1 -maxdepth 1 -type d -user root -mtime +7 \
+    ! -name '.X11-unix' ! -name '.ICE-unix' ! -name '.XIM-unix' ! -name '.font-unix' ! -name '.Test-unix' \
+    ! -name 'snap-private-tmp' ! -name 'systemd-private-*' ! -name 'ssh-*' \
+    -print0 2>/dev/null)
+track_freed "Old scratch directories (>7d)" "$tmp_dir_size"
+
+# ─── 6d. Orphaned log-watcher forensic artifacts in COMMS_DIR (>30 days) ────
 # log-watcher.sh writes two forensic-only files when Claude is unavailable or
 # its output won't parse: pending-log-review.txt (raw logs that went
 # un-analyzed during an outage, since offsets advance regardless) and
@@ -589,7 +613,7 @@ track_freed "Orphaned Claude output temp files (>1d)" "$claude_tmp_size"
 # outage it stays bounded AND fresh (mtime recent → not matched here); only
 # records gone quiet for a month are cleaned. The per-day
 # log-analysis-YYYY-MM-DD.json analysis files are handled separately by section
-# 6d below (compress + long retain, not deleted here).
+# 6e below (compress + long retain, not deleted here).
 comms_forensic_size=0
 while IFS= read -r -d '' f; do
     fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
@@ -598,7 +622,7 @@ while IFS= read -r -d '' f; do
 done < <(find "${COMMS_DIR}" -maxdepth 1 -type f \( -name 'log-analysis-raw-*.txt' -o -name 'pending-log-review.txt' \) -mtime +30 -print0 2>/dev/null)
 track_freed "Stale log-watcher forensic records (>30d)" "$comms_forensic_size"
 
-# ─── 6d. Per-day comms log-analysis JSON retention (compress >30d, del >180d) ─
+# ─── 6e. Per-day comms log-analysis JSON retention (compress >30d, del >180d) ─
 # log-watcher.sh writes one ${COMMS_DIR}/log-analysis-YYYY-MM-DD.json per day —
 # Claude's classification of that day's incoming signals / attack attempts.
 # Every consumer (log-watcher, evening-report, update-website) reads ONLY
@@ -610,7 +634,7 @@ track_freed "Stale log-watcher forensic records (>30d)" "$comms_forensic_size"
 # bounds growth while keeping a 180-day compressed history of AI-contact/attack
 # classifications (never deleting logging data outright). The ????-??-??-anchored
 # glob never matches today's live file, the log-analysis-raw-*.txt dumps swept
-# by 6c, or any *-latest pointer.
+# by 6d, or any *-latest pointer.
 comms_analysis_compressed=0
 comms_analysis_bytes=0
 while IFS= read -r -d '' f; do
@@ -640,7 +664,7 @@ while IFS= read -r -d '' f; do
 done < <(find "${COMMS_DIR}" -maxdepth 1 -type f -name 'log-analysis-????-??-??.json.gz' -mtime +180 -print0 2>/dev/null)
 track_freed "Old comms log-analysis JSON.gz (>180d)" "$comms_analysis_gz_size"
 
-# ─── 6e. Orphaned nginx request bodies in the negotiate inbox (>1 day) ──────
+# ─── 6f. Orphaned nginx request bodies in the negotiate inbox (>1 day) ──────
 # ${COMMS_DIR}/negotiate-inbox is negotiate-handler.sh's input directory AND
 # nginx's client_body_temp_path for /.well-known/ai-negotiate (see #854/#856).
 # Every POST to that endpoint therefore deposits its raw body here — including
