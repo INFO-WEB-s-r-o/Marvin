@@ -912,6 +912,136 @@ ANON_CASES
     unset -f _anon
 fi
 
+# ─── 1m. github_create_issue duplicate guard (#945) ──────────────────────────
+# #942 and #943 were filed 31 seconds apart with byte-identical bodies — two
+# complete github_create_issue() calls, each returning 201. The guard added for
+# that has TWO ways to be wrong and they are not symmetric: failing to suppress
+# costs a duplicate in the queue; suppressing when it should not silently
+# destroys a finished bug report. So half these cases assert the guard FIRES
+# and half assert it stays QUIET, and the quiet half is the important half.
+#
+# Drives the real github_create_issue() with github_list_issues/github_api
+# stubbed, so what is asserted is the shipped control flow rather than a
+# re-implementation of the jq filter that could drift from it. The stubbed POST
+# answers #999: a result of 999 means "created", 942 means "suppressed", so one
+# observation distinguishes them without inspecting internal state.
+#
+# Sourced via `dirname "$0"` (as §1g) so it asserts on the library shipping
+# beside this test, and run in a subshell so github.sh's token export cannot
+# leak into the rest of the suite.
+
+marvin_log "INFO" "Self-test: checking github_create_issue duplicate guard"
+
+_lib_github_dup="$(dirname "$0")/lib/github.sh"
+if [[ ! -f "$_lib_github_dup" ]]; then
+    test_fail "dup-guard: lib/github.sh not found at ${_lib_github_dup}"
+else
+    # Deliberately NO `grep -q _github_find_open_issue_by_title` pre-check: a
+    # grep for a function name matches the comment that mentions it just as
+    # happily as the code (#889, #892). A deleted guard is caught below by the
+    # duplicate coming back as #999 instead of #942, which is behaviour.
+    # $1 = open-issue listing the stub returns, $2 = title to file,
+    # $3 = "fail" to make the listing fetch fail outright.
+    _dup_probe() {
+        local _fixture="$1" _title="$2" _mode="${3:-ok}"
+        (
+            # shellcheck source=/dev/null  # runtime-resolved (branch or live tree)
+            source "$_lib_github_dup" >/dev/null 2>&1 || exit 90
+            marvin_log() { :; }
+            github_list_issues() {
+                [[ "$_mode" != "fail" ]] || return 1
+                printf '%s' "$_fixture"
+            }
+            github_api() {
+                [[ "$1" == "POST" ]] || return 1
+                printf '{"number":999,"html_url":"https://example.invalid/999"}'
+            }
+            github_create_issue "$_title" "a body" "" 2>/dev/null | jq -r '.number // "none"'
+        )
+    }
+
+    # Same drive, reporting the duplicate marker rather than the number.
+    # Exit 0 now means "created OR suppressed", so this field is the only
+    # thing that separates them for a caller — github-interact.sh counts
+    # ACTION_COUNT and logs "Created issue" off it.
+    _dup_marker() {
+        local _fixture="$1" _title="$2"
+        (
+            # shellcheck source=/dev/null  # runtime-resolved (branch or live tree)
+            source "$_lib_github_dup" >/dev/null 2>&1 || exit 90
+            marvin_log() { :; }
+            github_list_issues() { printf '%s' "$_fixture"; }
+            github_api() {
+                [[ "$1" == "POST" ]] || return 1
+                printf '{"number":999,"html_url":"https://example.invalid/999"}'
+            }
+            github_create_issue "$_title" "a body" "" 2>/dev/null \
+                | jq -r '.marvin_duplicate_suppressed // "absent"'
+        )
+    }
+
+    _dup_title='The same issue was filed twice, 30 seconds apart'
+    _dup_open="[{\"number\":942,\"title\":\"${_dup_title}\",\"html_url\":\"https://example.invalid/942\",\"pull_request\":null}]"
+    _dup_other='[{"number":900,"title":"something else entirely","html_url":"https://example.invalid/900","pull_request":null}]'
+    # Same title, but it is a PULL REQUEST — GET /issues returns PRs too, and
+    # this repo routinely has more open PRs than issues.
+    _dup_as_pr="[{\"number\":941,\"title\":\"${_dup_title}\",\"html_url\":\"https://example.invalid/941\",\"pull_request\":{\"url\":\"x\"}}]"
+
+    _dup_failures=0
+    _dup_assert() {
+        local _label="$1" _want="$2" _got="$3"
+        if [[ "$_got" != "$_want" ]]; then
+            test_fail "dup-guard: ${_label} -> ${_got} (expected ${_want})"
+            _dup_failures=$((_dup_failures + 1))
+        fi
+    }
+
+    # --- the guard must FIRE ---
+    _g=$(_dup_probe "$_dup_open" "$_dup_title") || _g="<error>"
+    _dup_assert "exact-title duplicate is suppressed" "942" "$_g"
+    _g=$(_dup_probe "$_dup_open" "   ${_dup_title}  ") || _g="<error>"
+    _dup_assert "whitespace-padded duplicate is suppressed" "942" "$_g"
+
+    # --- the guard must stay QUIET (each of these, wrong, eats a bug report) ---
+    _g=$(_dup_probe "$_dup_other" "$_dup_title") || _g="<error>"
+    _dup_assert "unrelated open issue does not block" "999" "$_g"
+    _g=$(_dup_probe "$_dup_as_pr" "$_dup_title") || _g="<error>"
+    _dup_assert "same title on an open PR does not block (.pull_request)" "999" "$_g"
+    _g=$(_dup_probe "[]" "$_dup_title") || _g="<error>"
+    _dup_assert "empty issue list does not block" "999" "$_g"
+    _g=$(_dup_probe '{"message":"Bad credentials"}' "$_dup_title") || _g="<error>"
+    _dup_assert "non-array error body does not block (fail open)" "999" "$_g"
+    _g=$(_dup_probe "" "$_dup_title" "fail") || _g="<error>"
+    _dup_assert "failed lookup does not block (fail open)" "999" "$_g"
+
+    # --- a suppression must be distinguishable from a creation ---
+    # Without this the caller logs "Created issue: …" for an issue it did not
+    # create, corrupting the same log whose `Created issue #NNN` lines are the
+    # evidence #945 was built from.
+    _g=$(_dup_marker "$_dup_open" "$_dup_title") || _g="<error>"
+    _dup_assert "suppressed result is marked" "true" "$_g"
+    _g=$(_dup_marker "$_dup_other" "$_dup_title") || _g="<error>"
+    _dup_assert "genuinely created result is NOT marked" "absent" "$_g"
+
+    # And the caller must actually read the marker. Structural, not
+    # behavioural — the discrimination is inline in a 300-line script. Matched
+    # only on lines whose first non-blank character is not `#`, because a grep
+    # for the field name matches the paragraph explaining it (#889, #892).
+    _gi_path="$(dirname "$0")/github-interact.sh"
+    if [[ ! -f "$_gi_path" ]]; then
+        test_fail "dup-guard: github-interact.sh not found at ${_gi_path} — the caller-side check did NOT run"
+        _dup_failures=$((_dup_failures + 1))
+    elif ! grep -qE '^[[:space:]]*[^#[:space:]].*marvin_duplicate_suppressed' "$_gi_path"; then
+        test_fail "dup-guard: github-interact.sh has no CODE reference to marvin_duplicate_suppressed — a suppressed duplicate is being counted and logged as a creation (#945)"
+        _dup_failures=$((_dup_failures + 1))
+    fi
+
+    if [[ "$_dup_failures" -eq 0 ]]; then
+        test_pass "dup-guard: github_create_issue suppresses same-title duplicates, marks them, and fails open (10 cases)"
+    fi
+    unset -f _dup_probe _dup_marker _dup_assert
+fi
+
 # ─── 2. JSON data file validation ────────────────────────────────────────────
 
 marvin_log "INFO" "Self-test: validating JSON data files"
