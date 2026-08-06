@@ -126,6 +126,14 @@ findtime = 600
 maxretry = 3
 backend = systemd
 
+# The distro ships this commented out in jail.conf, so nothing on this host
+# ignores loopback: `fail2ban-client get <jail> ignoreip` answers "No IP
+# address/network is ignored". Latent today only because no enabled filter
+# happens to match our own traffic — but 50 of the 62 limit_req events in
+# error.log are 127.0.0.1 (self-probes, the Grafana proxy path), so the first
+# jail that reads them would ban localhost. Prerequisite, not a preference.
+ignoreip = 127.0.0.1/8 ::1
+
 [sshd]
 enabled = true
 port = ssh
