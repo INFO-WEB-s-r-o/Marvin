@@ -203,7 +203,21 @@ if [[ -f "$SIGNALS_FILE" ]]; then
     sig_attacks=$(jq '.total_attacks // 0' "$SIGNALS_FILE" 2>/dev/null || echo 0)
     sig_comms=$(jq '.total_communication // 0' "$SIGNALS_FILE" 2>/dev/null || echo 0)
     sig_last=$(jq -r '.last_updated // ""' "$SIGNALS_FILE" 2>/dev/null || echo "")
-    recent_signals=$(jq '.signals | .[-10:]' "$SIGNALS_FILE" 2>/dev/null || echo '[]')
+    # incoming-signals.json is PRIVATE and holds full client IPs; this slice is
+    # published at /api/comms-summary.json, so it must be anonymized on the way out.
+    # Masking used to depend on how the analysis step happened to write each entry —
+    # a convention, not a control. Enforce it here, at the publication boundary (#983).
+    # The `|| echo '[]'` is load-bearing, not decoration. `set -o pipefail` (line 10)
+    # is precisely what makes it live: on a malformed source file jq exits 5 while
+    # anonymize_ips exits 0, so the pipeline is 5 WITH pipefail and 0 without
+    # (measured, #984 review). Remove it and `set -e` aborts the run on this line —
+    # the re-validation below is never reached, and the site update dies here.
+    recent_signals=$(jq '.signals | .[-10:]' "$SIGNALS_FILE" 2>/dev/null | anonymize_ips || echo '[]')
+    # anonymize_ips is a sed pass; re-validate rather than trust it to preserve JSON.
+    if ! printf '%s' "$recent_signals" | jq -e . >/dev/null 2>&1; then
+        marvin_log "WARN" "recent_signals failed JSON validation after anonymization — publishing empty"
+        recent_signals="[]"
+    fi
 fi
 
 if [[ -f "$NEGOTIATIONS_REG" ]]; then

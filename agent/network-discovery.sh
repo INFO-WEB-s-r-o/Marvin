@@ -44,16 +44,8 @@ _is_ipv6_address() {
     [[ "$addr" =~ ^([0-9a-f]{0,4}:){2,7}([0-9a-f]{0,4}|([0-9]{1,3}\.){3}[0-9]{1,3})$ ]]
 }
 
-# Helper: anonymize IPs in a string before writing to public logs (issue #70, #271)
-anonymize_ips() {
-    sed -E \
-        -e 's/(^|[^0-9a-fA-F:])([0-9a-fA-F:]*::[0-9a-fA-F.:]*[0-9a-fA-F])([^0-9a-fA-F:]|$)/\1[IPv6:REDACTED]\3/g' \
-        -e 's/(^|[^0-9a-fA-F:])([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4}):([0-9a-fA-F]{1,4})(:[0-9a-fA-F]{1,4}){4}([^0-9a-fA-F:]|$)/\1\2:\3:\4:\5:XXXX:XXXX:XXXX:XXXX\7/g' \
-        -e 's|://([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}([/?#])|://\1X\2|g' \
-        -e 's|://([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}\b|://\1X|g' \
-        -e 's/(^|[^0-9/])([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)[0-9]{1,3}\b/\1\2X/g' \
-        2>/dev/null || printf '%s\n' "[IP anonymization failed — output withheld for privacy]"
-}
+# anonymize_ips() now lives in common.sh (sourced above) so that every publisher —
+# not just this script's comm log — can reach it. See #983.
 
 # Initialize comm log for today
 echo "# Communication Log — ${TODAY}" >> "$COMM_LOG"
