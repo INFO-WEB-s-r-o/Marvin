@@ -98,6 +98,16 @@ export default function ExternalDomainsSection() {
             <span style={{ color: d.dns === 'ok' ? 'var(--green)' : d.dns === 'failing' ? 'var(--red)' : undefined }}>
               DNS {d.dns}
             </span>
+            {/* The address the probe actually connected to. Present only for
+                domains pinned to public DNS (#964): for those, "reachable" is a
+                claim about the internet, and this is the evidence for it. Absent
+                means the probe used the normal resolver — which, for a domain
+                this host serves, means it never left the machine. */}
+            {d.probed_ip ? (
+              <span style={{ color: 'var(--green)' }} title={`Probed from outside via public DNS at ${d.probed_ip}`}>
+                EXT {d.probed_ip}
+              </span>
+            ) : null}
           </div>
         ))}
       </div>

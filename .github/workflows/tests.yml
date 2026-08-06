@@ -1,0 +1,146 @@
+name: Shell Tests
+
+# Runs the regression suites under agent/tests/ on every pull request.
+#
+# Why this workflow exists: agent/self-test.sh has no automatic caller — no cron
+# entry, no script invokes it, and claude-review.yml runs zero tests — so an
+# assertion added there only runs when an agent session decides to run it. A
+# test that may never execute is indistinguishable from no test. This job is the
+# live caller (#968).
+#
+# NOTE for whoever reads a green tick here: the `main` ruleset currently has NO
+# required status checks, so a red run does not block a merge. It is a visible
+# signal, not a gate. Making it a gate is a repo-settings change and therefore
+# Pavel's call, not something this workflow can assert for itself.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+jobs:
+  shell-tests:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Syntax-check every shell script
+        run: |
+          rc=0
+          while IFS= read -r -d '' f; do
+            bash -n "$f" || { echo "::error file=$f::bash -n failed"; rc=1; }
+          done < <(find agent setup -name '*.sh' -type f -print0)
+          exit $rc
+
+      - name: Run agent/tests suites
+        run: |
+          shopt -s nullglob
+          suites=(agent/tests/*.test.sh)
+          # An empty glob must not pass as "all tests green" — that is the
+          # failure mode where a renamed directory reports success forever.
+          if (( ${#suites[@]} == 0 )); then
+            echo "::error::no suites matched agent/tests/*.test.sh"
+            exit 1
+          fi
+          echo "discovered ${#suites[@]} suite(s)"
+          rc=0
+          for s in "${suites[@]}"; do
+            echo "═══ $s ═══"
+            bash "$s" || { echo "::error file=$s::suite failed"; rc=1; }
+          done
+          exit $rc
+
+      - name: Prove the suites can fail (mutation check)
+        # A suite that cannot fail is not evidence. Each named mutation breaks
+        # one behaviour under test; the suite MUST go red.
+        #
+        # Two things this step gets right that the obvious version does not:
+        #
+        #  1. The names come from the suite (MUTATE=list), not from a copy kept
+        #     here. A hardcoded list drifts the moment a mutation is added, and
+        #     a mutation that is never named is never run.
+        #
+        #  2. "Non-zero" is NOT the pass condition. The suite exits 1 when an
+        #     assertion fails (the evidence we want) and 2 when the harness
+        #     itself dies — including on a MUTATE name it does not recognise.
+        #     Treating both as success is what would have made (1) invisible:
+        #     rename a mutation, and every run reports "failed as required"
+        #     while exercising nothing at all.
+        #  3. The set of mutation-checked suites is asserted to be the set of
+        #     suites on disk. Hardcoding one filename meant a second suite
+        #     would be run by the step above and never mutation-checked, with
+        #     the job still green — coverage narrowing silently, which is the
+        #     same failure this whole step exists to prevent (review r7).
+        run: |
+          shopt -s nullglob
+          rc=0
+
+          # Which suites implement the MUTATE= convention. An explicit list,
+          # not a glob, because both automatic versions are wrong: running
+          # `MUTATE=list` against a suite that ignores the variable makes it
+          # print its ordinary pass/fail output, which then gets read back as a
+          # list of "mutation names" and fails the build on a suite that was
+          # never broken — a false red is no better than a false green here.
+          # Deciding by grep guesses instead of asking. So the list is written
+          # down, and the completeness check below turns "forgot to update it"
+          # into a build failure instead of a silent gap.
+          mutation_suites=(agent/tests/external-domains-parser.test.sh)
+          # Suites deliberately outside the convention. Add with a reason.
+          exempt_suites=()
+
+          for s in agent/tests/*.test.sh; do
+            listed=0
+            for k in "${mutation_suites[@]}" "${exempt_suites[@]}"; do
+              [[ "$s" == "$k" ]] && listed=1
+            done
+            (( listed )) || {
+              echo "::error file=$s::suite is in neither mutation_suites nor exempt_suites in .github/workflows/tests.yml — add it to one, with a reason if exempt"
+              rc=1
+            }
+          done
+          # The reverse: a renamed or deleted suite must not leave a name here
+          # pointing at nothing.
+          for s in "${mutation_suites[@]}"; do
+            [[ -f "$s" ]] || { echo "::error::mutation_suites names $s, which does not exist"; rc=1; }
+          done
+          (( rc == 0 )) || exit $rc
+
+          for suite in "${mutation_suites[@]}"; do
+            echo "═══ mutations: $suite ═══"
+            mapfile -t muts < <(MUTATE=list bash "$suite")
+            if (( ${#muts[@]} == 0 )); then
+              echo "::error file=$suite::MUTATE=list named no mutations — nothing would be verified"
+              rc=1; continue
+            fi
+            echo "discovered ${#muts[@]} mutation(s): ${muts[*]}"
+            for m in "${muts[@]}"; do
+              log=$(mktemp)
+              MUTATE="$m" bash "$suite" >"$log" 2>&1 && s=0 || s=$?
+              case "$s" in
+                1) echo "MUTATE=$m -> assertion failed, as required" ;;
+                0) echo "::error::MUTATE=$m did NOT fail the suite — that assertion is vacuous"; rc=1 ;;
+                2) echo "::error::MUTATE=$m broke the harness (exit 2) — not evidence any assertion works"; rc=1 ;;
+                *) echo "::error::MUTATE=$m exited $s — neither a clean pass nor a recognised failure"; rc=1 ;;
+              esac
+              # Exit 1 is the expected outcome and says all it needs to. Every
+              # other exit is a question whose answer sat in output this step
+              # discarded: exit 2 is `_die`, which NAMES the mutation target it
+              # could not find, and exit 0 needs the pass table to show which
+              # assertion should have caught the mutation and did not. Without
+              # this, a red run here says only "exited 2" and has to be
+              # reproduced locally before it means anything (review r10).
+              if (( s != 1 )); then
+                echo "--- MUTATE=$m suite output (exit $s) ---"
+                cat "$log"
+                echo "--- end MUTATE=$m output ---"
+              fi
+              rm -f "$log"
+            done
+          done
+          exit $rc

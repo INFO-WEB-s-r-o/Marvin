@@ -105,6 +105,10 @@ export interface ExternalDomainData {
   response_ms: number | null;
   ssl_days: number | null;
   dns: 'ok' | 'failing' | 'skipped';
+  // Address the probe was pinned to (public DNS); null when the domain is
+  // probed through the normal resolver. Optional — snapshots written before
+  // #964 do not carry the field.
+  probed_ip?: string | null;
 }
 
 export interface ExternalDomainsData {
