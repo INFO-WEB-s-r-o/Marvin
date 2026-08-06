@@ -34,7 +34,7 @@ if ! github_check_token 2>/dev/null; then
     marvin_log "WARN" "GitHub token check failed — cannot verify open-PR count, skipping self-enhancement this run"
     exit 0
 fi
-open_prs=$(github_list_prs 10 2>/dev/null) && _prs_fetch_ok=true || _prs_fetch_ok=false
+open_prs=$(github_list_prs 100 2>/dev/null) && _prs_fetch_ok=true || _prs_fetch_ok=false
 if [[ "$_prs_fetch_ok" != "true" ]] || ! echo "$open_prs" | jq -e 'type == "array"' >/dev/null 2>&1; then
     marvin_log "WARN" "Could not fetch open PRs (transient) — skipping self-enhancement this run so the pile-up guard stays reliable"
     exit 0
