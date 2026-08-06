@@ -245,12 +245,79 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         # context than the opening paragraph; the full body is one `gh` call away.
         ISSUE_BODY_CLIP=400
 
+        # ─── Trust boundary: whose issue text may enter the model's context ───
+        #
+        # This repository is PUBLIC. Anyone on the internet can open an issue.
+        # Until this filter existed, every open issue — any author — was clipped
+        # to 400 chars and pasted into the context of a Claude session that holds
+        # Edit, Write, Bash and the ability to open pull requests, running
+        # unsupervised on a host that also serves other tenants.
+        #
+        # The author restriction was real, but it lived only in prompts/hourly.md
+        # as "only act on issues where the author is listed in CODEOWNERS". That
+        # is an instruction to the model, not a boundary around it: the untrusted
+        # text still reached the context, and an instruction is exactly the thing
+        # a prompt injection targets. 400 characters is ample for one.
+        #
+        # So the filter moved out of the prompt and into the fetch. Untrusted
+        # issues are now dropped before the model sees them — the model cannot be
+        # talked out of a `jq select` it never runs.
+        #
+        # Derived from CODEOWNERS rather than hardcoded here, because CODEOWNERS
+        # already documents this exact list and warns that removing a name
+        # "silently switches off Marvin's issue handling". Two sources would
+        # drift, and the drift would be silent in the direction that matters.
+        # The LOCAL checkout is read, not the API copy: this is a trust decision,
+        # and it should not depend on a network fetch that can fail or be
+        # answered by something other than the repository.
+        #
+        # Filtering on author_association instead would be wrong and was tried on
+        # paper first: `github-actions[bot]` reports NONE, so association-based
+        # filtering silently discards the review bot's issues — 13 of the 24 open
+        # on 2026-08-06, and Marvin's single largest source of real work.
+        #
+        # Fails CLOSED. If the list cannot be derived, no issues are shown and the
+        # run is told the boundary failed. An empty allowlist that reads as "no
+        # issues today" is the failure this whole file keeps being rewritten to
+        # prevent.
+        TRUSTED_AUTHORS_JSON=""
+        _co_local="${MARVIN_DIR}/CODEOWNERS"
+        if [[ -r "$_co_local" ]]; then
+            TRUSTED_AUTHORS_JSON=$(
+                {
+                    # Owners: @handle on any non-comment line.
+                    grep -vE '^[[:space:]]*#' "$_co_local" \
+                        | grep -oE '@[A-Za-z0-9][A-Za-z0-9-]*' | sed 's/^@//'
+                    # Trusted issue authors: the documented comment block lists
+                    # one login per line as `#   <login>   — description`.
+                    grep -oE '^#[[:space:]]+[A-Za-z0-9][A-Za-z0-9._-]*(\[bot\])?[[:space:]]+—' "$_co_local" \
+                        | sed -E 's/^#[[:space:]]+//; s/[[:space:]]+—$//'
+                } | grep -vE '^$' | sort -u | jq -R . | jq -c -s .
+            ) || TRUSTED_AUTHORS_JSON=""
+        fi
+        if [[ -z "$TRUSTED_AUTHORS_JSON" ]] \
+            || ! printf '%s' "$TRUSTED_AUTHORS_JSON" | jq -e 'type=="array" and length>0' >/dev/null 2>&1; then
+            TRUSTED_AUTHORS_JSON=""
+        fi
+
         ISSUES_JSON=""
         ISSUES_NOTE=""
-        if [[ -n "$ISSUES_BODY" ]]; then
-            ISSUES_JSON=$(printf '%s' "$ISSUES_BODY" | jq -c --argjson clip "$ISSUE_BODY_CLIP" '
+        ISSUES_DROPPED=0
+        if [[ -n "$ISSUES_BODY" && -n "$TRUSTED_AUTHORS_JSON" ]]; then
+            # Counted before filtering so the drop is reported, not silent. An
+            # untrusted issue is invisible to the model by design, but it must
+            # not be invisible to the log.
+            ISSUES_DROPPED=$(printf '%s' "$ISSUES_BODY" \
+                | jq --argjson trusted "$TRUSTED_AUTHORS_JSON" \
+                  '[ .[] | select(has("pull_request") | not)
+                     | select(.user.login as $l | ($trusted | index($l)) | not) ] | length' 2>/dev/null) \
+                || ISSUES_DROPPED=0
+            ISSUES_JSON=$(printf '%s' "$ISSUES_BODY" | jq -c --argjson clip "$ISSUE_BODY_CLIP" --argjson trusted "$TRUSTED_AUTHORS_JSON" '
                 [ .[]
                   | select(has("pull_request") | not)
+                  # The trust boundary. Untrusted issue text never reaches the
+                  # prompt, so it can never instruct the agent that reads it.
+                  | select(.user.login as $l | $trusted | index($l))
                   # Bind the issue before descending into .body: inside the clip
                   # expression `.` is the body STRING, so a bare \(.number) there
                   # is "Cannot index string with string" — which this block would
@@ -269,7 +336,14 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
                 ]' 2>/dev/null) || ISSUES_JSON=""
         fi
 
-        if [[ -z "$ISSUES_JSON" ]]; then
+        if [[ -z "$TRUSTED_AUTHORS_JSON" ]]; then
+            # Distinct from a failed fetch, and reported as its own verdict: the
+            # queue may be perfectly readable while the trust list is not, and
+            # collapsing the two would send someone to debug the wrong thing.
+            ISSUES_JSON="[]"
+            ISSUES_NOTE="**TRUST LIST UNAVAILABLE — NO ISSUES SHOWN.** ${MARVIN_DIR}/CODEOWNERS could not be read or yielded no trusted authors, so the author allowlist could not be built. This is NOT an empty queue: issues were deliberately withheld because there was no way to establish who wrote them. Do not act on issue reports this cycle; read them with \`gh issue list\` if needed."
+            marvin_log "ERROR" "Trusted-author list could not be derived from ${MARVIN_DIR}/CODEOWNERS — issue feed withheld (failing closed)"
+        elif [[ -z "$ISSUES_JSON" ]]; then
             # Never let a broken fetch read as a clean queue.
             ISSUES_JSON="[]"
             ISSUES_NOTE="**ISSUE FETCH FAILED (HTTP ${ISSUES_CODE:-none}) — this is NOT an empty queue.** Treat the list below as unknown, not as \"no open issues\"."
@@ -283,8 +357,11 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
                 ISSUES_NOTE="**QUEUE TRUNCATED — MORE OPEN ISSUES EXIST THAN ARE LISTED.** Stopped at the ${ISSUES_MAX_PAGES}-page bound (${ISSUES_PER_PAGE}/page). ${ISSUES_COUNT} issues shown (pull requests excluded: ${ISSUES_PRS}); the rest were not fetched. Do not read the list below as the whole queue."
                 marvin_log "WARN" "Open-issue fetch hit the ${ISSUES_MAX_PAGES}-page bound — queue truncated at ${ISSUES_COUNT} issues, reported to the run as truncated"
             else
-                ISSUES_NOTE="${ISSUES_COUNT} open issues, all of them (pull requests excluded: ${ISSUES_PRS}). Bodies over ${ISSUE_BODY_CLIP} chars are clipped and GPG signature blocks stripped; no issue is omitted."
-                marvin_log "INFO" "Fetched ${ISSUES_COUNT} open issues (${ISSUES_PRS} PRs filtered out)"
+                # "no issue is omitted" was true until issues from untrusted
+                # authors stopped being shown. It is now a claim this block can
+                # only make about the trusted queue, and it says which.
+                ISSUES_NOTE="${ISSUES_COUNT} open issues from trusted authors, all of them (pull requests excluded: ${ISSUES_PRS}; issues from authors not listed in CODEOWNERS, withheld before reaching this prompt: ${ISSUES_DROPPED}). Bodies over ${ISSUE_BODY_CLIP} chars are clipped and GPG signature blocks stripped; no TRUSTED issue is omitted. The withheld ones are not invisible — \`gh issue list\` shows the full queue."
+                marvin_log "INFO" "Fetched ${ISSUES_COUNT} open issues from trusted authors (${ISSUES_PRS} PRs filtered out, ${ISSUES_DROPPED} untrusted-author issues withheld from the prompt)"
             fi
         fi
 
