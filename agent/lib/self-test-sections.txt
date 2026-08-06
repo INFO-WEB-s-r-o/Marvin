@@ -57,5 +57,6 @@ Test helpers
 9z. Stale GPG home in project tree (issue #737)
 9d. Source ⇆ live config drift detection
 9h. nginx must not retain raw request bodies in the negotiate inbox
+9n. Agent and setup scripts must stay executable in the index
 10. Security scoring system
 Report
