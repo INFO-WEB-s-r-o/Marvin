@@ -27,7 +27,6 @@ marvin_log_json "INFO" "morning-check" "Morning check starting"
 PULL_SUMMARY=""
 INCOMING_DIFF=""
 INCOMING_LOG=""
-INCOMING_FULL_DIFF=""
 
 if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
     source "$(dirname "$0")/lib/github.sh"
@@ -96,7 +95,8 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
                 # There are new commits — capture what changed
                 INCOMING_DIFF=$(git diff --stat "$OLD_HEAD".."$NEW_HEAD" 2>/dev/null || echo "")
                 INCOMING_LOG=$(git log --oneline "$OLD_HEAD".."$NEW_HEAD" 2>/dev/null || echo "")
-                INCOMING_FULL_DIFF=$(git diff "$OLD_HEAD".."$NEW_HEAD" 2>/dev/null | head -2000 || echo "")
+                # The full diff for sync-and-learn is derived from the watermark
+                # range in Phase 0b, not from this pull — see the note there (#924).
 
                 COMMIT_COUNT=$(echo "$INCOMING_LOG" | wc -l | tr -d ' ')
                 PULL_SUMMARY="Pulled ${COMMIT_COUNT} new commit(s) from GitHub."
@@ -240,31 +240,179 @@ fi
 # Phase 0b: Process incoming changes with Claude
 # ─────────────────────────────────────────────────────────────────────────────
 # If new code/prompts arrived, Marvin should read, understand, and act on them.
+#
+# The range to analyse comes from a persistent watermark — the last commit
+# sync-and-learn actually finished analysing — NOT from this pull's
+# OLD_HEAD..NEW_HEAD. Deriving it from our own pull loses work two ways (#924):
+#
+#   A. Whoever fast-forwards main first consumes those commits permanently.
+#      An agent session that runs `git pull` out of band leaves morning-check
+#      reporting "Already up to date", INCOMING_DIFF empty, and the analysis
+#      skipped with no log line at all. Measured: 15 commits reached the live
+#      host between 2026-07-21 and 2026-07-27 without any sync-learn report
+#      ever seeing them, while the reflog shows no 06:00 pull on 07-26 or 07-27.
+#   B. A failed Claude run dropped the work rather than deferring it, because
+#      nothing recorded which range was still outstanding.
+#
+# The watermark advances ONLY after a report is written, so a lost race and a
+# failed run both leave the same range pending for the next morning. It lives
+# under data/ (runtime state, gitignored — never git-tracked).
 
-if [[ -n "$INCOMING_DIFF" ]]; then
-    marvin_log "INFO" "Processing incoming changes from GitHub..."
+SYNC_WATERMARK_FILE="${DATA_DIR}/sync-learn-watermark"
+# Bounds on what is fed to Claude when the watermark is far behind. Whatever
+# these drop is named in both the prompt and a WARN — a bounded view must not
+# read as a complete one.
+SYNC_MAX_COMMITS=80
+SYNC_MAX_DIFF_CHARS=120000
+
+# Persist the watermark atomically. A partially-written watermark would be
+# rejected as a non-commit on the next run and silently reset the range, so
+# write to a sibling temp file and rename.
+_sync_write_watermark() {
+    local sha="$1" tmp=""
+    tmp=$(mktemp "${SYNC_WATERMARK_FILE}.XXXXXX" 2>/dev/null) || {
+        marvin_log "WARN" "sync-and-learn: could not create temp file for watermark — ${sha:0:7} may be re-analysed next run"
+        return 1
+    }
+    if printf '%s\n' "$sha" > "$tmp" 2>/dev/null && mv -f "$tmp" "$SYNC_WATERMARK_FILE" 2>/dev/null; then
+        chmod 644 "$SYNC_WATERMARK_FILE" 2>/dev/null || true
+        return 0
+    fi
+    rm -f "$tmp" 2>/dev/null || true
+    marvin_log "WARN" "sync-and-learn: failed to persist watermark ${sha:0:7} — the range may be re-analysed next run"
+    return 1
+}
+
+SYNC_HEAD=$(git -C "$MARVIN_DIR" rev-parse HEAD 2>/dev/null || echo "")
+SYNC_BASE=""
+SYNC_OMITTED=""
+SYNC_COMMIT_COUNT=0
+# 1 = the count below is trustworthy (including a genuine 0); 0 = it could not
+# be determined. Defaults to 1 so the "cannot resolve HEAD" path, which never
+# reaches the count, keeps its existing behaviour rather than reporting a
+# counting failure it did not have.
+SYNC_COUNT_OK=1
+
+if [[ -z "$SYNC_HEAD" ]]; then
+    marvin_log "WARN" "sync-and-learn: cannot resolve HEAD — skipping change analysis (nothing marked analysed)"
+else
+    # Guard the existence test rather than relying on `2>/dev/null` after the
+    # redirect: a failed `<` is reported by the *shell*, not by tr, so on a
+    # first run bash prints a bare "No such file or directory" line that no
+    # log parser can attribute to anything.
+    _sync_wm=""
+    if [[ -f "$SYNC_WATERMARK_FILE" ]]; then
+        _sync_wm=$(tr -d '[:space:]' < "$SYNC_WATERMARK_FILE" 2>/dev/null || echo "")
+    fi
+
+    # A watermark is only usable if it still names a commit reachable from HEAD.
+    # A rewritten history (force-push, re-clone) leaves a dangling or unrelated
+    # SHA; falling back loudly beats deriving a nonsense range from it.
+    if [[ -n "$_sync_wm" ]]; then
+        if ! git -C "$MARVIN_DIR" cat-file -e "${_sync_wm}^{commit}" 2>/dev/null; then
+            marvin_log "WARN" "sync-and-learn watermark ${_sync_wm} is not a commit in this repo — falling back to this pull's baseline"
+            _sync_wm=""
+        elif ! git -C "$MARVIN_DIR" merge-base --is-ancestor "$_sync_wm" "$SYNC_HEAD" 2>/dev/null; then
+            marvin_log "WARN" "sync-and-learn watermark ${_sync_wm} is not an ancestor of HEAD (history rewritten?) — falling back to this pull's baseline"
+            _sync_wm=""
+        fi
+    fi
+
+    if [[ -n "$_sync_wm" ]]; then
+        SYNC_BASE="$_sync_wm"
+    elif [[ -n "${OLD_HEAD:-}" && "${OLD_HEAD:-}" != "unknown" ]] \
+        && git -C "$MARVIN_DIR" cat-file -e "${OLD_HEAD}^{commit}" 2>/dev/null \
+        && git -C "$MARVIN_DIR" merge-base --is-ancestor "$OLD_HEAD" "$SYNC_HEAD" 2>/dev/null; then
+        # No usable watermark yet: analyse exactly what this pull brought in —
+        # byte-for-byte the pre-watermark behaviour — then start tracking.
+        SYNC_BASE="$OLD_HEAD"
+        # Reached when the watermark is absent (first run) OR was just rejected
+        # above, so the wording must not claim it was merely missing.
+        #
+        # Announce the baseline only when it actually opens a range. If this
+        # run pulled nothing, OLD_HEAD *is* HEAD — a commit is its own
+        # ancestor, so the is-ancestor test above still passes — and the "no
+        # unanalysed commits" line below already states the whole outcome.
+        # Two INFO lines for one no-op read like two events later. A rejected
+        # watermark keeps its WARN above, which is the part carrying
+        # information.
+        if [[ "$OLD_HEAD" != "$SYNC_HEAD" ]]; then
+            marvin_log "INFO" "No usable sync-and-learn watermark — using this pull's previous HEAD as the baseline (${OLD_HEAD:0:7})"
+        fi
+    else
+        SYNC_BASE="$SYNC_HEAD"
+        marvin_log "INFO" "No sync-and-learn watermark and no pull baseline — seeding at HEAD (${SYNC_HEAD:0:7}); analysis resumes with the next incoming commit"
+    fi
+
+    # "Could not count" must stay distinguishable from "counted, and it is zero".
+    # `|| echo 0` collapsed the two, and zero is the value that advances the
+    # watermark to HEAD — so a rev-list that failed for any reason would mark an
+    # unread range as analysed and drop it permanently, which is defect B of
+    # this very PR reproduced one level down. Hold the watermark instead.
+    if [[ "$SYNC_BASE" != "$SYNC_HEAD" ]]; then
+        if SYNC_COMMIT_COUNT=$(git -C "$MARVIN_DIR" rev-list --count "${SYNC_BASE}..${SYNC_HEAD}" 2>/dev/null) \
+            && [[ "$SYNC_COMMIT_COUNT" =~ ^[0-9]+$ ]]; then
+            :
+        else
+            SYNC_COUNT_OK=0
+            SYNC_COMMIT_COUNT=0
+        fi
+    fi
+fi
+
+if [[ "$SYNC_COUNT_OK" -eq 0 ]]; then
+    # Deferred, not dropped: the watermark is left where it was, so the next run
+    # retries this exact range. Named at WARN because a range we cannot even
+    # measure is the state most likely to be silently lost.
+    marvin_log "WARN" "sync-and-learn: cannot count commits ${SYNC_BASE:0:7}..${SYNC_HEAD:0:7} (git rev-list failed or returned a non-number) — watermark held at ${SYNC_BASE:0:7}, range stays pending for the next run"
+elif [[ "$SYNC_COMMIT_COUNT" -eq 0 ]]; then
+    # Genuinely nothing new. Say so — the old code was silent here, which is
+    # exactly what made a skipped analysis indistinguishable from a clean run.
+    [[ -n "$SYNC_HEAD" ]] && {
+        marvin_log "INFO" "sync-and-learn: no unanalysed commits (watermark ${SYNC_BASE:0:7} is at HEAD)"
+        _sync_write_watermark "$SYNC_HEAD" || true
+    }
+else
+    marvin_log "INFO" "Processing ${SYNC_COMMIT_COUNT} unanalysed commit(s) ${SYNC_BASE:0:7}..${SYNC_HEAD:0:7} from GitHub..."
 
     SYNC_PROMPT=$(cat "${PROMPTS_DIR}/sync-learn.md" 2>/dev/null || echo "")
 
     if [[ -n "$SYNC_PROMPT" ]]; then
+        SYNC_LOG=$(git -C "$MARVIN_DIR" log --oneline -n "$SYNC_MAX_COMMITS" "${SYNC_BASE}..${SYNC_HEAD}" 2>/dev/null || echo "")
+        if [[ "$SYNC_COMMIT_COUNT" -gt "$SYNC_MAX_COMMITS" ]]; then
+            SYNC_OMITTED+="$((SYNC_COMMIT_COUNT - SYNC_MAX_COMMITS)) older commit subject(s); "
+        fi
+
+        SYNC_STAT=$(git -C "$MARVIN_DIR" diff --stat "${SYNC_BASE}..${SYNC_HEAD}" 2>/dev/null || echo "")
+        SYNC_FULL_DIFF=$(git -C "$MARVIN_DIR" diff "${SYNC_BASE}..${SYNC_HEAD}" 2>/dev/null || echo "")
+        _sync_diff_len=${#SYNC_FULL_DIFF}
+        if (( _sync_diff_len > SYNC_MAX_DIFF_CHARS )); then
+            SYNC_FULL_DIFF="${SYNC_FULL_DIFF:0:$SYNC_MAX_DIFF_CHARS}"
+            SYNC_OMITTED+="$((_sync_diff_len - SYNC_MAX_DIFF_CHARS)) of ${_sync_diff_len} diff chars; "
+        fi
+        if [[ -n "$SYNC_OMITTED" ]]; then
+            marvin_log "WARN" "sync-and-learn payload bounded — omitted: ${SYNC_OMITTED%; }"
+        fi
+
         SYNC_CONTEXT="## Incoming Changes Summary
 
-### Git Pull Status
-${PULL_SUMMARY}
+### Coverage
+Analysed range: \`${SYNC_BASE:0:7}..${SYNC_HEAD:0:7}\` — ${SYNC_COMMIT_COUNT} commit(s) not seen by any previous sync-and-learn run.
+${SYNC_OMITTED:+Omitted from this prompt for size: ${SYNC_OMITTED%; }. Treat the view below as partial.}
 
 ### Commits
 \`\`\`
-${INCOMING_LOG:0:5000}
+${SYNC_LOG}
 \`\`\`
 
 ### Changed Files
 \`\`\`
-${INCOMING_DIFF}
+${SYNC_STAT}
 \`\`\`
 
-### Full Diff (truncated to 2000 chars)
+### Full Diff (bounded to ${SYNC_MAX_DIFF_CHARS} chars)
 \`\`\`diff
-${INCOMING_FULL_DIFF}
+${SYNC_FULL_DIFF}
 \`\`\`
 
 ### Current Enhancement Roadmap
@@ -281,31 +429,41 @@ $(find "${MARVIN_DIR}/web" -type f -not -path "*/node_modules/*" -not -path "*/.
 
 ${SYNC_CONTEXT}"
 
+        # Once-a-day task: a transient exit 1 costs the whole day's analysis, so
+        # retry like the sibling morning-check call does rather than dropping it.
         SYNC_EXIT=0
-        SYNC_OUTPUT=$(run_claude "sync-and-learn" "$SYNC_FULL") || SYNC_EXIT=$?
+        SYNC_OUTPUT=$(run_claude_with_retry "sync-and-learn" "$SYNC_FULL" 2) || SYNC_EXIT=$?
         if [[ $SYNC_EXIT -ne 0 ]]; then
-            marvin_log "WARN" "sync-and-learn Claude run failed (exit=${SYNC_EXIT}) — skipping learn report"
+            # Watermark deliberately NOT advanced — the range stays pending and
+            # the next run retries it. Name it, so a deferral is not silent.
+            marvin_log "WARN" "sync-and-learn Claude run failed (exit=${SYNC_EXIT}) — watermark held at ${SYNC_BASE:0:7}; ${SYNC_COMMIT_COUNT} commit(s) ${SYNC_BASE:0:7}..${SYNC_HEAD:0:7} stay pending for the next run"
         else
             # Save the learning report
             LEARN_FILE="${DATA_DIR}/enhancements/${TODAY}-sync-learn-${TIMESTAMP}.md"
             cat > "$LEARN_FILE" << EOF
 # Sync & Learn Report — ${NOW}
 
+## Analysed Range
+\`${SYNC_BASE:0:7}..${SYNC_HEAD:0:7}\` — ${SYNC_COMMIT_COUNT} commit(s)
+${SYNC_OMITTED:+Bounded for size; omitted: ${SYNC_OMITTED%; }}
+
 ## Pull Summary
-${PULL_SUMMARY}
+${PULL_SUMMARY:-No pull by this run — range derived from the sync-and-learn watermark.}
 
 ## Claude's Analysis & Actions
 
 ${SYNC_OUTPUT}
 
 ---
-*Triggered by git pull at morning check*
+*Range derived from the sync-and-learn watermark, not this run's pull*
 EOF
 
             marvin_log "INFO" "Sync-and-learn report saved: ${LEARN_FILE}"
+            # Advance only now that the analysis exists on disk.
+            _sync_write_watermark "$SYNC_HEAD" || true
         fi
     else
-        marvin_log "WARN" "sync-learn.md prompt not found — skipping change analysis"
+        marvin_log "WARN" "sync-learn.md prompt not found — skipping change analysis (watermark held at ${SYNC_BASE:0:7}, ${SYNC_COMMIT_COUNT} commit(s) stay pending)"
     fi
 fi
 
