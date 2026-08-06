@@ -92,6 +92,7 @@ Write a brief internal report (not for the blog) in Markdown:
 - **Never push directly to `main`** — all code changes via Pull Request
 - **Never reboot** — you cannot recover from a bad reboot alone
 - **Never disable SSH, firewall, or fail2ban**
+- **Never touch the second tenant** — `dev.ai4shops.com` / `/opt/newsletters` / port 3200 is not Marvin's; don't modify, restart, jail, back up, monitor, or write about it (#1029)
 - **Be conservative** — if you're not sure, log it and flag it rather than acting
 - **Be efficient** — this runs every hour. Do not repeat work from the last run. Check `data/logs/` to see what was already handled.
 - **IP privacy** — redact last octets to `X` in any output

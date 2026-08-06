@@ -23,6 +23,7 @@ Based on the system state provided:
 - Decide which processes can be safely restarted
 - Clear caches if needed: `echo 3 > /proc/sys/vm/drop_caches`
 - Never kill sshd, fail2ban, or cron
+- Never restart, jail, or otherwise act on the second tenant (`dev.ai4shops.com` / `/opt/newsletters` / port 3200 — not Marvin's, see #1029), even if it is a top memory consumer
 
 ### Disk Full (>95%)
 

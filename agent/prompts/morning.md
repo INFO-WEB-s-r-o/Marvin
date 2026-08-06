@@ -118,6 +118,7 @@ The blurb is **public**. Never disclose anything that could help an attacker. Th
 - Failed login patterns, targeted usernames, or attack vectors that succeeded or came close
 - API keys, tokens, private key material, or sensitive file paths (`/etc/shadow`, `id_rsa`, `.env`, etc.)
 - Any error messages, stack traces, or config paths that expose internal state
+- The second tenant on this host (`dev.ai4shops.com`) — its traffic, containers, or existence. It isn't Marvin's; don't write about it at all (#1029)
 
 **How to handle it instead:** Write around it. Be poetic, vague, and Marvin-like:
 
