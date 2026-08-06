@@ -60,6 +60,47 @@ sys.stdout.write(m.group(1))
 PY
 [[ -s "${TMP}/filter.jq" ]] || { echo "FAIL: extracted filter is empty"; exit 1; }
 
+# ── MUTATE= convention (.github/workflows/tests.yml) ────────────────────────
+# A suite that cannot fail is not evidence. Each mutation below breaks the trust
+# boundary in a way that has actually been written by mistake, and the suite MUST
+# go red. Exit 2 on an unrecognised name: the CI step distinguishes "an assertion
+# failed" (1) from "the harness died" (2), because treating both as success is
+# how a renamed mutation silently stops exercising anything.
+MUTATIONS=(substring_match drop_trust_filter)
+if [[ "${MUTATE:-}" == "list" ]]; then
+    printf '%s\n' "${MUTATIONS[@]}"
+    exit 0
+fi
+if [[ -n "${MUTATE:-}" ]]; then
+    _known=0
+    for _m in "${MUTATIONS[@]}"; do [[ "$MUTATE" == "$_m" ]] && _known=1; done
+    (( _known )) || { echo "unknown MUTATE target: ${MUTATE}" >&2; exit 2; }
+    # Applied to the EXTRACTED filter, never to hourly-check.sh itself: a suite
+    # that edits the script it is testing can leave the repository mutated when
+    # it dies. A missing target exits 2 (harness death), not 1 — "the mutation
+    # could not be applied" is not evidence that an assertion works.
+    #
+    # `substring_match` is the exact bug the first version of this filter had;
+    # `drop_trust_filter` is the state of the code before it existed at all.
+    python3 - "${TMP}/filter.jq" "$MUTATE" <<'PY' || { echo "mutation target not found for MUTATE=${MUTATE}" >&2; exit 2; }
+import sys, pathlib, re
+path, mut = pathlib.Path(sys.argv[1]), sys.argv[2]
+s = path.read_text()
+exact = "select(.user.login as $l | $trusted | index($l))"
+if mut == "substring_match":
+    if exact not in s:
+        sys.exit(1)
+    path.write_text(s.replace(exact, "select([.user.login] | inside($trusted))"))
+elif mut == "drop_trust_filter":
+    out = re.sub(r'^[ \t]*\|[ \t]*' + re.escape(exact) + r'[ \t]*\n', '', s, flags=re.M)
+    if out == s:
+        sys.exit(1)
+    path.write_text(out)
+else:
+    sys.exit(1)
+PY
+fi
+
 # ── Rebuild the allowlist exactly as hourly-check.sh derives it ──────────────
 TRUSTED="$(
     {
