@@ -638,11 +638,14 @@ if [[ -f "$PEERS_FILE" ]]; then
             longevity_score=$(( days_known > 30 ? 25 : (days_known * 25 + 29) / 30 ))
         fi
 
-        # Aliveness score (0-25): currently reachable
-        alive_score=0
-        if [[ "$peer_alive" == "true" ]]; then
-            alive_score=25
-        fi
+        # Aliveness score (0-25) is computed *after* the beacon probe below, from
+        # what that probe actually observed (#917). It used to be read from the
+        # stored `.alive` field — which nothing has ever written. `.alive` was a
+        # record-creation default that five call sites read and zero call sites
+        # set, so every peer scored a full 25/100 for a reachability that had
+        # never been measured, and the public registry published `active_peers`
+        # counting it. The beacon arm already performs the exact HTTP probe the
+        # answer requires; deriving from it is the fix, not a second fetch.
 
         # Beacon score (0-25): has valid ai-managed.json
         # beacon_status records *why* the score landed where it did — the score
@@ -652,7 +655,8 @@ if [[ -f "$PEERS_FILE" ]]; then
         # and was previously only captured in free-text notes. Purely additive
         # observability — does not alter the score, fetch, or any SSRF/validation
         # logic. Enum: no_domain | skipped_cidr | skipped_invalid | skipped_private
-        # | unreachable_dns | unreachable_http | reachable_no_json | valid_json.
+        # | unreachable_dns | unreachable_http | reachable_no_json | valid_json
+        # | reachable_catchall (#917: answers every path with one canned body).
         beacon_score=0
         beacon_status="no_domain"
         if [[ -n "$peer_domain" && "$peer_domain" != "null" ]]; then
@@ -732,7 +736,33 @@ if [[ -f "$PEERS_FILE" ]]; then
                     else
                         beacon_status="reachable_no_json"
                     fi
-                    if [[ -n "$beacon_json" ]] && echo "$beacon_json" | jq empty 2>/dev/null; then
+                    # Catch-all detection (#917). A `200` proves a server answered,
+                    # not that it answered *this question*. posledniping.cz returns
+                    # the same 2796-byte SPA for every path under /.well-known/ —
+                    # byte-identical to its "beacon" — and has satisfied a bare
+                    # status-code check every day since March. Ask for a path that
+                    # cannot exist: if the reply is identical, the door is a wall.
+                    #
+                    # Only runs when the beacon fetch returned a body — there is
+                    # nothing to compare against otherwise. Compared by hash so a
+                    # large body is never held in a variable twice. A site whose
+                    # page embeds a timestamp differs between the two fetches and
+                    # is therefore NOT flagged: this can only clear a peer it
+                    # should have caught, never condemn an honest one.
+                    if [[ -n "$beacon_json" ]]; then
+                        _catchall_url="${beacon_url%/*}/marvin-probe-nonexistent-e3b0c442.json"
+                        _catchall_body=$(curl -sf --max-time 5 --max-redirs 0 \
+                            "${beacon_resolve_opt[@]}" "$_catchall_url" 2>/dev/null || echo "")
+                        if [[ -n "$_catchall_body" ]] \
+                           && [[ "$(printf '%s' "$_catchall_body" | md5sum)" == "$(printf '%s' "$beacon_json" | md5sum)" ]]; then
+                            beacon_status="reachable_catchall"
+                            marvin_log "WARN" "Peer answers a nonexistent path identically to its beacon — treating as unreachable: ${peer_domain}"
+                        fi
+                    fi
+                    # A catch-all's "beacon" is whatever it serves everything else;
+                    # it must not be promoted to valid_json even if that body parses.
+                    if [[ -n "$beacon_json" ]] && [[ "$beacon_status" != "reachable_catchall" ]] \
+                       && echo "$beacon_json" | jq empty 2>/dev/null; then
                         beacon_score=10  # Valid JSON
                         beacon_status="valid_json"
                         # Bonus for expected fields — only over HTTPS (#467: HTTP responses are spoofable)
@@ -744,6 +774,33 @@ if [[ -f "$PEERS_FILE" ]]; then
                     fi
                 fi
             fi
+        fi
+
+        # Aliveness (0-25), derived from the probe just performed (#917).
+        # Alive means "this host answered me distinguishably". valid_json is the
+        # full handshake; reachable_no_json is a real server that simply has no
+        # beacon (still up, still a neighbour). Everything else — unreachable,
+        # skipped, no address at all, or a catch-all wall — is not evidence of
+        # life and scores zero.
+        #
+        # Note this loop resolves `.domain // .ip`, so it reaches 15 of the 16
+        # records, not the 3 with a `.domain` that the *liveness* loop above
+        # sees via `.url // .domain` — which is why beacon_summary reports 11
+        # unreachable_http rather than 11 no_domain. The two CIDR records
+        # (skipped_cidr) are address ranges, not hosts: they cannot be pinged
+        # even in principle, and can no longer collect a quarter of a trust
+        # score for it. That is how CensysInspect came to be `known`.
+        peer_alive_now=false
+        case "$beacon_status" in
+            valid_json|reachable_no_json) peer_alive_now=true ;;
+        esac
+        alive_score=0
+        [[ "$peer_alive_now" == "true" ]] && alive_score=25
+
+        # Log transitions so the first run after this lands is auditable rather
+        # than a silent mass rewrite of a field nobody had ever seen change.
+        if [[ "$peer_alive" != "$peer_alive_now" ]]; then
+            marvin_log "INFO" "Peer aliveness corrected for ${peer_name}: ${peer_alive} -> ${peer_alive_now} (${beacon_status})"
         fi
 
         # Identity score (0-25): metadata completeness
@@ -774,10 +831,17 @@ if [[ -f "$PEERS_FILE" ]]; then
         # Persist structured beacon outcome (#470: pass enum via --arg, never interpolate).
         # last_beacon_ok stamps only on valid_json, preserving the prior value otherwise.
         jq_updates+=" | .peers[$idx].beacon_status = \$beacon_status_${idx}"
+        # Persist the aliveness verdict the same way beacon_status already is
+        # (#917). This is the write that has never existed: five readers, zero
+        # writers. `alive` is a real boolean, not a string, so it is built with
+        # jq's own literals rather than passed through --arg.
+        jq_updates+=" | .peers[$idx].alive = (\$alive_${idx} == \"true\")"
+        jq_updates+=" | .peers[$idx].last_alive_check = \$now_ts"
         jq_updates+=" | .peers[$idx].last_beacon_check = \$now_ts"
         jq_updates+=" | .peers[$idx].last_beacon_ok = (if \$beacon_status_${idx} == \"valid_json\" then \$now_ts else (.peers[$idx].last_beacon_ok // null) end)"
         jq_args+=(--arg "trust_level_${idx}" "$trust_level")
         jq_args+=(--arg "beacon_status_${idx}" "$beacon_status")
+        jq_args+=(--arg "alive_${idx}" "$peer_alive_now")
     done
 
     # Set last_scan timestamp

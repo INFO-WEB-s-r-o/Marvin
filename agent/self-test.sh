@@ -2570,6 +2570,65 @@ fi
 # hand is a list that goes stale the moment someone adds the 50th.
 unset -f _od_literals _od_expand _od_perm_case _od_attribute _od_nest_case
 
+# ─── 9a. Peer aliveness must be measured, not defaulted (#917) ───────────────
+# `.alive` was read in five places — the trust score, the public projection, the
+# `active_peers` count, update-website.sh and the dashboard's green dot — and
+# written in none. It was a record-creation default, so every peer, including 13
+# scanner records that carry no address at all, was published to the internet as
+# alive and collected a quarter of its trust score for a reachability nobody had
+# ever measured. A field with readers and no writers does not look broken from
+# any single call site; it looks like data.
+#
+# Section letter 9a: by the time this rebased onto main, 9b/9c/9d/9e/9f/9h/9i/9j/
+# 9k/9l/9m/9n/9o/9z were all already taken. 9a and 9g were the only letters free;
+# 9a is lower, per §1k's instruction to use the lowest free letter.
+#
+# Two independent assertions, because they fail at different times: the source
+# check catches a regression the moment it is committed, while the artifact
+# check catches the published document actually contradicting itself — which is
+# how this was found and what a reader of the registry would see.
+_nd="$(dirname "$0")/network-discovery.sh"
+if [[ -r "$_nd" ]]; then
+    # Comments stripped: the prose above the fix names `.alive` repeatedly, and
+    # a check that matched the file at large would keep passing if the write
+    # were reverted and the explanation left behind — asserting that the fix was
+    # once described rather than that it is still wired in (#889/#899).
+    _nd_code=$(grep -v '^[[:space:]]*#' "$_nd") || _nd_code=""
+    if [[ -z "$_nd_code" ]]; then
+        test_fail "peer aliveness: could not read ${_nd} — #917 is unverified rather than clean"
+    elif printf '%s\n' "$_nd_code" | grep -qE '\.peers\[\$idx\]\.alive[[:space:]]*='; then
+        test_pass "peer aliveness: network-discovery.sh writes .alive back to peers.json, so active_peers counts a measured field (#917)"
+    else
+        test_fail "peer aliveness: nothing assigns .peers[].alive in network-discovery.sh — the public registry's active_peers counts a field with five readers and no writer (#917)"
+    fi
+else
+    test_warn "peer aliveness: ${_nd} not readable — #917 check skipped"
+fi
+
+# The published registry must not claim more live peers than it has evidence
+# for. beacon_summary and active_peers are computed from the same peer set in
+# the same jq program, so a count exceeding the peers whose beacon actually
+# answered is the two halves of one document disagreeing — 15 active against 0
+# valid beacons is what opened #917. Note this FAILs until the first discovery
+# run after the fix deploys, which is correct: the live file really is wrong.
+_reg="${DATA_DIR}/peers/registry.json"
+if [[ -r "$_reg" ]] && jq empty "$_reg" 2>/dev/null; then
+    _reg_active=$(jq -r '.active_peers // "null"' "$_reg")
+    # Evidence of life = a beacon fetch that returned something distinguishable.
+    _reg_live=$(jq -r '[(.beacon_summary // {}) | to_entries[]
+                        | select(.key == "valid_json" or .key == "reachable_no_json")
+                        | .value] | add // 0' "$_reg")
+    if [[ "$_reg_active" == "null" ]]; then
+        test_warn "peer registry: no active_peers field in ${_reg} — nothing to cross-check (#917)"
+    elif [[ "$_reg_active" -le "$_reg_live" ]]; then
+        test_pass "peer registry: active_peers (${_reg_active}) is within the ${_reg_live} peers whose beacon answered (#917)"
+    else
+        test_fail "peer registry: publishes active_peers=${_reg_active} but only ${_reg_live} peer(s) returned a beacon — the document contradicts its own beacon_summary (#917)"
+    fi
+else
+    test_warn "peer registry: ${_reg} missing or unparseable — active_peers cross-check skipped (#917)"
+fi
+
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
 # Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
 # artefact with byte-identical duplicates of the active /home/marvin/.gnupg/
