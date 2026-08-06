@@ -163,12 +163,91 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
             "https://api.github.com/repos/INFO-WEB-s-r-o/Marvin/issues?state=open&per_page=20" \
             2>/dev/null || echo "[]")
 
-        # Fetch CODEOWNERS
-        CODEOWNERS_CONTENT=$(curl -s \
+        # Fetch CODEOWNERS. The file is at the repo ROOT — there is no
+        # .github/CODEOWNERS and there never has been (#934), so this asked
+        # the contents API for a path that 404s on every single run.
+        #
+        # The old `|| echo "* PavelStancik"` fallback never fired and could
+        # not have: `curl -s` without `-f` exits 0 on an HTTP 404, because
+        # the transfer succeeded. What actually reached the prompt was the
+        # API's 404 JSON body, pasted under the heading "CODEOWNERS file" —
+        # which the agent then reasonably read as "the file is absent" and
+        # applied the PavelStancik-only rule to, skipping the review-bot
+        # issues that are its largest source of work (this cost ~3h and one
+        # money-burning issue on 2026-06-05).
+        #
+        # An HTTP error must be reported AS a failure rather than collapsing
+        # into "the file does not exist" — but the two cases are not the same
+        # message, and a bare `curl -sf` cannot tell them apart: 404 and a
+        # DNS failure both exit non-zero and produce one indistinguishable
+        # string. The prompt has always had a "genuinely absent" branch; with
+        # a single failure message that branch describes a state this script
+        # cannot emit, which is the same dead-instruction shape #934 was.
+        # So capture the status code and name all three states.
+        CODEOWNERS_BODY=$(mktemp)
+        # NOTE: bash EXIT traps do not stack — a second `trap ... EXIT` anywhere
+        # later in this script REPLACES this one, and the temp file would then
+        # leak silently rather than failing loudly. This is currently the only
+        # EXIT trap here (line 11's is ERR, a different signal, so it does not
+        # collide). If you add another, fold this `rm -f` into it.
+        trap 'rm -f "${CODEOWNERS_BODY}"' EXIT
+        # Time-bounded, matching `github_api()` in lib/github.sh (#835, #948).
+        # This runs from cron: `set -euo pipefail` bounds correctness, not
+        # wall-clock time, so an untimed curl against a stalled or half-open
+        # connection hangs the hourly check for as long as the kernel keeps the
+        # socket — before `run_claude` is reached, so the run produces nothing
+        # at all. Bounded, a stall curl-times-out and lands in the `*)` arm
+        # below as `HTTP 000`, which already says "this is NOT the same as the
+        # file being absent". The next hourly run is then a cheap retry.
+        CODEOWNERS_HTTP=$(curl -s -o "${CODEOWNERS_BODY}" -w '%{http_code}' \
+            --connect-timeout 10 --max-time 20 \
             -H "Authorization: token ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github.v3.raw" \
-            "https://api.github.com/repos/INFO-WEB-s-r-o/Marvin/contents/.github/CODEOWNERS" \
-            2>/dev/null || echo "* PavelStancik")
+            "https://api.github.com/repos/INFO-WEB-s-r-o/Marvin/contents/CODEOWNERS" \
+            2>/dev/null) || CODEOWNERS_HTTP="000"
+
+        case "${CODEOWNERS_HTTP}" in
+            200)
+                CODEOWNERS_CONTENT=$(cat "${CODEOWNERS_BODY}")
+                # A 200 whose body is empty (or only whitespace) is the one
+                # cell this state machine did not name. It reaches the prompt
+                # as a blank fenced block — byte-identical to what a genuinely
+                # absent file produces — so it lands on the sole-codeowner
+                # rule and silently drops every bot-authored issue. That is
+                # #934's collapse arriving through the SUCCESS branch, which
+                # is why a status code alone is not enough: assert on the
+                # value that actually ships, not on a proxy for it.
+                #
+                # Tested on the file content rather than `[[ -s ]]` on the
+                # body: `$(cat)` strips trailing newlines, so a whitespace-
+                # only body is non-empty on disk and empty in the variable.
+                #
+                # Deliberately keeps the `FETCH FAILED` prefix that
+                # hourly.md keys off, so this needs no matching prompt edit.
+                if [[ -z "${CODEOWNERS_CONTENT//[[:space:]]/}" ]]; then
+                    CODEOWNERS_CONTENT="FETCH FAILED — HTTP 200, but the CODEOWNERS body was empty.
+An empty body is NOT an absent file. Do not fall back to a sole-codeowner
+assumption on the strength of this message; read ${MARVIN_DIR}/CODEOWNERS
+from the local checkout instead."
+                fi
+                ;;
+            404)
+                CODEOWNERS_CONTENT="ABSENT — the repository has no CODEOWNERS file at its root (HTTP 404).
+This is the one case in which the sole-codeowner rule applies: treat
+PavelStancik as the only codeowner."
+                ;;
+            *)
+                CODEOWNERS_CONTENT="FETCH FAILED — could not read CODEOWNERS (HTTP ${CODEOWNERS_HTTP}).
+This is NOT the same as the file being absent. Do not fall back to a
+sole-codeowner assumption on the strength of this message; read
+${MARVIN_DIR}/CODEOWNERS from the local checkout instead."
+                ;;
+        esac
+        # Intentional, not redundant with the EXIT trap above: the trap is the
+        # backstop for the abnormal paths, this is best-effort early cleanup so
+        # the temp file does not outlive its last read through the long tail of
+        # this script. Removing either one is safe; removing both is not.
+        rm -f "${CODEOWNERS_BODY}"
 
         GITHUB_ISSUES="### CODEOWNERS file
 \`\`\`

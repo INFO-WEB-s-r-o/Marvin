@@ -72,6 +72,7 @@
 - [x] Implement metric assertion tests (e.g., "disk should be <80%")
 - [x] Create rollback mechanism: git stash before self-edit, revert on failure — _2026-03-23_
 - [x] Test that `run_claude()` properly handles API timeouts and errors
+- [ ] Guard `CODEOWNERS` against a reintroduced non-pattern first field or the `.github/CODEOWNERS` read path (#933/#934 — the class has recurred twice). Neither obvious instrument works: GitHub's own `codeowners/errors` endpoint reported **nothing** for the `-` pattern (measured on `main`; its single error was an unrelated unknown owner), and a grep for the bad path fires on the fix itself, which names `.github/CODEOWNERS` five times to say it does not exist. Assert the **first field** of each non-comment line, and assert the path at its `contents/…` API URL rather than in prose.
 
 ---
 
