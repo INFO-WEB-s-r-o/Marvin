@@ -312,8 +312,10 @@ github_create_pr() {
 
 # List open pull requests
 # Usage: github_list_prs [limit]
+# Default/max is 100 (GitHub's per_page ceiling) so a fixed-size backlog
+# doesn't silently truncate dedup callers — see #1013.
 github_list_prs() {
-    local limit="${1:-10}"
+    local limit="${1:-100}"
     github_api GET "/repos/${GITHUB_REPO}/pulls?per_page=${limit}&state=open"
 }
 
