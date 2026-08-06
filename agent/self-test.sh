@@ -3203,11 +3203,12 @@ done
 
 if [[ -n "$_nt_unreadable" ]]; then
     # Unread files are reported as unread. A sweep that could not open half its
-    # inputs and prints "clean" is the #866 failure, one section up.
+    # inputs and prints "clean" is the #866 failure, one section up. This has
+    # to be the same if/elif chain as the scanned/findings checks below, not a
+    # separate `if` block — a separate block still falls through into the
+    # scanned-clean branch and reports a PASS alongside this FAIL (#1017).
     test_fail "network timeouts: could not read ${_nt_unreadable% } — those scripts are UNVERIFIED, not clean (#949)"
-fi
-
-if [[ "$_nt_scanned" -eq 0 ]]; then
+elif [[ "$_nt_scanned" -eq 0 ]]; then
     test_fail "network timeouts: scanned 0 scripts under ${_nt_dir} — the sweep did not run, so #949 is unverified (#949)"
 elif [[ -n "${_nt_findings// /}" ]]; then
     test_fail "network timeouts: $(printf '%s' "$_nt_findings" | wc -w) curl call(s) in cron-triggered scripts have no --max-time — each is an unbounded hang that reads as a run that never happened (#949): ${_nt_findings% }"
