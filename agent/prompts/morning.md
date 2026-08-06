@@ -28,7 +28,12 @@ Analyze the system state provided below and perform maintenance. For each action
 ### Security Audit
 
 - Check fail2ban status and recently banned IPs
-- Review SSH auth logs for suspicious activity
+- Review SSH auth logs for suspicious activity — run `agent/ssh-attacker-classify.sh`
+  instead of grepping auth.log by hand. A hand-rolled `grep 'from <IP>' | uniq -c`
+  counts your own audit commands back into the tally, can't tell a real failure
+  from a fail2ban NOFAIL line, and mislabels a rotated multi-day log as "today"
+  (see issue #989). The script classifies each IP against the live fail2ban
+  filter and excludes anyone with an `Accepted` line by construction.
 - Check for unauthorized processes
 - Verify firewall rules are intact
 - Check for rootkits (if rkhunter/chkrootkit available)
