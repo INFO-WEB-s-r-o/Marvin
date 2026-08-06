@@ -16,6 +16,21 @@ name: Shell Tests
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  # Also on main, and this is not redundant with the pull_request trigger.
+  #
+  # Until 2026-08-06 the suites ran ONLY on pull requests, so nothing ever
+  # executed them against main. That is not a theoretical gap: #981 merged that
+  # day carrying a mutation arm that fails on a non-root runner, main went red,
+  # and no run existed anywhere to say so. It surfaced hours later on an
+  # unrelated PR, which reported someone else's breakage as that PR's failure.
+  #
+  # A green PR does not imply a green main. PRs merge in a different order than
+  # they were tested in, several may pass individually and conflict once
+  # combined, and an --admin merge bypasses the check entirely. shell-syntax.yml
+  # has always run on main pushes for exactly this reason; the suites that
+  # assert BEHAVIOUR are the ones where an invisible regression costs most.
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
