@@ -105,9 +105,27 @@ jobs:
           # Deciding by grep guesses instead of asking. So the list is written
           # down, and the completeness check below turns "forgot to update it"
           # into a build failure instead of a silent gap.
-          mutation_suites=(agent/tests/external-domains-parser.test.sh)
+          mutation_suites=(
+            agent/tests/external-domains-parser.test.sh
+            agent/tests/hourly-issue-trust-boundary.test.sh
+          )
           # Suites deliberately outside the convention. Add with a reason.
-          exempt_suites=()
+          #
+          # These three carry their mutation arms INTERNALLY: each runs its own
+          # mutations inline and reports "MUTATION INEFFECTIVE" when one breaks
+          # nothing, which is the same evidence the MUTATE= convention produces,
+          # gathered a different way. Wrapping them in MUTATE= as well would mean
+          # two mutation harnesses per suite and no more assurance.
+          #
+          # This list was empty while these three sat on disk unregistered. They
+          # arrived in the 2026-08-06 batch merge, every one of which was merged
+          # with --admin, so the completeness check below reported them on each
+          # PR and each report was bypassed. The check was right the whole time.
+          exempt_suites=(
+            agent/tests/roadmap-budget.test.sh          # internal: drop_phases, quiet_fallback
+            agent/tests/security-scan-4b-parser.test.sh # internal: 7 arms + quiet control
+            agent/tests/security-scan-4c-gnupg-drift.test.sh # internal: 17 arms + quiet control
+          )
 
           for s in agent/tests/*.test.sh; do
             listed=0
