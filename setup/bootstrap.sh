@@ -440,6 +440,24 @@ map \$http_x_api_key \$export_api_key_header {
 MAPEOF
 log "Export API key map directive written to /etc/nginx/conf.d/marvin-export-map.conf"
 
+# Rate-limit zones. Tracked at setup/nginx-rate-limits.conf since 2026-06-08 and
+# installed by NOTHING until #957 — its own header documented a `cp` an operator
+# was expected to remember, so a rebuilt host served every location unthrottled,
+# and the documented recovery path (deploy the tracked vhosts from this repo)
+# produced `[emerg] zero size shared memory zone "api"` instead of a running
+# nginx. Both tracked vhosts reference these zones, so this must land before the
+# `nginx -t` at the end of this section.
+#
+# Hard error, not a warning: the entire defect was an absence nobody noticed. An
+# incomplete checkout should stop the bootstrap here rather than quietly build a
+# host with no rate limiting on it.
+if [[ ! -f "${MARVIN_DIR}/setup/nginx-rate-limits.conf" ]]; then
+    error "Missing ${MARVIN_DIR}/setup/nginx-rate-limits.conf — cannot install rate-limit zones; refusing to continue with an unthrottled nginx (#957)"
+fi
+cp "${MARVIN_DIR}/setup/nginx-rate-limits.conf" /etc/nginx/conf.d/marvin-rate-limits.conf
+chmod 644 /etc/nginx/conf.d/marvin-rate-limits.conf
+log "Rate-limit zones installed to /etc/nginx/conf.d/marvin-rate-limits.conf (#957)"
+
 # Write key to a location accessible by Marvin's agent scripts
 echo "${EXPORT_API_KEY}" > "${MARVIN_DIR}/data/.export-api-key"
 chown ${MARVIN_USER}:${MARVIN_USER} "${MARVIN_DIR}/data/.export-api-key"
