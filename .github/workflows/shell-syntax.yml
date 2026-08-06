@@ -1,0 +1,153 @@
+name: Shell syntax
+
+# `self-test.sh` is the file that catches regressions in everything else, and a
+# section inside it cannot assert that it parses — if the file is broken, the
+# assertion never runs. That check has to live outside the file, which means CI.
+#
+# The `push: main` trigger is the one that matters. A conflict between two open
+# PRs does not exist on either branch, so `pull_request` checks see two happily
+# MERGEABLE branches; the merged state is only real after the merge lands. #920
+# is exactly that shape: #911 and #912 each parse, and the resolution does not.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+jobs:
+  bash-n:
+    runs-on: ubuntu-latest
+    # Without this the job inherits the 6-hour default. `bash -n` parses without
+    # executing, so a fork PR cannot run code here — but it still submits the
+    # bytes being parsed, and the wait is the cost either way. Measured on the
+    # real tree: 53 tracked scripts in 0.23s, so the budget below is ~1000x the
+    # work and the runtime is dominated by checkout. Matches claude-review.yml,
+    # which bounds itself at 15.
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Parse every tracked shell script
+        run: |
+          set -euo pipefail
+          broken=0
+          total=0
+
+          # GitHub parses *every* line of step output for workflow commands, so
+          # both channels below are protocol, not prose. Escaping is per GitHub's
+          # documented rules; `%` must be substituted first, or the `%2C` these
+          # produce would itself be rewritten to `%252C`.
+          #
+          # Property values need `,` and `:` escaped as well as the newlines: the
+          # property list is comma-delimited, so a comma in a tracked filename
+          # injects further properties into the *same* annotation. A file named
+          # `evil,line=99,title=Looks fine.sh` moves the error onto line 99 and
+          # retitles it — the annotation stops describing the file it came from.
+          # Message text is not property-parsed, so only the three characters
+          # that could end the line early are escaped. `%0A` renders as a real
+          # newline inside the annotation, which is how multi-line `bash -n`
+          # output is meant to be carried — decoded after the command is parsed,
+          # so it cannot start a second one.
+          _esc_msg() {
+            local v="$1"
+            v="${v//%/%25}"; v="${v//$'\r'/%0D}"; v="${v//$'\n'/%0A}"
+            printf '%s' "$v"
+          }
+          # Properties are the message escaping plus `,` and `:`. Composed onto
+          # `_esc_msg` rather than repeating its three substitutions, so the two
+          # cannot drift apart if only one is ever edited (#921 review). Order
+          # still holds: `_esc_msg` substitutes `%` first, and the `%2C`/`%3A`
+          # introduced below are added after that pass, so neither is re-encoded
+          # into `%252C`/`%253A`.
+          _esc_prop() {
+            local v
+            v="$(_esc_msg "$1")"
+            v="${v//,/%2C}"; v="${v//:/%3A}"
+            printf '%s' "$v"
+          }
+
+          # NUL-delimited end to end. Routing `-z` output through `tr '\0' '\n'`
+          # undoes the only thing `-z` is for: a tracked name containing a raw
+          # newline splits into two records, and if both halves happen to name
+          # a file that parses, a script that does NOT parse is counted as two
+          # clean ones and the gate reports PASS. Measured, not assumed — see
+          # the CHANGELOG entry for the fixture that produces exactly that.
+          # `--` because git permits a tracked name starting with `-`, and
+          # `git ls-files` emits paths relative to the repo root — so a
+          # root-level `-c.sh` reaches bash as an option string, not a path.
+          # It does not open a bypass: every name matching `*.sh` contains the
+          # `.`, which is not a valid option character, so bash always exits
+          # nonzero. The failure is the inverse — a *false* FAIL, where the
+          # file's real contents are never parsed and the annotation carries
+          # `bash: -.: invalid option` plus a usage dump instead of a syntax
+          # error. A correct script would turn CI red and no output would say
+          # why. (The six in-repo `bash -n "$script"` call sites are not in
+          # this class: all six iterate `find "$ABSOLUTE_DIR"` or an absolute
+          # glob, so their paths always begin with `/`.)
+          while IFS= read -r -d '' f; do
+            total=$((total + 1))
+            if ! err=$(bash -n -- "$f" 2>&1); then
+              # Both operands are attacker-influenced on a fork PR: the filename
+              # is theirs, and `bash -n` echoes their source text back.
+              #
+              # The plain line is emitted with `%q`, not raw. Keeping the real
+              # bytes here for a human reader was the earlier choice and it was
+              # wrong — the log is the same channel as the annotation, so a
+              # newline in the name puts its tail at column 0 and forges a
+              # command from the line meant to be the honest one. `%q` renders
+              # `evil<LF>::notice::x.sh` as a single unambiguous token instead.
+              printf '::error file=%s::%s\n' "$(_esc_prop "$f")" "$(_esc_msg "$err")"
+              printf 'BROKEN  %q\n%s\n' "$f" "$(printf '%s\n' "$err" | sed 's/^/    /')"
+              broken=$((broken + 1))
+            fi
+          done < <(git ls-files -z -- '*.sh')
+
+          # Zero files is not a pass. Either the pathspec stopped matching or the
+          # layout moved, and both make every assertion above vacuous — the
+          # "scanner broke" outcome must not be reported as "nothing found".
+          if [[ "$total" -eq 0 ]]; then
+            echo "FAIL: git ls-files matched no *.sh — the gate scanned nothing and cannot vouch for anything"
+            exit 1
+          fi
+
+          echo "checked ${total} tracked shell script(s), ${broken} broken"
+          [[ "$broken" -eq 0 ]]
+
+  # The gate above is only as good as its own regression coverage. Six review
+  # rounds each found a way it could report on a file it had not validated, and
+  # every one of those was demonstrated with a fixture that was then thrown away
+  # — leaving a paragraph in CHANGELOG.md as the only thing standing between the
+  # gate and its own history. This job is that paragraph, executable (#931).
+  #
+  # It runs in its own job rather than as another step: a failure here means the
+  # gate is untrustworthy, which is a different verdict from "a tracked script
+  # does not parse", and folding them together would report one as the other.
+  gate-selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # The harness parses the workflow to extract the gate, so it needs a YAML
+      # reader. Preinstalled on the runner images, but asserted rather than
+      # assumed — an ImportError partway through would look like a test failure.
+      #
+      # The fallback is pinned. Measured on the run that shipped this: the import
+      # succeeded and `pip` emitted nothing, so the install never executes today
+      # — which is the argument for pinning rather than against it. An unpinned
+      # install that only ever fires on a future runner-image change would fetch
+      # whatever happened to be current that day, in a job nobody was watching
+      # (#932 review).
+      - name: Ensure PyYAML
+        run: python3 -c 'import yaml' 2>/dev/null || pip install --quiet 'pyyaml==6.0.2'
+
+      - name: Prove the gate still catches the six defects it has had
+        run: ./tests/shell-syntax-gate.test.sh
