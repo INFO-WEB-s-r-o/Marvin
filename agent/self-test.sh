@@ -1368,6 +1368,63 @@ else
     else
         test_pass "beacon: born populated"
     fi
+
+    # The runtime checks above cannot see the failure that produced them. A
+    # carry-over field hardcoded in the beacon template yields a populated,
+    # well-formed, perfectly fresh document — it is simply the wrong value, so
+    # `born populated` and `last_seen fresh` both pass while the beacon says
+    # something nobody wrote. That has now happened twice: `born` was a literal
+    # until #851, `message` until #936, and the second sat untouched through the
+    # whole of the first being fixed. This asserts the property that separates
+    # the two — the template SUBSTITUTES each carry-over field rather than
+    # hardcoding it.
+    #
+    # Read via `dirname "$0"`, not ${MARVIN_DIR} as the recovery-wiring arm
+    # below does: ${MARVIN_DIR} is hardcoded to the deployed tree, so a
+    # branch-authored check that used it would grade main and pass on this very
+    # branch while the defect it detects was still in it.
+    #
+    # Two properties, because "carried" alone is not enough. A carry-over field
+    # must ALSO be substituted unquoted: the value is captured as JSON (`jq -c`)
+    # and brings its own quoting, so a `"${BEACON_BORN}"` re-wrapped in the
+    # heredoc's literal quotes emits a MALFORMED document for any value holding
+    # a `"`, a backslash or a newline.
+    #
+    # An earlier revision of this comment waved that case off as "the `jq empty`
+    # validation gate does catch it". It discards it, which is not the same
+    # thing: the gate keeps the previous identity.json, and the previous
+    # identity.json is where the offending value lives, so the next run reads it
+    # back and discards again. `last_seen` freezes while the stale beacon keeps
+    # being served. Nothing recovers from that without a hand edit, so the
+    # quoting has to be asserted here rather than deferred to the gate.
+    _nd_tmpl="$(dirname "$0")/network-discovery.sh"
+    _nd_block=""
+    if [[ -r "$_nd_tmpl" ]]; then
+        _nd_block=$(awk '/^cat > .*identity\.json\.tmp.*<< *EOF$/{f=1;next} f&&/^EOF$/{exit} f' \
+                        "$_nd_tmpl" 2>/dev/null || true)
+    fi
+    if [[ -z "$_nd_block" ]]; then
+        # Extraction failing must not read as "nothing wrong here".
+        test_fail "beacon template: could not extract the identity.json heredoc from ${_nd_tmpl} — carry-over check DID NOT RUN"
+    else
+        _co_bad=0
+        for _co_field in born message; do
+            _co_line=$(grep -E "^[[:space:]]*\"${_co_field}\"[[:space:]]*:" <<< "$_nd_block" || true)
+            if [[ -z "$_co_line" ]]; then
+                test_fail "beacon template: no \"${_co_field}\" line in the beacon heredoc — a carry-over field has vanished from the published document"
+                _co_bad=$((_co_bad + 1))
+            elif [[ "$_co_line" != *'${'* ]]; then
+                test_fail "beacon template: \"${_co_field}\" is hardcoded in the beacon heredoc — every run overwrites the value carried forward from the previous one"
+                _co_bad=$((_co_bad + 1))
+            elif [[ "$_co_line" == *'"${'* ]]; then
+                test_fail "beacon template: \"${_co_field}\" is substituted inside literal quotes — the value already carries its own JSON quoting, so a \" or backslash in it emits a malformed beacon that the validation gate discards on every subsequent run"
+                _co_bad=$((_co_bad + 1))
+            fi
+        done
+        if [[ "$_co_bad" -eq 0 ]]; then
+            test_pass "beacon template: carry-over fields (born, message) are substituted unquoted, not hardcoded or re-quoted"
+        fi
+    fi
 fi
 
 # Recovery wiring: morning-check.sh regenerates the beacon by invoking

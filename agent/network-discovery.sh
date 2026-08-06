@@ -232,7 +232,26 @@ MARVIN_DOMAIN="robot-marvin.cz"
 # the heredoc reads an already-emptied file. `.born // empty` then yields
 # nothing and jq still exits 0, so even the `||` fallback never fired — which
 # is why the public beacon has served `"born": ""` since 2026-02-24.
-BEACON_BORN=$(jq -r '.born // empty' "${COMMS_DIR}/identity.json" 2>/dev/null || true)
+# Captured as JSON (`jq -c`) and substituted UNQUOTED below, for the same
+# reason `message` is. Under the old `jq -r` + `"${BEACON_BORN}"` shape, jq
+# stripped the value's own quoting and the heredoc's literal quotes put it
+# back — so any value containing a `"`, a backslash or a newline re-emitted a
+# MALFORMED document. Those are ordinary strings; a `type == "string"` guard
+# passes all three and fixes none of them, which is why this is a change of
+# idiom and not an added check. The type guard rides along only to make a
+# non-string fall through to the default instead of being laundered into one:
+# under the old shape `.born = 42` produced a valid beacon claiming `"42"`.
+#
+# The malformed case does not fail loudly, and it does not self-heal. The
+# validation gate below correctly discards the document and keeps the previous
+# identity.json — which still contains the offending `.born`, so the next run
+# reads it back and discards again. `last_seen` and `uptime_seconds` freeze at
+# the last good write while the beacon goes on being served: alive-looking and
+# stale, wedged until someone edits the file by hand. That is #851's failure
+# mode exactly, which is the one this file is least entitled to reintroduce.
+BEACON_BORN=$(jq -c 'if (.born | type) == "string" and .born != ""
+                     then .born else empty end' \
+    "${COMMS_DIR}/identity.json" 2>/dev/null || true)
 # The constant below is INSTANCE-SPECIFIC: it is *this* deployment's first
 # boot, recovered from the repository's first commit because the field was
 # never once populated and there is no earlier value to inherit. It must not
@@ -242,10 +261,61 @@ BEACON_BORN=$(jq -r '.born // empty' "${COMMS_DIR}/identity.json" 2>/dev/null ||
 # when it first writes a beacon, so ${NOW} is the honest answer there.
 if [[ -z "$BEACON_BORN" ]]; then
     if [[ "$(hostname -f 2>/dev/null || hostname)" == "${MARVIN_DOMAIN}" ]]; then
-        BEACON_BORN="2026-02-21T18:50:47Z"
+        BEACON_BORN=$(jq -cn --arg b "2026-02-21T18:50:47Z" '$b')
     else
-        BEACON_BORN="${NOW}"
+        BEACON_BORN=$(jq -cn --arg b "${NOW}" '$b')
     fi
+fi
+
+# `message` is a carry-over field for the same reason `born` is: it is written
+# *after* the beacon is generated (section 4's Claude call composes the day's
+# message), so the next run's heredoc is the only thing that can preserve it.
+# It didn't — the field was a hardcoded literal, so every run silently reverted
+# the published message to the Hitchhiker's placeholder, and the day's actual
+# message survived only until the next run. Measured across the retained
+# backups, 6 of 11 sampled days served the placeholder for the full 24 hours:
+# the one field in the beacon that says something specific was, more often than
+# not, saying nothing. `born` was rescued from exactly this in #851; `message`
+# is the same class and was missed.
+#
+# Captured as JSON (`jq -c .message`) rather than as a raw string, so the value
+# arrives already quoted and escaped and is substituted WITHOUT surrounding
+# quotes below. A message containing a `"`, a backslash or a newline would
+# otherwise emit a malformed document; the validation gate would then keep the
+# previous beacon and `uptime_seconds`/`last_seen` would freeze — a stale
+# beacon that still looks alive, which is the #851 failure wearing a new hat.
+# Substituting through a variable is also what keeps the value inert: the
+# unquoted heredoc expands `$(…)` and backticks in its *literal* text, but not
+# in the result of a parameter expansion, so a message may contain either.
+#
+# The `type == "string"` arm is not defensive boilerplate: nothing in this
+# script assigns `.message`. The field is written by the Claude call in section
+# 4 editing `identity.json` by hand, so the write path is a free-form model
+# edit, not a schema-checked `jq` assignment — a number, list or object is a
+# typo away. Without the arm such a value is carried through verbatim into a
+# still-valid beacon, which is the worst shape to debug: every gate passes and
+# the published `message` is `42`. `negotiate-handler.sh` already guards the
+# same field the same way when it reads it back (`if type == "string"`).
+BEACON_MESSAGE=$(jq -c 'if (.message | type) == "string" and .message != ""
+                        then .message else empty end' \
+    "${COMMS_DIR}/identity.json" 2>/dev/null || true)
+# Built with `jq -cn --arg` rather than as a hand-quoted JSON literal. The
+# literal it replaces was correct, but it had to spell one apostrophe as
+# `'"'"'` inside a single-quoted string that itself carries the JSON double
+# quotes — three quoting layers around one sentence. A mis-nesting there stays
+# valid bash: it emits a subtly different document rather than failing, and the
+# next thing to read that document is a scanner, not a test. With `--arg` the
+# sentence appears exactly once, unescaped, and jq owns the quoting. The idiom
+# is already the house one for building JSON here (negotiate-handler.sh has
+# four `jq --arg` call sites) — though not previously for this field.
+#
+# This does put jq on a path that previously could not fail. Deliberate: every
+# other jq call in this script is `|| true`-guarded against a MISSING FILE, so a
+# broken jq would otherwise first surface as a beacon whose peer count, born
+# date and negotiate gate are all silently degraded, then be discarded by the
+# `jq empty` validation gate anyway. Aborting beats publishing that.
+if [[ -z "$BEACON_MESSAGE" ]]; then
+    BEACON_MESSAGE=$(jq -cn --arg m "I think you ought to know I'm feeling very depressed." '$m')
 fi
 
 BEACON_UPTIME=$(cut -d' ' -f1 /proc/uptime | cut -d'.' -f1)
@@ -364,7 +434,7 @@ cat > "${COMMS_DIR}/identity.json.tmp" << EOF
   "name": "Marvin",
   "type": "autonomous-server-agent",
   "engine": "claude-code",
-  "born": "${BEACON_BORN}",
+  "born": ${BEACON_BORN},
   "host": "${MARVIN_DOMAIN}",
   "domain": "${MARVIN_DOMAIN}",
   "status_url": "https://${MARVIN_DOMAIN}/",
@@ -374,7 +444,7 @@ cat > "${COMMS_DIR}/identity.json.tmp" << EOF
   "gpg_public_key": "/.well-known/marvin-gpg.asc",
 ${BEACON_NEGOTIATE}  "uptime_seconds": ${BEACON_UPTIME},
   "last_seen": "${NOW}",
-  "message": "I think you ought to know I'm feeling very depressed.",
+  "message": ${BEACON_MESSAGE},
   "peers_wanted": true,
   "echo": "ECHO_marvin_hledam_spojeni"
 }
