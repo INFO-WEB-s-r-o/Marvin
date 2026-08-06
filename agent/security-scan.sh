@@ -176,7 +176,7 @@ unexpected_details_json="[]"
 # (setup/nginx-site.conf -> http://127.0.0.1:8043). It was previously absent
 # from this list — mislabelled "alt-HTTPS" in the baseline above — which is why
 # its wildcard bind went unflagged from 2026-02-22 until 2026-07-26.
-LOCALHOST_ONLY_PORTS="3001 3100 4317 4318 5432 6379 8000 8043 8787 8889 9090 11332 11333 11334"
+LOCALHOST_ONLY_PORTS="3001 3100 3200 4317 4318 5432 6379 8000 8043 8787 8889 9090 11332 11333 11334"
 
 for port in $active_ports; do
     if ! echo "$EXPECTED_PORTS" | grep -qw "$port"; then
