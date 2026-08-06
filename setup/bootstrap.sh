@@ -141,11 +141,22 @@ filter = sshd
 maxretry = 3
 bantime = 86400
 
+# nginx logs to files only — it writes nothing to the journal — so under the
+# DEFAULT systemd backend both nginx jails tail an empty stream and can never
+# fire, while still reporting "enabled" and "Total failed: 0". They need a file
+# backend and an explicit logpath.
 [nginx-http-auth]
 enabled = true
+backend = auto
+logpath = /var/log/nginx/error.log
 
+# The stock logpath is error.log alone, but the failregex that actually catches
+# scanners matches access.log's 404 lines, so feed both.
 [nginx-botsearch]
 enabled = true
+backend = auto
+logpath = /var/log/nginx/error.log
+          /var/log/nginx/access.log
 EOF
 
 systemctl enable fail2ban
