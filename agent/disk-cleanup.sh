@@ -137,6 +137,418 @@ while IFS= read -r -d '' f; do
 done < <(find "${METRICS_DIR}" "${LOGS_DIR}" -maxdepth 1 -type f \( "${_TS_JSONL_GZ_NAMES[@]}" \) -mtime +180 -print0 2>/dev/null)
 track_freed "Old time-series JSONL.gz (>180d)" "$metrics_size"
 
+# ─── 6a. Stale scratch directories in /tmp (#898) ───────────────────────────
+# Section 6 below is `-type f`, so directories have never been candidates and
+# every harness, worktree and fixture tree left in /tmp stays there forever —
+# 47 of them accumulated in two days. Three things make this more than a
+# one-character fix, and all three are why the sweep is written out longhand:
+#
+#   1. The obvious edit is the dangerous one. Every root-owned directory in
+#      /tmp currently older than 7 days is live system infrastructure —
+#      systemd-private-* service dirs and the .X11-unix/.ICE-unix/.XIM-unix/
+#      .font-unix socket dirs. A bare `-type d -mtime +7 | rm -rf` deletes
+#      exactly those and nothing else. Hence a *skip* list that is checked
+#      first and errs wide (anything dot-prefixed is untouchable outright).
+#
+#   2. Section 6 resets the clock on its own targets. Unlinking a file bumps
+#      the parent directory's mtime to now, so a directory empty since July
+#      reports as modified today and `-mtime +7` on the directory itself would
+#      miss it. Eligibility is therefore keyed on the newest mtime anywhere in
+#      the subtree, and 6a deliberately runs BEFORE section 6 so that within a
+#      single run the file sweep cannot destroy the evidence 6a reads.
+#
+#   3. A scratch directory in use by a running process looks identical to an
+#      abandoned one if you only look at timestamps. The in-use set is read
+#      from /proc first, and if that read fails the whole sweep is skipped —
+#      "could not determine what is in use" must not resolve to "nothing is".
+#      That guarantee was stated here before it was implemented (#908): the
+#      check tested whether /proc had *any* processes, which this script's own
+#      shell guarantees, rather than whether every entry it needed was actually
+#      readable. See _tmp_paths_in_use below.
+#
+#      The /proc snapshot is taken once, up front, and the deletions happen
+#      afterwards one directory at a time — so there is a TOCTOU window in
+#      which a process could start using a directory this run has already
+#      cleared. Accepted, not overlooked: nothing becomes a candidate until it
+#      has been untouched for 7 days, this runs once daily, and a process that
+#      adopts a week-dead scratch directory in the seconds between the scan and
+#      the unlink is not a case worth holding a lock for. Re-checking each path
+#      immediately before its rm would narrow the window without closing it,
+#      which buys the appearance of a guarantee rather than one.
+#
+#      What keeps that window narrow rather than merely small is the sticky bit
+#      on /tmp: without it any user can unlink a root-owned entry and put
+#      something of their own at that name between the scan and the rm. That is
+#      an OS default this section was silently inheriting, so it is now checked
+#      out loud (#901 review) — an unsticky /tmp skips the sweep entirely, on
+#      the same "a precondition that could not be confirmed is not satisfied"
+#      rule as the /proc read above.
+#
+#      Stating the residual exposure precisely rather than implying it is zero:
+#      even with the swap performed, `rm -rf -- /tmp/foo` on a symlink removes
+#      the symlink and does not traverse it (verified, not assumed: GNU rm
+#      leaves the target's contents intact when the operand itself is the
+#      link). So the sticky bit is what makes the swap impossible, not the only
+#      thing standing between this sweep and someone else's files.
+
+# Paths under /tmp currently referenced by a live process (cwd, exe or an open
+# fd). Prints one path per line. Returns non-zero when the scan could not be
+# completed, which the caller treats as "do not delete anything".
+#
+# Issue #908. The first version returned non-zero only when the /proc/[0-9]*
+# glob matched nothing at all, and this function's own shell is always in /proc
+# while it runs — so the flag was set on the first iteration every time and the
+# caller's skip branch was unreachable. The failure it was written for is the
+# partial one: an individual readlink that fails, gets swallowed by `|| continue`
+# and quietly removes that process's /tmp references from the answer. Nothing
+# downstream can tell that from "this directory is genuinely unused", and the
+# next statement in the caller is `rm -rf`.
+#
+# Treating every readlink failure as a failure would be worse than the bug: 88
+# of this box's ~180 processes are kernel threads, whose /proc/N/exe is a
+# dangling symlink by design, so the sweep would skip on every run forever and
+# look exactly like a sweep that had nothing to collect. Failures are therefore
+# classified by errno, via readlink -v's message under LC_ALL=C:
+#
+#   ENOENT  benign — a kernel thread's exe, or a process/fd that exited between
+#           the glob and the readlink. Confirmed by re-testing that the process
+#           still exists, so a race is never counted against the scan.
+#   other   counted — EACCES, EPERM, or any errno not anticipated here. The test
+#           allowlists the one benign case rather than denylisting known-bad
+#           ones, so an unrecognised message (including a stderr this parser
+#           fails to match at all) counts as a read that did not happen and
+#           skips the sweep. Wrong in the direction that keeps files.
+#
+# The two failures are reported as two exit codes rather than one flag plus a
+# count in a variable. The first draft of this fix used a global for the count,
+# and the fixture test below caught it reading 0 in every branch: the caller
+# invokes this in a command substitution, so the assignment happens in a
+# subshell and the parent never sees it. That is the same defect as #908 itself
+# — a signal that cannot reach the code deciding whether to delete — reproduced
+# inside the fix for it. Exit status is the one channel that does cross `$( )`.
+#
+#   0  scan complete
+#   1  no processes found at all (/proc absent, unmounted, or hidden)
+#   2  one or more entries existed but could not be read
+#
+# Known and accepted gap: "in use" here means cwd, exe or an OPEN fd. A process
+# that mmap()'d a file under one of these directories and then closed the fd
+# holds no fd to find, and only /proc/N/maps would show it. Not read, because
+# the consequence is mild and the cost is not: unlinking a mapped file does not
+# disturb the mapping — the inode survives until the last reference drops, so
+# the process keeps reading and writing the file it already has, and only a
+# later open() by path fails. Reading maps for ~180 processes on every run to
+# catch that is the wrong trade. Recorded so the next reader knows the omission
+# was priced rather than missed.
+#
+# proc_root is an argument, not a constant, for the same reason _stale_tmp_dirs
+# takes its root as one: the classification above is exercised against a fixture
+# tree, as an unprivileged user so EACCES is reachable, rather than asserted.
+# shellcheck disable=SC2120  # proc_root is deliberately optional: the sole in-script call takes the /proc default, the fixture harness passes a root (see #908)
+_tmp_paths_in_use() {
+    local proc_root="${1:-/proc}"
+    local p t target err scanned=0 unreadable=0
+
+    for p in "$proc_root"/[0-9]*; do
+        [[ -d "$p" ]] || continue
+        scanned=$((scanned + 1))
+
+        # Checked before the loop below, because an unreadable fd/ directory
+        # does not surface there as an error at all: the glob simply fails to
+        # expand and `$t` becomes the literal pattern. readlink then fails with
+        # ENOENT, which the failure path below deliberately does not count — so
+        # every open file of that process goes unseen and the scan still reports
+        # clean. This is the widest way a live /tmp path can hide from it.
+        #
+        # -r alone is the correct test here, and deliberately not `-r && -x`.
+        # Listing a directory's names needs read; only resolving an entry needs
+        # execute. So r-without-x still expands the glob, and each readlink then
+        # fails EACCES — which the branch below *does* count, because it only
+        # exempts ENOENT. Verified unprivileged (as root both bits are free and
+        # the mode means nothing): r-without-x -> unreadable=1 via readlink,
+        # full rx -> 0. Adding `! -x` here only double-counts the same process.
+        if [[ ! -r "$p/fd" && -d "$p" ]]; then
+            unreadable=$((unreadable + 1))
+        fi
+
+        for t in "$p/cwd" "$p/exe" "$p/fd"/*; do
+            if target=$(readlink "$t" 2>/dev/null); then
+                [[ "$target" == /tmp/* ]] && printf '%s\n' "$target"
+                continue
+            fi
+
+            # Only on the failure path, so the common case still costs one
+            # subshell per entry. readlink is silent without -v.
+            #
+            # The match below is coreutils' own ENOENT text, and LC_ALL=C is
+            # what keeps it in English: with a coreutils .mo installed and the
+            # pin removed, this compares against a translated string and never
+            # matches. Defensive rather than load-bearing today — this box has
+            # no coreutils translations at all — but `apt install locales-all`
+            # or a language-pack would silently make it load-bearing, so treat
+            # the pin and the literal as one unit and change neither alone.
+            #
+            # If it does break, it breaks safely: an unrecognised message is
+            # counted (not excused), so the function returns 2 and the caller
+            # skips the sweep. Measured by mutating the literal to one that
+            # cannot match — rc 0 -> 2, sweep skipped, nothing deleted.
+            err=$(LC_ALL=C readlink -v "$t" 2>&1 >/dev/null) || true
+            if [[ "$err" != *"No such file or directory"* ]] && [[ -d "$p" ]]; then
+                unreadable=$((unreadable + 1))
+            fi
+        done
+    done
+
+    # "Found no processes" keeps its original meaning: /proc absent, unmounted
+    # or hidden. It stays a failure — it is simply no longer the only one.
+    [[ "$scanned" -gt 0 ]] || return 1
+    [[ "$unreadable" -eq 0 ]] || return 2
+    return 0
+}
+
+# Prefixes for the two things this function reports that are not collectable
+# paths. Neither can call marvin_log: that logs via `tee`, which writes to
+# stdout, and stdout here is the path stream the caller feeds to `rm -rf`. A
+# log line would arrive as a candidate for deletion. Every real line is an
+# absolute path under <root>, so a leading `!` is unambiguous.
+_STALE_TMP_UNREADABLE='!unreadable:'
+_STALE_TMP_UNSAFE='!unsafe:'
+
+# Directories directly under <root> that are safe to collect: root-owned, not
+# on the skip list, not in use, and with nothing in the subtree newer than
+# <age_days>. Takes the root as an argument rather than hardcoding /tmp so the
+# selection can be exercised against a fixture tree without risking the real
+# one. Prints one collectable path per line, plus a `!unreadable:<path>` line
+# for any directory whose subtree could not be walked, and a `!unsafe:<path>`
+# line for any name this line protocol cannot carry (both skipped, neither
+# collected).
+_stale_tmp_dirs() {
+    local root="$1" age_days="$2" in_use="$3"
+    local d base newest cutoff
+    cutoff=$(( $(date +%s) - age_days * 86400 ))
+
+    while IFS= read -r -d '' d; do
+        base="${d##*/}"
+
+        # Checked before the skip list, because this is not a policy question
+        # about which directories deserve to survive — it is whether anything
+        # downstream can trust the line at all. A newline in a /tmp directory
+        # name is legal on Linux, arrives here intact (find -print0 into
+        # `read -d ''`), and then breaks BOTH channels out of this function,
+        # which are line-delimited (#901 review):
+        #
+        #   collect  — the caller reads with `read -r`, so it sees the
+        #              fragments as separate candidates. Measured on a fixture
+        #              holding a stale `<root>/a\nb` beside an unrelated and
+        #              FRESH `<root>/a`: the caller reached
+        #              `rm -rf -- <root>/a`, a directory that was never a
+        #              candidate and had failed the staleness test, while the
+        #              actual target survived. Not a missed collection — a
+        #              delete aimed at the wrong path, running as root.
+        #   in-use   — `in_use` is one path per line too, so a held path under
+        #              such a directory arrives split and the `index()` test
+        #              below can never match it. The protection fails OPEN,
+        #              the exact direction the fixed-string matching was
+        #              chosen to avoid.
+        #
+        # NUL-delimiting both channels is the tidier-looking fix and does not
+        # work: `in_use` reaches this function through a command substitution,
+        # and `$( )` strips NUL bytes outright — the producer's separators
+        # would be gone before the consumer could see them. That leaves an
+        # escaping protocol on a delete path, or refusing the input. Refusing
+        # is the one that cannot be got subtly wrong.
+        #
+        # So such a directory is never collected, and it is said out loud
+        # rather than dropped silently; the marker line carries the name
+        # %q-escaped, which is single-line by construction. The cost is that a
+        # scratch directory with a newline in its name is never swept and
+        # accumulates — the same trade every other guard in this section
+        # makes, wrong in the direction that keeps files.
+        #
+        # With this in place, every line either channel emits is newline-free
+        # by construction, so the line protocol is sound rather than merely
+        # lucky. The reverse case needs no guard: a newline inside an *in-use*
+        # path splits into fragments that can only match extra candidates, and
+        # over-protection deletes nothing.
+        if [[ "$d" == *$'\n'* ]]; then
+            printf '%s%q\n' "$_STALE_TMP_UNSAFE" "$d"
+            continue
+        fi
+
+        # Skip list, checked before anything else. Grouped by why each entry is
+        # here, because the groups are not equally load-bearing and a future
+        # editor pruning "obviously dead" names needs to know which is which.
+        case "$base" in
+            # Hidden state: the X11/ICE/XIM/font socket directories and
+            # anything else dot-prefixed.
+            .*) continue ;;
+            # LOAD-BEARING — do not drop. A PrivateTmp= unit gets a private
+            # /tmp bind-mounted over this directory, so its processes' open
+            # files resolve to paths inside the mount, never to this name. The
+            # /proc in-use check below is structurally unable to see that it is
+            # busy; this line is the only thing protecting it.
+            systemd-private-*|snap-private-*) continue ;;
+            # Session and desktop scratch owned by things still running. The
+            # /proc check would normally catch these; belt-and-braces for the
+            # window where a socket dir outlives its last open fd.
+            snap.*|pulse-*|tmux-*|ssh-*|vscode-*|dbus-*) continue ;;
+            # JVM and cross-platform toolchain scratch. Defensive padding —
+            # nothing on this host is known to depend on these.
+            Temp-*|hsperfdata_*) continue ;;
+        esac
+
+        # Refuse anything that is not a plain child of root — no traversal, no
+        # deleting the root itself.
+        #
+        # The traversal term tests `..` as a whole path COMPONENT, not as a
+        # substring. `find -mindepth 1 -maxdepth 1` cannot emit `.` or `..`,
+        # and if it somehow did, the `.*)` arm above would already have taken
+        # it — so the only thing this term can still catch is a caller passing
+        # a root that is itself unnormalised (`/tmp/x/..`), which arrives here
+        # as `/tmp/x/../y`. A substring test catches that case too, but it
+        # also permanently refuses any legitimate scratch directory whose name
+        # merely contains `..` (`pytest-of-root..1`), which would then
+        # accumulate forever with nothing said. Wrong in the keeping-files
+        # direction, as every guard here is — but this section reports the one
+        # name it refuses to sweep (the newline marker above) instead of
+        # dropping it quietly, and a blacklist nobody can see is not that.
+        [[ "$d" == "$root"/* && "/$d/" != */../* && -n "$base" ]] || continue
+
+        # In use by a live process? Match the directory itself or anything
+        # beneath it, so an open fd on a file inside protects the parent.
+        # Compared as fixed strings via awk's index(), not a grep pattern: a
+        # /tmp name may legitimately contain regex metacharacters, and a path
+        # that failed to match because it contained a `[` would fail OPEN — it
+        # would read as "not in use" and the directory would be deleted.
+        #
+        # Passed through the ENVIRON array, NOT `awk -v`. POSIX requires a -v
+        # assignment to undergo the same backslash-escape processing as a
+        # string literal in the program text, so awk receives `foo\nbar` — a
+        # legal 8-character directory name — as 7 characters with a real
+        # newline in the middle. Every line of `in_use` is newline-free by
+        # construction, so neither term can ever match and the protection
+        # fails OPEN: the identical failure direction the index() choice above
+        # was made to avoid, reached by a different route. ENVIRON entries are
+        # not escape-processed, so the name arrives byte-for-byte. Confirmed
+        # here on gawk 5.2.1; the semantics are POSIX and hold for mawk too.
+        # (`log-watcher.sh` passes INTEREST_RE through the environment for the
+        # same reason.) Shown failing first: with -v, a held `/tmp/…/foo\nbar`
+        # was emitted as an `rm -rf` candidate while an ordinary held name
+        # beside it was correctly protected. (#923)
+        if D="$d" awk 'index($0, ENVIRON["D"] "/") == 1 || $0 == ENVIRON["D"] { found = 1; exit }
+                       END { exit !found }' <<< "$in_use"; then
+            continue
+        fi
+
+        # Newest mtime anywhere in the subtree, including the directory itself.
+        # This is the point of the section: the directory's own mtime lies,
+        # because section 6 keeps resetting it.
+        #
+        # Deliberately not `sort -rn | head -1`. head exits after one line, so
+        # on a subtree big enough to push sort's output past the pipe buffer
+        # (~6.5k files here) sort dies of SIGPIPE, 141. Under `pipefail` that
+        # is the assignment's status, and `set -e` then kills this function --
+        # which runs inside a process substitution, so the caller's read loop
+        # just sees EOF. Every directory find had not yet reached is dropped,
+        # and a truncated sweep is indistinguishable from a complete one that
+        # found nothing. A big *ineligible* directory is enough to trigger it;
+        # it is read before the staleness test that would have skipped it, so
+        # one 20k-file tree anywhere in /tmp silences the whole section (#909).
+        #
+        # awk takes the max in a single pass and never exits early, so there is
+        # no reader to close the pipe. No `cut` either: %T@ compares correctly
+        # as a float, and %d truncates to whole seconds exactly as cut -d. did.
+        #
+        # find's own status is checked rather than discarded. A subtree it
+        # could only partly walk yields a maximum that is too old, and on a
+        # delete path "too old" means "collect it" -- the one direction this
+        # must never fail in. Unreadable means skipped, and skipped is said
+        # out loud, because silence here looks exactly like "not stale".
+        if ! newest=$(find "$d" -printf '%T@\n' 2>/dev/null |
+                          awk '{ if ($1 + 0 > m) m = $1 + 0 }
+                               END { if (NR) printf "%d\n", m }'); then
+            printf '%s%s\n' "$_STALE_TMP_UNREADABLE" "$d"
+            continue
+        fi
+        [[ -n "$newest" ]] || continue
+        [[ "$newest" -lt "$cutoff" ]] || continue
+
+        printf '%s\n' "$d"
+    done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -user root -print0 2>/dev/null)
+}
+
+tmpdir_size=0
+tmpdir_count=0
+if [[ ! -k /tmp ]]; then
+    # Not a theoretical hardening: /tmp is world-writable, so the sticky bit is
+    # the only thing preventing a non-root user from unlinking one of the
+    # root-owned directories this sweep has already selected and leaving
+    # something else at that path before the rm reaches it. Skipped rather than
+    # risked — a week of scratch files is cheaper than a delete aimed by
+    # somebody else.
+    marvin_log "WARN" "/tmp is not sticky — the stale-directory sweep's TOCTOU window depends on that bit to keep other users from swapping a selected path, so section 6a is skipped rather than run without it (#898, #901 review)"
+    ACTIONS+=("Stale /tmp scratch directories: SKIPPED (/tmp not sticky)")
+elif _in_use=$(_tmp_paths_in_use); then
+    tmpdir_unreadable=0
+    tmpdir_unsafe=0
+    while IFS= read -r d; do
+        [[ -n "$d" ]] || continue
+
+        # Not a candidate: a subtree whose age could not be established. Said
+        # out loud, because a directory skipped for this reason looks exactly
+        # like one that was examined and found fresh.
+        if [[ "$d" == "${_STALE_TMP_UNREADABLE}"* ]]; then
+            tmpdir_unreadable=$((tmpdir_unreadable + 1))
+            marvin_log "WARN" "could not walk ${d#"${_STALE_TMP_UNREADABLE}"} to establish its newest mtime — skipped rather than assuming it is stale, since a partial walk reports an age that is too old and this is a delete path (#909)"
+            continue
+        fi
+
+        # Not a candidate: a name this loop's line-delimited protocol cannot
+        # carry. Reported %q-escaped, exactly as it arrived — un-escaping it
+        # for a prettier log line would put the newline back into the log
+        # stream, which is the class of problem being reported.
+        if [[ "$d" == "${_STALE_TMP_UNSAFE}"* ]]; then
+            tmpdir_unsafe=$((tmpdir_unsafe + 1))
+            marvin_log "WARN" "/tmp directory ${d#"${_STALE_TMP_UNSAFE}"} has a newline in its name — never collected, because neither the in-use check nor this delete loop can carry it intact, and a split candidate would aim rm -rf at a path that was never examined (#901 review)"
+            continue
+        fi
+
+        # Belt and braces: only ever delete an absolute path. If a future
+        # marker is added and this loop is not taught about it, it must not
+        # reach rm -rf.
+        [[ "$d" == /* ]] || continue
+
+        dsize=$(du -sb "$d" 2>/dev/null | cut -f1) || dsize=0
+        [[ "$dsize" =~ ^[0-9]+$ ]] || dsize=0
+        tmpdir_size=$((tmpdir_size + dsize))
+        tmpdir_count=$((tmpdir_count + 1))
+        marvin_is_dry_run || rm -rf -- "$d"
+    done < <(_stale_tmp_dirs /tmp 7 "$_in_use")
+    if [[ "$tmpdir_count" -gt 0 ]]; then
+        track_freed "Stale /tmp scratch directories (>7d, ${tmpdir_count})" "$tmpdir_size"
+    fi
+    # Surfaced in the summary, not only in the log (#901 review). track_freed
+    # cannot carry this — it is gated on bytes > 0, and a directory that was
+    # skipped freed nothing by definition. A run that examined 60 directories
+    # and could not read 12 of them is not the same run as one that examined
+    # 60, and the report is where that difference has to be visible; otherwise
+    # a sweep degrading toward "skips everything" reads as "found nothing",
+    # which is #898 over again.
+    if [[ "$tmpdir_unreadable" -gt 0 ]]; then
+        ACTIONS+=("Stale /tmp scratch directories: ${tmpdir_unreadable} skipped, subtree unreadable")
+    fi
+    if [[ "$tmpdir_unsafe" -gt 0 ]]; then
+        ACTIONS+=("Stale /tmp scratch directories: ${tmpdir_unsafe} skipped, newline in name")
+    fi
+else
+    _in_use_rc=$?
+    if [[ "$_in_use_rc" -eq 2 ]]; then
+        marvin_log "WARN" "at least one /proc entry existed but could not be read while determining which /tmp directories are in use — a live process whose open files went unseen may be holding one, so the stale-directory sweep is skipped rather than guessing (#898, #908)"
+    else
+        marvin_log "WARN" "found no processes under /proc to determine which /tmp directories are in use — skipping the stale-directory sweep rather than guessing (#898)"
+    fi
+fi
+
 # ─── 6. Temp files ──────────────────────────────────────────────────────────
 
 tmp_size=0
