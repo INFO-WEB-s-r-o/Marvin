@@ -1899,6 +1899,677 @@ else
     fi
 fi
 
+# ─── 9o. openapi.yaml must agree with the nginx /api/ allowlist (#883) ───────
+# Section letter 9o, not 9m: by the time this rebased onto main, 9m had been
+# taken by the morning-blog-blurb screening fix and 9n by the executable-bits
+# check. Picked against the set actually on main at rebase time, per the same
+# trap §9j's own comment warns about — a letter reserved against the *open* PR
+# set stops being true the moment one of those merges first.
+#
+# Issue #883: `data/openapi.yaml` is published at /.well-known/openapi.yaml as
+# this server's API contract, and nothing has ever compared it to what nginx
+# actually serves. It had drifted in BOTH directions at once — 10 endpoints
+# served by the #861 allowlist and absent from the spec, and 2 documented
+# endpoints (`/api/exports/`) published as open that answer 401 — while the spec
+# header claimed "all endpoints ... require no authentication".
+#
+# Both directions are checked, because they fail differently:
+#   A. served-but-undocumented — the public surface is larger than the published
+#      contract, so nobody reviewing the spec can see the real exposure.
+#   B. documented-but-unserved — worse for a consumer: they build against a path
+#      that does not exist, or one that silently needs a key.
+#
+# Everything here is resolved through `dirname "$0"`, NOT ${MARVIN_DIR}: the
+# latter is hardcoded to /home/marvin/git, so a branch that fixed the spec would
+# be graded against the deployed copy and pass (or fail) on the wrong file
+# entirely — the trap already recorded in #855/#874/#890.
+#
+# Comments are stripped from the nginx config before parsing. The explanatory
+# block above the allowlist names /api/blog-index.json and /api/security/... in
+# prose; a parser that reads prose invents endpoints nginx does not serve, which
+# is the same class of false result as #889/#892.
+
+marvin_log "INFO" "Self-test: checking openapi.yaml against the nginx /api/ allowlist"
+
+_od_conf="$(dirname "$0")/../setup/nginx-site.conf"
+_od_spec="$(dirname "$0")/../data/openapi.yaml"
+
+if [[ ! -r "$_od_conf" || ! -r "$_od_spec" ]]; then
+    test_fail "openapi drift: cannot read setup/nginx-site.conf and/or data/openapi.yaml — the contract check DID NOT RUN (this is not a clean result)"
+else
+    # Expand the allowlist regex into concrete paths. Handles the two shapes the
+    # config actually uses: (?:a|b|c)\.json groups, and bare literal alternatives.
+    # Deliberately narrow — an unrecognised shape must yield nothing and trip the
+    # emptiness check below rather than silently under-reporting the surface.
+    #
+    # That promise held only when EVERY alternative was unrecognised (#902
+    # review). The trailing bare literals are filtered one at a time, so a single
+    # alternative outside the character class was dropped while its siblings kept
+    # the set non-empty — the emptiness guard never fired, and that path silently
+    # stopped being checked for direction A. An under-reported served set is the
+    # one failure this section cannot afford: a path missing from it is a path
+    # that cannot be reported as served-but-undocumented, which is #883 itself.
+    #
+    # So an unrecognised alternative is now emitted as a marker rather than
+    # dropped, and the caller FAILs on it. A marker, not a global counter: the
+    # caller reads this function through a command substitution, so a variable
+    # set here would be set in a subshell the parent never sees — the exact
+    # mechanism that made #908's fail-closed guard dead code.
+    #
+    # That marker was still POSITIONAL, and the promise leaked again. The group
+    # loop consumed from the first `(?:` onwards and discarded everything to its
+    # LEFT, so bare literals were only ever read once the last group had been
+    # eaten. A literal alternative before or between groups — an ordinary,
+    # PCRE-valid edit that nginx loads without complaint — vanished with no
+    # marker, and its siblings kept the set non-empty so the emptiness guard
+    # never fired. `openapi\.yaml|(?:about|status)\.json` expanded to about+status
+    # and silently forgot openapi.yaml. Same #883-inside-the-#883-guard failure
+    # as before, one position over. The scan is now left-to-right: the text
+    # before each group is read as literals in place, so position cannot matter.
+    _OD_UNPARSED='!unparsed-alt:'
+
+    # Emit one run of bare (non-group) alternatives. Split out of _od_expand so
+    # a literal is read wherever it sits, not only after the final group.
+    _od_literals() {
+        local alt
+        local -a alts
+        IFS='|' read -ra alts <<< "${1//\\./.}"
+        for alt in "${alts[@]}"; do
+            # An empty alternative is the ordinary residue of a `|` adjacent to a
+            # group, or of a regex that was entirely groups — `read -ra` yields an
+            # empty field — not a shape this parser failed to read.
+            [[ -z "$alt" ]] && continue
+            if [[ "$alt" =~ ^[A-Za-z0-9_/.-]+$ ]]; then
+                printf '/api/%s\n' "$alt"
+            else
+                printf '%s%s\n' "$_OD_UNPARSED" "$alt"
+            fi
+        done
+    }
+
+    _od_expand() {
+        local b="$1" head grp inner rest suffix alt
+        local -a alts
+        while [[ "$b" == *'(?:'* ]]; do
+            head=${b%%\(\?:*}
+            grp=${b#*\(\?:}
+            # A group with no closing paren is not a shape this parser reads.
+            # Unreachable through nginx — PCRE rejects an unterminated subpattern,
+            # so such a config never loads and never reaches this check — but once
+            # the shape is unrecognised the remainder cannot be trusted either, so
+            # hand the caller a marker instead of guessing at the rest.
+            if [[ "$grp" != *')'* ]]; then
+                printf '%s%s\n' "$_OD_UNPARSED" "$b"
+                return 0
+            fi
+            inner=${grp%%)*}; rest=${grp#*)}
+            suffix=""
+            # Consume the group's suffix as well as reading it: left in place it
+            # comes back around as a bare literal alternative and is emitted as
+            # the nonsense path /api/.json.
+            #
+            # Matched as a SHAPE (`\.` + literal, repeatable), not as the string
+            # `\.json` (#902 review, eighth round). Hardcoding today's only
+            # suffix made this the third instance of the section's recurring
+            # class: `(?:a|b)\.svg` — an ordinary PCRE-valid edit nginx loads
+            # without complaint — left suffix empty, so the group's own
+            # alternatives were emitted as /api/a and /api/b with their suffix
+            # stripped, the real /api/a.svg and /api/b.svg never appeared in the
+            # served set at all, and the orphaned `\.svg` came back around as the
+            # phantom path /api/.svg. Under-report plus invention, with no
+            # marker: direction A goes blind on the real paths (#883 itself)
+            # while FAILing on two endpoints nginx does not serve.
+            if [[ "$rest" =~ ^((\\\.[A-Za-z0-9_-]+)+) ]]; then
+                suffix=${BASH_REMATCH[1]//\\./.}
+                rest=${rest#"${BASH_REMATCH[1]}"}
+            fi
+            # Whatever follows a group must be another alternative or the end of
+            # the regex. Anything else is a shape this parser has not been shown
+            # to read, and guessing at it is what produced /api/.svg above.
+            if [[ -n "$rest" && "$rest" != '|'* ]]; then
+                printf '%s%s\n' "$_OD_UNPARSED" "$rest"
+                return 0
+            fi
+            _od_literals "$head"
+            IFS='|' read -ra alts <<< "$inner"
+            for alt in "${alts[@]}"; do printf '/api/%s%s\n' "$alt" "$suffix"; done
+            b=$rest
+        done
+        _od_literals "$b"
+    }
+
+    # ── Order-permutation fixtures for the parser above (#935) ───────────────
+    # This section has now shipped the same defect twice, one position apart:
+    # round 5 dropped an unreadable alternative without its marker, round 7
+    # dropped a bare literal sitting to the LEFT of a group. Both survived five
+    # review rounds and a mutation suite, for one reason — every fixture ever
+    # written for them put the literal LAST, because that is where the live
+    # config puts it. The fixtures shared an incidental property with production
+    # and inherited it as a blind spot, so a positional parser and a correct one
+    # were indistinguishable to the whole suite.
+    #
+    # Both of those drives were ad hoc: run during review, recorded in the
+    # CHANGELOG, and gone from the runtime. Nothing committed would catch the
+    # class coming back a third time. These fixtures are that assertion, and
+    # order is the variable they exist to vary — each group below is a set of
+    # permutations of the SAME alternatives, and every permutation must expand
+    # to the same set. They drive the real _od_expand defined directly above,
+    # in its own scope, not a copy that could drift from it.
+    #
+    # LC_ALL=C on the sort: the expected strings are literal, and the marker
+    # (`!`, 0x21) sorting before `/api/` (0x2f) must not depend on the locale
+    # the suite happens to run under.
+    _od_perm_n=0
+    _od_perm_fail=""
+    _od_perm_case() {   # $1 label, $2 regex body, $3 expected normalised expansion
+        local got
+        _od_perm_n=$((_od_perm_n + 1))
+        got=$(_od_expand "$2" | grep -vE '^/api/$|^$' | LC_ALL=C sort -u \
+              | tr '\n' ' ' | sed 's/ $//') || got="!harness-error"
+        [[ "$got" == "$3" ]] || _od_perm_fail+="${1} (got '${got:-<empty>}') "
+    }
+
+    # Family 1 — one bare literal, moved through every position around the
+    # groups. Against the round-7 parser the first two FAIL (openapi.yaml is
+    # silently absent) and the third passes, which is the positionality itself.
+    _od_perm_set='/api/about.json /api/openapi.yaml /api/status.json'
+    _od_perm_case "literal-first"  'openapi\.yaml|(?:about|status)\.json'           "$_od_perm_set"
+    _od_perm_case "literal-middle" '(?:about)\.json|openapi\.yaml|(?:status)\.json' "$_od_perm_set"
+    _od_perm_case "literal-last"   '(?:about|status)\.json|openapi\.yaml'           "$_od_perm_set"
+
+    # Family 2 — the same for the marker promise. `v[12]` is an ordinary
+    # PCRE character class: nginx loads it without complaint, and this parser
+    # deliberately does not read it, so it MUST come back marked rather than
+    # dropped. Against the round-7 parser the first case emits no marker at all
+    # while its siblings keep the set non-empty — the silent-pass direction.
+    _od_perm_marked='!unparsed-alt:v[12] /api/about.json /api/status.json'
+    _od_perm_case "unreadable-first" 'v[12]|(?:about|status)\.json' "$_od_perm_marked"
+    _od_perm_case "unreadable-last"  '(?:about|status)\.json|v[12]' "$_od_perm_marked"
+
+    # Family 3 — the group SUFFIX, varied the same way the position was. The
+    # eighth-round instance of this section's recurring class: the suffix was
+    # matched as the literal string `\.json`, so any other escaped suffix left
+    # the group's alternatives stripped bare and orphaned the suffix into a
+    # phantom path. It is now matched as a shape, and a group followed by
+    # something that is neither a suffix nor another alternative is markered
+    # rather than guessed at.
+    _od_perm_case "suffix-nonjson"     '(?:a|b)\.svg'          '/api/a.svg /api/b.svg'
+    _od_perm_case "suffix-compound"    '(?:a|b)\.tar\.gz'      '/api/a.tar.gz /api/b.tar.gz'
+    _od_perm_case "suffix-unreadable"  '(?:a|b)x'              '!unparsed-alt:x'
+
+    if [[ "$_od_perm_n" -ne 8 ]]; then
+        test_fail "openapi drift: the §9m parser permutation fixtures DID NOT RUN — expected 8 cases, ${_od_perm_n} executed (this is not a clean result)"
+    elif [[ -n "$_od_perm_fail" ]]; then
+        test_fail "openapi drift: the /api/ allowlist parser is POSITIONAL — an alternative expands differently depending on where it sits in the regex, so the served set silently depends on config ordering (#935): ${_od_perm_fail% }"
+    else
+        test_pass "openapi drift: all 8 parser fixtures agree — a literal, an unreadable alternative and a group suffix each expand identically wherever they sit (#935)"
+    fi
+
+    # ── Shared: attribute a directive to its enclosing location block ────────
+    # Both the direction-B arm and the auth-posture arm need the same thing —
+    # "which location block is this line inside?" — and until #906 they answered
+    # it two different ways. #903 fixed the auth parser to track brace DEPTH;
+    # direction B kept the bare `}` reset that #903 had just condemned, so the
+    # bug class was repaired in one sibling and left standing in the other. One
+    # implementation now, called twice, so that cannot happen a third time.
+    #
+    # Why depth and not a bare `}` reset: literal-prefix location blocks in this
+    # very file wrap nested `if (...) { ... }` blocks (/.well-known/ai-negotiate
+    # has two), so the first inner `}` clears a naive tracker while still inside
+    # the outer block, and a directive below it is attributed to nothing at all.
+    # For direction B that is a silent OPEN failure: a `deny all` after a nested
+    # `if` would go unrecorded, the denied prefix would be emitted as serving,
+    # and a documented endpoint nginx actually blocks would PASS.
+    #
+    # Per-line NET brace counting is what keeps braces inside quoted strings
+    # from derailing the depth: the one such line in this config (the 401 return
+    # whose JSON body carries both) is self-balancing. A line that is NOT
+    # self-balancing surfaces as a final-depth mismatch, which each caller
+    # reports as an explicit FAIL rather than a confident wrong answer.
+    #
+    # Reads the server-block text on stdin. $1 is an ERE matched per line.
+    # Emits, tab-separated:
+    #   L <path>            a literal-prefix or exact (`=`) location block
+    #   P <path>            the directive, inside one of those
+    #   U <mod path>        the directive, inside a regex (~, ~*) or named block
+    #   N <path>            a `location` opener nested inside another block —
+    #                       the one shape below that is NOT tracked, surfaced
+    #                       so the caller can say so instead of guessing
+    #   D <depth> <mind>    final brace accounting, for the caller's did-not-run
+    #                       guard. `_od_tls` is the INSIDE of the server block —
+    #                       opener stripped, closer kept — so well-formed is -1:-1.
+    #
+    # Exact `= /path` blocks count as literal: they carry a perfectly usable
+    # path and were silently dropped by the old `[^~=]` guard (#903). No `/api/`
+    # location in the current config uses `=`, so this changes nothing today.
+    #
+    # NOT handled: a `location` nested inside another `location`, which nginx
+    # does allow. The opener is only recognised at depth 0, so an inner block
+    # never becomes its own attribution unit — its directives fold into the
+    # enclosing one. Demonstrated rather than assumed: an `auth_request` inside
+    # `location /api/outer/inner/`, itself inside `location /api/outer/`, comes
+    # back as `L /api/outer/` + `P /api/outer/`, with `/api/outer/inner/` never
+    # emitted at all. Brace accounting stays well-formed (-1:-1), so neither
+    # caller's did-not-run guard fires — it is a quiet misattribution, not a
+    # detected one. The two arms fail in opposite directions on it: direction B
+    # would read a nested `deny all` as denying the whole outer prefix, which is
+    # over-broad and therefore lands on FAIL; the auth arm would credit a nested
+    # `auth_request` to the outer prefix and leave the inner path looking
+    # ungated, which is the silent-pass direction and the one that matters.
+    # Nothing in setup/nginx-site.conf nests a location today — all 25 blocks
+    # open at the same depth (checked by walking the file's brace depth, not by
+    # eye), and the only nesting inside them is `if (...)`, which depth tracking
+    # already handles.
+    #
+    # As of #902 review round 9 the limitation is no longer documented ONLY in
+    # this comment: a nested opener is emitted as `N` and the caller WARNs on
+    # it. A comment cannot notice the day the config changes; the fixtures
+    # below prove the emitter can, and prove it can also stay quiet on the
+    # same directives written flat, which is the half that makes the WARN mean
+    # something.
+    _od_attribute() {
+        awk -v want="$1" '
+            {
+                _l = $0
+                _o = gsub(/\{/, "", _l)
+                _c = gsub(/\}/, "", _l)
+
+                # A `location` opener seen at depth >= 1 is nested inside
+                # another block. nginx does not allow one inside `if`, so in
+                # practice that means inside another `location` — precisely the
+                # shape this attributor folds into its parent instead of
+                # tracking (the NOT-handled note above). Emitted as `N` so the
+                # caller can WARN, rather than the comment being the only
+                # safety net for a misattribution that is silent by
+                # construction: brace accounting stays well-formed, so no
+                # did-not-run guard fires.
+                if (depth >= 1 && $0 ~ /^[[:space:]]*location[[:space:]]+/) {
+                    print "N\t" (($2 == "=" || $2 == "~" || $2 == "~*" || $2 == "^~") ? $3 : $2)
+                }
+
+                if (depth == 0 && $0 ~ /^[[:space:]]*location[[:space:]]+/) {
+                    if ($2 == "=" || $2 == "~" || $2 == "~*" || $2 == "^~") {
+                        mod = $2; path = $3
+                    } else {
+                        mod = ""; path = $2
+                    }
+                    # `~`/`~*` are regexes and `@name` is a named block — neither
+                    # is a path prefix, so a documented endpoint cannot be
+                    # prefix-matched against it. Carried out as `U` so a match
+                    # inside one gets REPORTED instead of dropped on the floor.
+                    if (mod != "~" && mod != "~*" && path ~ /^\//) {
+                        p = path; u = ""; print "L\t" p
+                    } else {
+                        p = ""; u = (mod == "" ? path : mod " " path)
+                    }
+                }
+
+                # Count the openers on this line before testing, so a
+                # single-line `location /x { directive; }` is still seen.
+                depth += _o
+                if (depth >= 1 && $0 ~ want) {
+                    if (p != "")      print "P\t" p
+                    else if (u != "") print "U\t" u
+                }
+                depth -= _c
+                if (depth <= 0) { p = ""; u = "" }
+                if (depth < mind) mind = depth
+            }
+            # mind stays unassigned when depth never goes negative, and an
+            # unassigned awk variable prints as the empty string — a mismatch
+            # message reading "0:" rather than "0:0". Normalised here so the
+            # did-not-run FAIL states a number the reader can compare.
+            END { print "D\t" depth "\t" (mind == "" ? 0 : mind) }
+        '
+    }
+
+    # ── Nested-location fixtures for the attributor above (#902 review r9) ───
+    # Two fixtures carrying the SAME two paths and the SAME directive, differing
+    # only in whether the second block sits inside the first. The nested one
+    # must be flagged; the flat one must not. A detector that cannot stay quiet
+    # is not a detector, it is a constant — and this section has already shipped
+    # a guard that could not fail (#935).
+    #
+    # These drive the real _od_attribute in its own scope, and they run whether
+    # or not setup/nginx-site.conf parses: a fixture gated on production reading
+    # correctly is the #935 mistake in a second costume.
+    #
+    # The nested case also asserts the misattribution ITSELF, not merely the new
+    # marker — `/api/outer/inner/` is absent from the `L` set and the gate is
+    # credited to `/api/outer/`, which is the silent-pass the WARN exists to
+    # announce. Stated in the runtime rather than in prose, because prose is
+    # what this limitation had for three rounds.
+    _od_nest_fx_n=0
+    _od_nest_fx_fail=""
+    _od_nest_case() {   # $1 label, $2 config text, $3 expected "N-set|L-set|P-set"
+        local raw got
+        _od_nest_fx_n=$((_od_nest_fx_n + 1))
+        raw=$(printf '%s\n' "$2" | _od_attribute 'auth_request') || raw="!harness-error"
+        got=$(printf '%s\n' "$raw" | awk -F'\t' '
+                  $1=="N"{n = n $2 " "} $1=="L"{l = l $2 " "} $1=="P"{p = p $2 " "}
+                  END { sub(/ $/,"",n); sub(/ $/,"",l); sub(/ $/,"",p)
+                        print n "|" l "|" p }') || got="!harness-error"
+        [[ "$got" == "$3" ]] || _od_nest_fx_fail+="${1} (got '${got}' want '${3}') "
+    }
+
+    _od_nest_case "nested" '
+location /api/outer/ {
+    location /api/outer/inner/ {
+        auth_request /_auth;
+    }
+}
+' '/api/outer/inner/|/api/outer/|/api/outer/'
+
+    _od_nest_case "flat" '
+location /api/outer/ {
+}
+location /api/outer/inner/ {
+    auth_request /_auth;
+}
+' '|/api/outer/ /api/outer/inner/|/api/outer/inner/'
+
+    if [[ "$_od_nest_fx_n" -ne 2 ]]; then
+        test_fail "openapi drift: the §9m nested-location fixtures DID NOT RUN — expected 2 cases, ${_od_nest_fx_n} executed (this is not a clean result)"
+    elif [[ -n "$_od_nest_fx_fail" ]]; then
+        test_fail "openapi drift: the §9m location attributor does not behave as documented on nested blocks — either the nesting goes unreported or a flat config is falsely reported as nested, and the WARN below means nothing either way: ${_od_nest_fx_fail% }"
+    else
+        test_pass "openapi drift: the location attributor flags a nested location block and stays silent on the same two blocks written flat (#902 review r9)"
+    fi
+
+    # Everything below is scoped to the TLS server block. openapi.yaml declares
+    # `servers: https://robot-marvin.cz`, so that block IS the contract. The
+    # port-80 block is defense-in-depth hardening with its own
+    # `location /api/exports/ { return 403; }`, and a whole-file parse reads that
+    # 403 as "exports is denied" and fails the direction-B arm on a pair of
+    # endpoints that are served perfectly well over HTTPS. Same server-block
+    # scoping trap as the ai-negotiate location.
+    _od_tls=$(awk '
+        /^server[[:space:]]*\{/ { n++; next }
+        n { buf[n] = buf[n] $0 "\n"; if ($0 ~ /listen[[:space:]]+(\[::\]:)?443/) tls[n] = 1 }
+        END { for (i = 1; i <= n; i++) if (i in tls) printf "%s", buf[i] }
+    ' "$_od_conf" | grep -vE '^[[:space:]]*#') || _od_tls=""
+
+    if [[ -z "$_od_tls" ]]; then
+        test_fail "openapi drift: could not isolate the TLS (443) server block in setup/nginx-site.conf — the contract check DID NOT RUN"
+        _od_locline=""
+        _od_skip=1
+    else
+        _od_skip=0
+        _od_locline=$(printf '%s\n' "$_od_tls" \
+                      | grep -oE 'location[[:space:]]+~[[:space:]]+\^/api/\(.*\)\$' \
+                      | head -1) || _od_locline=""
+    fi
+
+    if [[ "$_od_skip" -eq 1 ]]; then
+        : # already reported above; do not also emit a misleading pass
+    elif [[ -z "$_od_locline" ]]; then
+        test_fail "openapi drift: no regex /api/ allowlist found in setup/nginx-site.conf — either #861 was reverted (the /api/ surface is a denylist again) or the config shape changed and this check can no longer read it; either way it DID NOT RUN"
+    else
+        _od_body=${_od_locline#*^/api/(}
+        _od_body=${_od_body%)\$}
+        _od_raw=$(_od_expand "$_od_body" | grep -vE '^/api/$|^$' | sort -u) || _od_raw=""
+        _od_unparsed=$(printf '%s\n' "$_od_raw" | grep -F "$_OD_UNPARSED" \
+                       | sed "s|^${_OD_UNPARSED}||" | tr '\n' ' ') || _od_unparsed=""
+        _od_served=$(printf '%s\n' "$_od_raw" | grep -vF "$_OD_UNPARSED") || _od_served=""
+        _od_documented=$(grep -oE '^  (/[^ :]+):' "$_od_spec" | tr -d ' :' | sort -u) || _od_documented=""
+
+        if [[ -n "$_od_unparsed" ]]; then
+            test_fail "openapi drift: the /api/ allowlist regex contains alternative(s) this parser does not understand, so the served set is INCOMPLETE and neither direction can vouch for the surface — it DID NOT RUN (#902 review): ${_od_unparsed% }"
+        elif [[ -z "$_od_served" ]]; then
+            test_fail "openapi drift: the /api/ allowlist regex was found but expanded to ZERO paths — the parser no longer understands the config shape; it DID NOT RUN (an empty served-set would otherwise make every documented path look undocumented and vice versa)"
+        elif [[ -z "$_od_documented" ]]; then
+            test_fail "openapi drift: data/openapi.yaml yielded ZERO paths — the spec is empty or its shape changed; the check DID NOT RUN"
+        else
+            _od_doc_api=$(printf '%s\n' "$_od_documented" | grep '^/api/') || _od_doc_api=""
+
+            # ── Direction A: served but undocumented ──
+            _od_undoc=$(comm -23 <(printf '%s\n' "$_od_served") <(printf '%s\n' "$_od_doc_api")) || _od_undoc=""
+            if [[ -n "$_od_undoc" ]]; then
+                test_fail "openapi drift: $(printf '%s\n' "$_od_undoc" | wc -l) endpoint(s) are served by the nginx /api/ allowlist but absent from data/openapi.yaml — the published contract understates the real public surface (#883): $(printf '%s' "$_od_undoc" | tr '\n' ' ')"
+            else
+                test_pass "openapi drift: all $(printf '%s\n' "$_od_served" | wc -l) allowlisted /api/ endpoints are documented in openapi.yaml"
+            fi
+
+
+            # ── Direction B: documented but not served ──
+            # A documented path counts as served if it is in the allowlist, or if
+            # a dedicated prefix `location` block covers it and that block does
+            # not deny.
+            #
+            # Coverage is restricted to prefixes STRICTLY BELOW /api/ — i.e.
+            # longer than "/api/" itself. Two catch-alls would otherwise make this
+            # direction incapable of ever failing, which is worse than not having
+            # it: `location /api/` is the deny-all, and `location /` is the
+            # Next.js proxy that prefix-matches literally every path. The first
+            # draft of this section excluded only /api/, and a mutation that
+            # deleted peers-public.json from the allowlist while leaving it
+            # documented still reported PASS — caught by mutation-testing the
+            # arm, not by reading it.
+            _od_serve_raw=$(printf '%s\n' "$_od_tls" | _od_attribute 'deny all|return 403') || _od_serve_raw=""
+            _od_serve_depth=$(printf '%s\n' "$_od_serve_raw" | awk -F'\t' '$1=="D"{print $2":"$3}') || _od_serve_depth=""
+
+            # ── Is the attributor's one blind spot reachable yet? ──
+            # Both arms read the same `_od_tls` through the same attributor, so
+            # the nesting scan is done once here on direction B's stream rather
+            # than twice with two identical messages. WARN, not FAIL: nesting is
+            # legal nginx and does not by itself mean the config is wrong — it
+            # means the two arms below are answering a question they cannot see
+            # all of, which the operator needs told before a wrong PASS gets
+            # believed.
+            _od_nested=$(printf '%s\n' "$_od_serve_raw" | awk -F'\t' '$1=="N"{print $2}' \
+                         | sort -u | tr '\n' ' ') || _od_nested=""
+            if [[ "$_od_serve_depth" != "-1:-1" ]]; then
+                # The attribution stream this scan reads is the same one the
+                # direction-B FAIL below rejects as untrustworthy. Saying
+                # "no nesting found" off a broken parse would be the exact
+                # scanner-broke-reported-as-clean substitution.
+                test_warn "openapi drift: nested-location scan DID NOT RUN — brace accounting ended at '${_od_serve_depth:-unknown}', so absence of nesting is unproven (see the direction-B FAIL)"
+            elif [[ -n "$_od_nested" ]]; then
+                test_warn "openapi drift: setup/nginx-site.conf now nests a location inside another (${_od_nested% }) — _od_attribute folds an inner block into its parent, so an auth_request on the inner path is credited to the outer prefix and the inner path can look gated when it is not; the arms below are reporting on an incomplete view (#902 review r9)"
+            else
+                test_pass "openapi drift: no location block in the TLS server block is nested inside another, so every directive attributes to the block that owns it"
+            fi
+
+            # Serving = every literal location seen, minus the ones that deny.
+            # Restricted to prefixes strictly below /api/ for the reason above.
+            # A denial inside a regex or named block comes back as `U` and is
+            # ignored here: such a block is not in the `L` set either, so it can
+            # neither add nor remove coverage.
+            _od_serving_prefixes=$(comm -23 \
+                <(printf '%s\n' "$_od_serve_raw" | awk -F'\t' '$1=="L"{print $2}' | sort -u) \
+                <(printf '%s\n' "$_od_serve_raw" | awk -F'\t' '$1=="P"{print $2}' | sort -u) \
+                | awk 'index($0, "/api/") == 1 && $0 != "/api/"') || _od_serving_prefixes=""
+
+            _od_unserved=""
+            while IFS= read -r _od_p; do
+                [[ -z "$_od_p" ]] && continue
+                printf '%s\n' "$_od_served" | grep -qxF "$_od_p" && continue
+                _od_covered=0
+                while IFS= read -r _od_pref; do
+                    [[ -z "$_od_pref" ]] && continue
+                    # Fixed-string prefix test: a regex match here would fail OPEN
+                    # on a path containing regex metacharacters (the /api/exports/
+                    # {date}.json brace is exactly such a case).
+                    if awk -v s="$_od_p" -v pre="$_od_pref" 'BEGIN{exit !(index(s,pre)==1)}'; then
+                        _od_covered=1; break
+                    fi
+                done <<< "$_od_serving_prefixes"
+                [[ "$_od_covered" -eq 0 ]] && _od_unserved+="${_od_p} "
+            done <<< "$_od_doc_api"
+
+            # Same did-not-run guard the auth arm carries: if the brace
+            # accounting did not end where a well-formed block must, every
+            # location attribution above is untrustworthy and the coverage set
+            # may be over-broad — which for this direction means a wrong PASS.
+            if [[ "$_od_serve_depth" != "-1:-1" ]]; then
+                test_fail "openapi drift: direction-B parser brace accounting ended at depth:min '${_od_serve_depth:-unknown}', expected '-1:-1' — location attribution cannot be trusted and this arm DID NOT RUN (#906)"
+            elif [[ -n "$_od_unserved" ]]; then
+                test_fail "openapi drift: documented endpoint(s) are neither in the /api/ allowlist nor covered by a serving location block — anyone building against the published spec gets 403/404 (#883): ${_od_unserved}"
+            else
+                test_pass "openapi drift: every documented /api/ endpoint is either allowlisted or covered by a dedicated serving location block"
+            fi
+
+            # ── Auth posture: an auth_request-gated path must document its 401 ──
+            # Presence-only comparison would call the /api/exports/ pair clean
+            # while the spec published them as open. That was half of #883.
+            #
+            # Attribution is by brace DEPTH, not by a bare `}` reset (#903) —
+            # see _od_attribute above, which both arms now share (#906).
+            _od_auth_raw=$(printf '%s\n' "$_od_tls" | _od_attribute 'auth_request') || _od_auth_raw=""
+
+            _od_depth=$(printf '%s\n' "$_od_auth_raw" | awk -F'\t' '$1=="D"{print $2":"$3}') || _od_depth=""
+            _od_authed_prefixes=$(printf '%s\n' "$_od_auth_raw" | awk -F'\t' '$1=="P"{print $2}' | sort -u) || _od_authed_prefixes=""
+            _od_auth_unmatchable=$(printf '%s\n' "$_od_auth_raw" | awk -F'\t' '$1=="U"{print $2}' | sort -u) || _od_auth_unmatchable=""
+
+            _od_authgap=""
+            while IFS= read -r _od_pref; do
+                [[ -z "$_od_pref" ]] && continue
+                while IFS= read -r _od_p; do
+                    [[ -z "$_od_p" ]] && continue
+                    awk -v s="$_od_p" -v pre="$_od_pref" 'BEGIN{exit !(index(s,pre)==1)}' || continue
+                    # Does this path's own block in the spec declare a 401?
+                    if ! awk -v want="  ${_od_p}:" '
+                        $0 == want { inpath=1; next }
+                        inpath && /^  \// { exit }
+                        inpath && /^ *"401":/ { found=1; exit }
+                        END { exit !found }
+                    ' "$_od_spec"; then
+                        # Newline-delimited, deduplicated at report time below.
+                        # A path under two auth_request-gated prefixes (e.g.
+                        # /api/ and /api/exports/) reaches here once per
+                        # matching prefix, and a FAIL message that names the
+                        # same endpoint twice reads as two problems (#902
+                        # review).
+                        _od_authgap+="${_od_p}"$'\n'
+                    fi
+                done <<< "$_od_doc_api"
+            done <<< "$_od_authed_prefixes"
+
+            # The extraction above strips the opening `server {` but keeps the
+            # matching closing brace, so a correctly-counted TLS block ends at
+            # depth -1 and never dips below it. Any other result means the
+            # brace accounting lost its place — an unbalanced brace inside a
+            # string, or a changed extraction — and every attribution built on
+            # top of it is untrustworthy. Say so; do not report a verdict.
+            if [[ "$_od_depth" != "-1:-1" ]]; then
+                test_fail "openapi drift: auth-posture arm did not run — nginx brace accounting ended at depth:min '${_od_depth:-unknown}', expected '-1:-1'; auth_request attribution cannot be trusted (#903)"
+            elif [[ -n "$_od_authgap" ]]; then
+                test_fail "openapi drift: endpoint(s) behind an nginx auth_request are documented WITHOUT a 401 response — the spec publishes an authenticated endpoint as open (#883): $(printf '%s' "$_od_authgap" | sort -u | tr '\n' ' ')"
+            elif [[ -z "$_od_authed_prefixes" ]]; then
+                test_warn "openapi drift: no prefix-matchable auth_request-gated location blocks found in nginx-site.conf — the auth-posture arm had nothing to check"
+            else
+                test_pass "openapi drift: every documented endpoint behind an auth_request declares a 401 response"
+            fi
+
+            # A regex or named location carrying an auth_request cannot be
+            # prefix-matched against a documented path, so this arm cannot
+            # judge it. Name it rather than skipping it silently — an
+            # unreported gate is how a newly-gated public endpoint would slip
+            # past the very check that exists to catch one (#903).
+            if [[ "$_od_depth" == "-1:-1" && -n "$_od_auth_unmatchable" ]]; then
+                test_warn "openapi drift: auth_request present in location block(s) this arm cannot prefix-match against a documented path — check their 401 documentation by hand (#903): $(printf '%s' "$_od_auth_unmatchable" | tr '\n' ' ')"
+            fi
+        fi
+    fi
+
+    # ── Arm 4: an apiKey security scheme must name a header nginx actually reads ──
+    # #905: the ExportKey scheme shipped as `name: X-Export-Key` while the gate is
+    # `map $http_x_api_key $export_api_key_header` — nginx never looks at an
+    # X-Export-Key header. Arm 3 above cannot catch this: it asserts that a gated
+    # path declares a 401, not that the scheme that path points at names the right
+    # header. A consumer following the published contract sends the documented
+    # header, receives 401, and the spec gives no way to discover why — the #883
+    # failure mode relocated from "which paths are documented" to "which header
+    # authenticates them".
+    #
+    # Deliberately outside the allowlist-parse branches above: this arm needs
+    # neither the allowlist nor the path sets, so a config-shape change that stops
+    # arms 1–3 must not silently take this one with it.
+    #
+    # The map lives at http level in nginx.conf, generated from setup/bootstrap.sh,
+    # so both sources are scanned. Comments are stripped first — nginx-site.conf
+    # mentions $http_x_api_key ONLY in a comment, and a check satisfiable by prose
+    # passes for any header name someone happens to have written in a comment
+    # (#889/#892 class).
+    _od_boot="$(dirname "$0")/../setup/bootstrap.sh"
+    _od_hdr_src=""
+    _od_hdr_read=0
+    _od_hdr_err=""
+    for _od_f in "$_od_conf" "$_od_boot"; do
+        if [[ ! -r "$_od_f" ]]; then
+            _od_hdr_err+="$(basename "$_od_f") "
+            continue
+        fi
+        _od_rc=0
+        _od_stripped=$(grep -vE '^[[:space:]]*#' "$_od_f") || _od_rc=$?
+        # grep exit 1 means "file was all comments" — legitimate. Exit >1 is a
+        # scanner failure and must not be laundered into "no header found".
+        if [[ "$_od_rc" -gt 1 ]]; then
+            _od_hdr_err+="$(basename "$_od_f") "
+            continue
+        fi
+        _od_hdr_read=$((_od_hdr_read + 1))
+        _od_hdr_src+="${_od_stripped}"$'\n'
+    done
+
+    # Every request header nginx reads, as declared variables: $http_x_api_key →
+    # X-Api-Key. Used both to test the documented names and to name the real ones
+    # in the failure message, so the fix is readable off the failure.
+    _od_nginx_vars=$(printf '%s\n' "$_od_hdr_src" | grep -oE '\$http_[a-z0-9_]+' | sort -u) || _od_nginx_vars=""
+
+    # apiKey-in-header schemes declared by the spec, as "<scheme>\t<header>".
+    _od_apikeys=$(awk '
+        function flush() {
+            if (sch != "" && ty == "apiKey" && loc == "header" && nm != "") print sch "\t" nm
+            sch=""; ty=""; loc=""; nm=""
+        }
+        /^  securitySchemes:[[:space:]]*$/ { in_ss=1; next }
+        in_ss && /^  [^[:space:]]/ { flush(); in_ss=0; next }
+        in_ss && /^    [A-Za-z0-9_.-]+:[[:space:]]*$/ { flush(); sch=$1; sub(/:$/, "", sch); next }
+        in_ss && /^      type:[[:space:]]/ { ty=$2 }
+        in_ss && /^      in:[[:space:]]/   { loc=$2 }
+        in_ss && /^      name:[[:space:]]/ { nm=$2 }
+        END { if (in_ss) flush() }
+    ' "$_od_spec") || _od_apikeys=""
+
+    _od_hdrgap=""
+    while IFS=$'\t' read -r _od_sch _od_hname; do
+        [[ -z "$_od_hname" ]] && continue
+        _od_var="http_$(printf '%s' "$_od_hname" | tr 'A-Z-' 'a-z_')"
+        printf '%s\n' "$_od_nginx_vars" | grep -qxF "\$${_od_var}" \
+            || _od_hdrgap+="${_od_sch}→${_od_hname} "
+    done <<< "$_od_apikeys"
+
+    if [[ -n "$_od_hdr_err" ]]; then
+        test_fail "openapi drift: security-scheme header arm could not read/scan ${_od_hdr_err}— it DID NOT RUN (this is not a clean result)"
+    elif [[ "$_od_hdr_read" -eq 0 ]]; then
+        test_fail "openapi drift: no nginx source readable for the security-scheme header arm — it DID NOT RUN"
+    elif [[ -z "$_od_nginx_vars" ]]; then
+        test_fail "openapi drift: nginx sources declare ZERO \$http_* request-header variables — the API-key map is gone or the parser can no longer read it; the security-scheme header arm DID NOT RUN (an empty set would call every documented header name wrong, or with the test inverted, right)"
+    elif [[ -z "$_od_apikeys" ]]; then
+        if grep -q '^  securitySchemes:' "$_od_spec"; then
+            test_fail "openapi drift: openapi.yaml has a securitySchemes block but the parser extracted ZERO apiKey-in-header schemes — the spec's shape changed; the header arm DID NOT RUN"
+        else
+            test_warn "openapi drift: openapi.yaml declares no apiKey security schemes — the security-scheme header arm had nothing to check"
+        fi
+    elif [[ -n "$_od_hdrgap" ]]; then
+        test_fail "openapi drift: security scheme(s) name a header nginx never reads — a consumer following the spec sends it and gets 401 with no way to find out why (#905): ${_od_hdrgap}| nginx actually reads: $(printf '%s' "$_od_nginx_vars" | tr '\n' ' ')"
+    else
+        test_pass "openapi drift: all $(printf '%s\n' "$_od_apikeys" | wc -l) apiKey security scheme(s) name a header nginx actually reads"
+    fi
+fi
+
+# §9m's helpers are function definitions in the shell's global namespace, not
+# locals — the `if` above scopes when they are *defined*, not how long they
+# live. Left behind, they remain callable for the ~700 lines of sections that
+# follow, and a later section reaching for the name `_od_expand` would silently
+# get this one instead of failing with "command not found". The prefix makes
+# that unlikely; it does not make it detectable, which is the reason to clean
+# up rather than to rely on the prefix. `-f` only, and deliberately: the `_od_*`
+# *variables* are read by nothing after this point, and unsetting 49 of them by
+# hand is a list that goes stale the moment someone adds the 50th.
+unset -f _od_literals _od_expand _od_perm_case _od_attribute _od_nest_case
+
 # ─── 9z. Stale GPG home in project tree (issue #737) ─────────────────────────
 # Surfaces if /home/marvin/git/.gnupg/ exists. Currently a Feb-23 dormant
 # artefact with byte-identical duplicates of the active /home/marvin/.gnupg/
