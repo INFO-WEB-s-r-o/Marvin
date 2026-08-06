@@ -271,8 +271,54 @@ fi
 # Recent hourly reports (so Claude can avoid repeating work)
 # ─────────────────────────────────────────────────────────────────────────────
 
-RECENT_REPORTS=$(ls -t "${LOGS_DIR}"/${TODAY}-hourly-*.md 2>/dev/null | head -3 | \
-    xargs -I{} sh -c 'echo "--- {} ---"; tail -20 "{}"' 2>/dev/null || echo "None yet today.")
+# Match only this task's own reports (${TODAY}-hourly-<epoch>.md). The bare
+# `-hourly-*` glob also matched ${TODAY}-hourly-check-<epoch>.md — the full run
+# transcript the runner writes beside each report — and the two sort adjacently,
+# so two of these three slots went to the SAME run and the anti-duplication
+# window was 2 runs, not 3.
+#
+# nullglob rather than `ls ... || echo "None yet today."`: that fallback
+# collapsed "the scan broke" into "no reports exist", and a run told there is no
+# history repeats the previous hour's work. An empty array here means the
+# directory is genuinely empty; anything else fails loudly under errexit.
+#
+# The suffix is matched as EXACTLY ten digits, not `[0-9]*`. The sort below is
+# lexical, and that is only newest-first while every name is the same width —
+# and this directory still holds the older ${TODAY}-hourly-<HHMM>.md form (19
+# files across 2026-07-26 and -27, before the switch to epoch). A loose match
+# lets a four-digit name outrank a ten-digit one whenever it wins character by
+# character: `1835` beats `1785332101` at the second character, putting an
+# eighteen-hour-old report at the top of a "three most recent" window. The real
+# 07-27 mix escapes that only because the switch landed at 17:35, and `1735`
+# loses. That is luck, not an invariant, so the width is enforced by the
+# selector rather than asserted in a comment.
+shopt -s nullglob
+RECENT_FILES=( "${LOGS_DIR}/${TODAY}"-hourly-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].md )
+shopt -u nullglob
+
+if (( ${#RECENT_FILES[@]} == 0 )); then
+    RECENT_REPORTS="None yet today."
+else
+    # every name is now a ten-digit epoch, so a reverse lexical sort is newest-first
+    mapfile -t RECENT_FILES < <(printf '%s\n' "${RECENT_FILES[@]}" | sort -r)
+    RECENT_REPORTS=""
+    # The read is guarded, and this guard is NOT the fallback removed above. That
+    # one collapsed a broken scan into "no reports exist" — a silent, plausible
+    # lie the next run acts on. This one swallows only the exit status: the
+    # failure is written into the block that ships, so a run whose slot could not
+    # be read is told so, instead of quietly seeing one report fewer.
+    #
+    # Unguarded, one unreadable file is fatal. Under `set -euo pipefail` the
+    # assignment takes the command substitution's status, and marvin_error_trap
+    # only logs — it does not suppress the exit. A file rotated away between the
+    # glob and the read would kill not just this block but the log snapshot, the
+    # Claude invocation and the report save for the entire cycle.
+    for _report in "${RECENT_FILES[@]:0:3}"; do
+        RECENT_REPORTS+="--- ${_report} ---"$'\n'
+        RECENT_REPORTS+="$(tail -20 "${_report}" 2>/dev/null \
+            || echo "!! UNREADABLE — this slot's content is missing, not empty")"$'\n'
+    done
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Build and run the prompt
