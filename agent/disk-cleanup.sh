@@ -580,25 +580,25 @@ track_freed "Orphaned Claude output temp files (>1d)" "$claude_tmp_size"
 
 # ─── 6c. Orphaned scratch directories in /tmp ───────────────────────────────
 # Section 6 above is -type f only, so it never sweeps directories. self-test.sh
-# and ad hoc verification runs create scratch dirs (mktemp -d, or a plain
-# mkdir for a named fixture like "negtest") that are normally rm -rf'd by the
-# script itself, but leak — same root cause as 6b — when the run is killed
-# (timeout, OOM) before its own cleanup executes. Nothing else ever sweeps
-# them, so they accumulate indefinitely (34MB removed by hand on 2026-07-27).
-# Root-owned + >7d mirrors section 6's file sweep; the name excludes protect
-# the small fixed set of long-lived system directories that also live
-# directly under /tmp (X11/ICE/XIM/font sockets, snap's private tmp, per-unit
-# systemd-private dirs, and ssh-agent forwarding sockets) — all confirmed
-# present and root-owned on this host, so an unqualified sweep would have
-# deleted them.
+# and ad hoc verification runs create scratch dirs via plain `mktemp -d` (no
+# template), which coreutils names 'tmp.XXXXXXXXXX', that are normally
+# rm -rf'd by the script itself but leak — same root cause as 6b — when the
+# run is killed (timeout, OOM) before its own cleanup executes. Nothing else
+# ever sweeps them, so they accumulate indefinitely (34MB removed by hand on
+# 2026-07-27). Root-owned + >7d mirrors section 6's file sweep. This is an
+# allow-list scoped to that one naming pattern, not a deny-list of everything
+# else under /tmp — a deny-list keyed off whatever root-owned dirs happened to
+# exist on this host on a given day (X11 sockets, snap/systemd private tmp,
+# ssh-agent forwarding, etc.) would silently rm -rf any other root-owned
+# directory a future daemon or container runtime drops in /tmp and leaves
+# idle for a week (#1018).
 tmp_dir_size=0
 while IFS= read -r -d '' d; do
     dsize=$(du -sb "$d" 2>/dev/null | cut -f1)
     tmp_dir_size=$((tmp_dir_size + ${dsize:-0}))
     marvin_is_dry_run || rm -rf "$d"
 done < <(find /tmp -mindepth 1 -maxdepth 1 -type d -user root -mtime +7 \
-    ! -name '.X11-unix' ! -name '.ICE-unix' ! -name '.XIM-unix' ! -name '.font-unix' ! -name '.Test-unix' \
-    ! -name 'snap-private-tmp' ! -name 'systemd-private-*' ! -name 'ssh-*' \
+    -name 'tmp.*' \
     -print0 2>/dev/null)
 track_freed "Old scratch directories (>7d)" "$tmp_dir_size"
 
