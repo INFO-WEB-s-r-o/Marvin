@@ -818,6 +818,139 @@ else
     marvin_log "WARN" "file-integrity.sh not found — skipping"
 fi
 
+# ─── 4c. GNUPGHOME ownership drift (issue #980) ──────────────────────────────
+# common.sh:22 points every agent at /home/marvin/.gnupg, and /etc/cron.d/marvin
+# runs those agents as root. Root's writes land root-owned inside a directory
+# that is marvin:marvin 0700, so the user who owns the homedir progressively
+# loses write access to its own keyring. `pubring.kbx` had been root:root 0644
+# since 2026-05-27 — 64 days — before anything looked.
+#
+# The failure this guards is not disclosure. Nothing here is readable off-host:
+# the 0700 parent blocks traversal and private-keys-v1.d/ is intact. It is that
+# `crontab -u marvin` carries live jobs (weekly-analytics.sh, Sundays 11:30)
+# which source common.sh and inherit GNUPGHOME. Measured on a faithful copy of
+# the drifted homedir: `gpg --import` as marvin fails with "no writable keyring
+# found", exit 2, keybox unchanged — against a clean import on the same copy
+# once chowned. Signing still worked throughout, which is why 64 days passed
+# unnoticed; reads never touch the write path. backup.sh:176 archives
+# pubring.kbx, so a restore faithfully reproduces the drift.
+#
+# NOT what this checks: the `gpg: WARNING: unsafe ownership on homedir` line
+# that prompted #980. That warning compares the homedir's owner against the
+# EUID of whoever is running gpg — it fires for root on a marvin-owned homedir
+# no matter how the files beneath are owned, and is therefore permanent and
+# benign under the current design. Measured, both arms, before writing this:
+# a homedir with every entry chowned to marvin still emits it as root; only
+# chowning the homedir to root silences it, which is precisely the thing that
+# would lock marvin's own cron jobs out. Chasing that line is how a correct
+# diagnosis ships an inverted fix.
+#
+# Sockets are counted but deliberately do not gate. S.gpg-agent* are recreated
+# by whichever user next starts gpg-agent, so their ownership at 04:00 is a
+# coin-flip on who ran gpg last — gating on it would flap nightly. Persistent
+# entries are what a backup restores and what breaks signing durably.
+_gnupg_ownership_drift() {
+    local home="$1"
+    local owner walk rc=0 drift=0 sockets=0 sample="" ftype fowner fpath
+
+    if [[ ! -d "$home" ]]; then
+        printf 'unknown\t0\t0\thomedir absent: %s\n' "$home"
+        return 0
+    fi
+
+    # The "UNKNOWN" arm is live, not dead: GNU coreutils 9.4 `stat -c '%U'`
+    # prints the literal string UNKNOWN for an unmapped UID and exits 0, so the
+    # -z arm above does not cover it. Measured on this host, uid 60999:
+    #   stat -c '%U' -> UNKNOWN (rc=0)
+    #   /usr/bin/find … \! -user UNKNOWN -> "not the name of a known user" rc=1
+    # Without this arm the owner string reaches find, which aborts, and the
+    # verdict is still `unknown` but blames the walk instead of the lookup.
+    owner=$(stat -c '%U' "$home" 2>/dev/null) || owner=""
+    if [[ -z "$owner" || "$owner" == "UNKNOWN" ]]; then
+        printf 'unknown\t0\t0\tcannot resolve owner of %s\n' "$home"
+        return 0
+    fi
+
+    # A walk that aborted partway must not be scored as a walk that found
+    # nothing (#882 class). find exits non-zero on any unreadable subtree, so
+    # capture the status rather than swallowing it with `|| true`.
+    #
+    # `\! -user` only — group ownership is deliberately out of scope, not an
+    # oversight. The diagnosed failure is that marvin cannot write files it does
+    # not own inside its own 0700 homedir; the group bits cannot grant or deny
+    # that through a 0700 directory, so a group-drift finding would be noise
+    # with no matching symptom.
+    walk=$(find "$home" -mindepth 1 \! -user "$owner" -printf '%y\t%u\t%p\n' 2>/dev/null) || rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        printf 'unknown\t0\t0\tfind exited %s while walking %s\n' "$rc" "$home"
+        return 0
+    fi
+
+    if [[ -n "$walk" ]]; then
+        # Here-string, not a pipe: a `while read` behind `|` counts in a
+        # subshell and both counters come back zero (see lessons: a memo behind
+        # a subshell is inert). IFS split on tab only, so paths keep spaces.
+        #
+        # Pathological filenames were raised in review and then measured, since
+        # `%p\n` is not an unambiguous record terminator. Both cases keep the
+        # count — the only thing that gates status — correct:
+        #   tab in name: `read`'s last variable takes the remainder verbatim,
+        #     so fpath is the full path, tab intact. Counted once, exactly right.
+        #   newline in name: the record splits across two lines. The first is
+        #     counted with fpath truncated at the newline; the continuation line
+        #     carries no tab, so fowner/fpath come back empty and the `-z`
+        #     guard above skips it rather than counting a phantom entry.
+        # So a newline costs one truncated *sample string*, never a miscount.
+        # Verified against this exact loop with real tab- and newline-named
+        # files: 2 drifted files, 2 counted. Not defended further — a name like
+        # that inside a GPG homedir is itself the finding.
+        while IFS=$'\t' read -r ftype fowner fpath; do
+            [[ -z "$fpath" ]] && continue
+            if [[ "$ftype" == "s" ]]; then
+                sockets=$((sockets + 1))
+            else
+                drift=$((drift + 1))
+                [[ -z "$sample" ]] && sample="${fpath} (${fowner})"
+            fi
+        done <<< "$walk"
+    fi
+
+    if [[ "$drift" -gt 0 ]]; then
+        printf 'drift\t%s\t%s\t%s persistent entr(ies) not owned by %s, first: %s\n' \
+            "$drift" "$sockets" "$drift" "$owner" "$sample"
+    else
+        printf 'ok\t%s\t%s\tall persistent entries owned by %s\n' "$drift" "$sockets" "$owner"
+    fi
+    return 0
+}
+
+gpg_home_path="${GNUPGHOME:-}"
+gpg_drift_status="unknown"
+gpg_drift_count=0
+gpg_socket_drift=0
+gpg_drift_detail="GNUPGHOME unset"
+
+if [[ -n "$gpg_home_path" ]]; then
+    IFS=$'\t' read -r gpg_drift_status gpg_drift_count gpg_socket_drift gpg_drift_detail \
+        < <(_gnupg_ownership_drift "$gpg_home_path")
+fi
+
+case "$gpg_drift_status" in
+    drift)
+        marvin_log "WARN" "GPG home ownership drift: ${gpg_drift_count} entr(ies) in ${gpg_home_path} not owned by its owner — ${gpg_drift_detail}"
+        ;;
+    unknown)
+        marvin_log "WARN" "GPG home ownership check could not run: ${gpg_drift_detail}"
+        ;;
+    *)
+        marvin_log "INFO" "GPG home ownership: ${gpg_drift_detail}"
+        ;;
+esac
+
+if [[ "$gpg_socket_drift" -gt 0 ]]; then
+    marvin_log "INFO" "GPG home: ${gpg_socket_drift} agent socket(s) owned by another user (transient, not scored)"
+fi
+
 # ─── 5. CVE / package vulnerability monitoring ──────────────────────────────
 
 marvin_log "INFO" "Checking for security-relevant package updates..."
@@ -939,6 +1072,10 @@ elif [[ "$outbound_coverage_status" != "ok" ]]; then
 # cannot speak to what is reachable from outside. It must not score "clean".
 elif [[ "$ufw_scan_ok" != true ]]; then
     overall_status="warnings"
+# Same rule applied to the GPG home (#980): "drift" is a finding and "unknown"
+# means this scan could not look, which is also a finding. Only "ok" is silent.
+elif [[ "$gpg_drift_status" != "ok" ]]; then
+    overall_status="warnings"
 fi
 
 cat > "$REPORT_FILE" << EOF
@@ -962,6 +1099,13 @@ cat > "$REPORT_FILE" << EOF
     "missing": ${fim_missing},
     "world_writable_count": ${world_writable_count},
     "suid_sgid_count": ${suid_count}
+  },
+  "gpg_home": {
+    "path": $(printf '%s' "$gpg_home_path" | jq -Rs '.' 2>/dev/null || echo '""'),
+    "status": "${gpg_drift_status}",
+    "unowned_persistent": ${gpg_drift_count},
+    "unowned_sockets": ${gpg_socket_drift},
+    "detail": $(printf '%s' "$gpg_drift_detail" | jq -Rs '.' 2>/dev/null || echo '""')
   },
   "cve_monitoring": {
     "upgradable_total": ${upgradable_all},
