@@ -157,6 +157,38 @@ enabled = true
 backend = auto
 logpath = /var/log/nginx/error.log
           /var/log/nginx/access.log
+
+# Mail jails. These existed on the live host but never in this file, so a rebuild
+# would have silently dropped them.
+#
+# journalmatch: Debian runs postfix as the instantiated template unit
+# "postfix@-.service", but filter.d/postfix.conf ships
+# "journalmatch = _SYSTEMD_UNIT=postfix.service". Under the systemd backend the
+# jail therefore selects zero journal lines and reports "Total failed: 0"
+# forever -- indistinguishable from "no attacks". Match both spellings.
+[postfix]
+enabled = true
+port = smtp,465,submission
+filter = postfix[mode=more]
+maxretry = 5
+bantime = 3600
+journalmatch = _SYSTEMD_UNIT=postfix.service + _SYSTEMD_UNIT=postfix@-.service
+
+[postfix-sasl]
+enabled = true
+port = smtp,465,submission
+filter = postfix[mode=auth]
+maxretry = 3
+bantime = 86400
+journalmatch = _SYSTEMD_UNIT=postfix.service + _SYSTEMD_UNIT=postfix@-.service
+
+# dovecot.service is not templated, so the shipped journalmatch is correct here.
+[dovecot]
+enabled = true
+port = pop3,pop3s,imap,imaps,submission,465,sieve
+filter = dovecot[mode=aggressive]
+maxretry = 3
+bantime = 86400
 EOF
 
 systemctl enable fail2ban
