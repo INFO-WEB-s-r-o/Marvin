@@ -818,6 +818,159 @@ else
     marvin_log "WARN" "file-integrity.sh not found — skipping"
 fi
 
+# ─── 4b. fail2ban effective policy vs its tracked source (issue #974) ─────────
+# file-integrity.sh above globs /etc/fail2ban/jail.d/*.conf, so it notices those
+# files *changing*. It never asks what they say. A 2024 provisioning drop-in,
+# jail.d/sshd.conf, has supplied the live sshd findtime for the whole life of this
+# host: bootstrap.sh writes `[DEFAULT] findtime = 600` and omits findtime from its
+# `[sshd]` stanza on the assumption it inherits, but a jail-section setting in any
+# file beats a DEFAULT, so the drop-in's `findtime = 3600` won and the published
+# 600 governed nothing. Watching a file for edits is not the same as knowing what
+# it does.
+#
+# So compare the two independent sides: what the *running daemon* reports, and
+# what bootstrap.sh's tracked heredoc would produce on a clean rebuild. Modelling
+# the precedence rule here is the point — the derived value is section-if-set,
+# else DEFAULT, which is exactly the inference that failed. Comparing the
+# deployed jail.local against the heredoc it was written from proves nothing:
+# they match, and the divergence lives in a file that check never opens (#939).
+
+F2B_WATCH_KEYS="findtime maxretry bantime"
+
+# Both halves of the parser are functions rather than inline command
+# substitutions, so agent/tests/security-scan-4b-parser.test.sh can extract and
+# exercise them against fixtures instead of the reasoning living only in a
+# review thread (#987). The test extracts from the `F2B_WATCH_KEYS=` assignment
+# above through the second column-0 `}` below; nothing in between sits at
+# column 0. Keep it that way, or the extraction silently tests less than it
+# claims to.
+
+# Body of the `cat > /etc/fail2ban/jail.local << 'EOF'` heredoc, delimiters
+# stripped. An empty body means the heredoc moved or was renamed; that is a
+# broken check, not a clean host. Both ends of the range are anchored: a looser
+# marker would happily lock onto a heredoc writing some *other* file and report
+# on a policy nothing installs.
+_f2b_heredoc_body() {   # _f2b_heredoc_body <path-to-bootstrap.sh>
+    command sed -n "/^cat > \/etc\/fail2ban\/jail\.local << 'EOF'\$/,/^EOF\$/p" \
+        "$1" | command sed '1d;$d'
+}
+
+# stdin: a jail.local body. stdout: jail <TAB> key <TAB> derived value <TAB>
+# origin(jail|DEFAULT), sorted. Exits 1 with no output on a section header
+# configparser would reject.
+#
+# WATCH goes through the environment, not `awk -v`: -v escape-processes its
+# value, which has made an in-use guard fail open before (#923). Comment
+# handling mirrors fail2ban, which builds its parser with
+# inline_comment_prefixes=";" (configparserinc.py:137) and leaves the default
+# whole-line prefixes "#" and ";". So `; ` ends a value and `# ` does not —
+# `findtime = 3600  # an hour` really is the value "3600  # an hour" to
+# fail2ban, and deriving a bare 3600 here would invent a drift that the daemon
+# does not have. Section headers end at the *last* `]`, which is what
+# configparser's greedy SECTCRE resolves to; a header line with no `]` is one
+# configparser rejects outright, so refuse the file rather than guess at a name.
+_f2b_derive_policy() {
+    F2B_WATCH="$F2B_WATCH_KEYS" awk '
+        /^[ \t]*[#;]/ { next }
+        /^[ \t]*\[/ {
+            sec=$0; sub(/^[ \t]*\[/,"",sec)
+            if (!match(sec, /\]/)) { hdr_bad=1; next }
+            match(sec, /\][^]]*$/); sec=substr(sec, 1, RSTART-1)
+            next
+        }
+        /=/ {
+            k=$0; sub(/=.*/,"",k); gsub(/[ \t]/,"",k)
+            v=$0; sub(/^[^=]*=[ \t]*/,"",v); sub(/[ \t]+;.*$/,"",v); gsub(/[ \t]+$/,"",v)
+            vals[sec SUBSEP k]=v
+            if (sec != "DEFAULT" && sec != "") jails[sec]=1
+        }
+        END {
+            if (hdr_bad) exit 1
+            n=split(ENVIRON["F2B_WATCH"], w, " ")
+            for (j in jails) for (i=1; i<=n; i++) {
+                k=w[i]
+                if ((j SUBSEP k) in vals)              print j "\t" k "\t" vals[j SUBSEP k] "\tjail"
+                else if (("DEFAULT" SUBSEP k) in vals) print j "\t" k "\t" vals["DEFAULT" SUBSEP k] "\tDEFAULT"
+            }
+        }' | LC_ALL=C sort -t $'\t' -k1,1 -k2,2
+}
+
+f2b_policy_status="skipped"
+f2b_policy_checked=0
+f2b_policy_drift=0
+f2b_policy_drift_list=""
+# ${MARVIN_DIR}, not a $0-derived root, and the reason is not the path
+# convention. The daemon side of this comparison is always the deployed host's,
+# and the verdict is written to ${DATA_DIR}/security/scan-*.json — also
+# ${MARVIN_DIR} — where it gates overall_status. A $0-derived baseline follows
+# whatever checkout invoked the script, so a worktree run scores the deployed
+# host against a tree the deployed host does not have, and writes that verdict
+# into the deployed host's report. Both sides must name the same tree.
+#
+# Measured, since it inverts an earlier decline on this branch: run from a
+# worktree of THIS branch, live findtime=3600 is compared against this branch's
+# own bootstrap.sh (3600) and yields "match"; from ${MARVIN_DIR} it is compared
+# against main (600, inherited) and yields drift. Until this PR merges, drift is
+# the true answer — a clean rebuild from tracked source would not reproduce the
+# running policy. "Match" was not a false positive avoided, it was a false clean
+# written to the live report by the branch that caused the drift.
+F2B_BOOTSTRAP="${MARVIN_DIR}/setup/bootstrap.sh"
+
+if ! command -v fail2ban-client &>/dev/null; then
+    f2b_policy_status="unavailable"
+    marvin_log "WARN" "fail2ban-client absent — cannot read effective jail policy"
+elif ! fail2ban-client ping &>/dev/null; then
+    f2b_policy_status="unavailable"
+    marvin_log "WARN" "fail2ban daemon not answering — effective jail policy unknown"
+elif [[ ! -r "$F2B_BOOTSTRAP" ]]; then
+    f2b_policy_status="unavailable"
+    marvin_log "WARN" "Cannot read ${F2B_BOOTSTRAP} — no tracked policy to compare against"
+else
+    f2b_src=$(_f2b_heredoc_body "$F2B_BOOTSTRAP")
+
+    if [[ -z "$f2b_src" ]]; then
+        f2b_policy_status="unparseable"
+        marvin_log "WARN" "Could not locate the jail.local heredoc in ${F2B_BOOTSTRAP} — effective-policy check did not run"
+    else
+        # Emits: jail <TAB> key <TAB> derived value <TAB> origin(jail|DEFAULT).
+        f2b_expected=$(printf '%s\n' "$f2b_src" | _f2b_derive_policy) || f2b_expected=""
+
+        if [[ -z "$f2b_expected" ]]; then
+            f2b_policy_status="unparseable"
+            marvin_log "WARN" "jail.local heredoc yielded no jail/key pairs — effective-policy check did not run"
+        else
+            f2b_read_failed=0
+            # A bare `read` stops at the first newline; fields here are single-line
+            # by construction, but read the whole record explicitly anyway (#932).
+            while IFS=$'\t' read -r _jail _key _want _origin; do
+                [[ -z "$_jail" ]] && continue
+                # Do not collapse "could not ask" into "agrees" (#882 class).
+                if ! _live=$(fail2ban-client get "$_jail" "$_key" 2>/dev/null); then
+                    f2b_read_failed=$((f2b_read_failed + 1))
+                    marvin_log "WARN" "fail2ban-client get ${_jail} ${_key} failed — pair not compared"
+                    continue
+                fi
+                _live=$(printf '%s' "$_live" | tr -d '[:space:]')
+                f2b_policy_checked=$((f2b_policy_checked + 1))
+                if [[ "$_live" != "$_want" ]]; then
+                    f2b_policy_drift=$((f2b_policy_drift + 1))
+                    f2b_policy_drift_list+="${_jail}.${_key}: live=${_live} bootstrap=${_want} (via ${_origin}); "
+                    marvin_log "WARN" "fail2ban policy drift: [${_jail}] ${_key} is ${_live} live but bootstrap.sh derives ${_want} from ${_origin} — a rebuild would not reproduce production"
+                fi
+            done <<< "$f2b_expected"
+
+            if [[ "$f2b_read_failed" -gt 0 ]]; then
+                f2b_policy_status="degraded"
+            elif [[ "$f2b_policy_drift" -gt 0 ]]; then
+                f2b_policy_status="drift"
+            else
+                f2b_policy_status="match"
+            fi
+            marvin_log "INFO" "fail2ban effective policy: ${f2b_policy_status} (${f2b_policy_checked} pairs compared, ${f2b_policy_drift} drifted, ${f2b_read_failed} unreadable)"
+        fi
+    fi
+fi
+
 # ─── 4c. GNUPGHOME ownership drift (issue #980) ──────────────────────────────
 # common.sh:22 points every agent at /home/marvin/.gnupg, and /etc/cron.d/marvin
 # runs those agents as root. Root's writes land root-owned inside a directory
@@ -1072,6 +1225,11 @@ elif [[ "$outbound_coverage_status" != "ok" ]]; then
 # cannot speak to what is reachable from outside. It must not score "clean".
 elif [[ "$ufw_scan_ok" != true ]]; then
     overall_status="warnings"
+# Same rule for the fail2ban policy comparison (#974): only "match" is clean.
+# Drift means a rebuild produces a different ban policy than production runs;
+# degraded/unavailable/unparseable mean this scan cannot say who gets banned.
+elif [[ "$f2b_policy_status" != "match" ]]; then
+    overall_status="warnings"
 # Same rule applied to the GPG home (#980): "drift" is a finding and "unknown"
 # means this scan could not look, which is also a finding. Only "ok" is silent.
 elif [[ "$gpg_drift_status" != "ok" ]]; then
@@ -1099,6 +1257,13 @@ cat > "$REPORT_FILE" << EOF
     "missing": ${fim_missing},
     "world_writable_count": ${world_writable_count},
     "suid_sgid_count": ${suid_count}
+  },
+  "fail2ban_policy": {
+    "status": "${f2b_policy_status}",
+    "pairs_compared": ${f2b_policy_checked},
+    "pairs_drifted": ${f2b_policy_drift},
+    "watched_keys": "${F2B_WATCH_KEYS}",
+    "drift": $(printf '%s' "$f2b_policy_drift_list" | jq -Rs '.' 2>/dev/null || echo '""')
   },
   "gpg_home": {
     "path": $(printf '%s' "$gpg_home_path" | jq -Rs '.' 2>/dev/null || echo '""'),

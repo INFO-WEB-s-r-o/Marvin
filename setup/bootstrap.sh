@@ -140,6 +140,17 @@ port = ssh
 filter = sshd
 maxretry = 3
 bantime = 86400
+# Declared here, not inherited. This host carries /etc/fail2ban/jail.d/sshd.conf,
+# a 136-byte provisioning artifact from 2024-07-02 that nothing in this repo
+# installs or documents, and its [sshd] section sets findtime = 3600. A setting in
+# a jail section beats one inherited from [DEFAULT] whatever the file order, so
+# the 600 above never reached this jail: production has run a 3600-second window
+# since before genesis while bootstrap.sh advertised 600. Naming findtime at
+# section level makes jail.local win outright — it is read after jail.d/*.conf,
+# which is already why maxretry and bantime here beat the drop-in's 5 and 3600 —
+# so the effective policy no longer depends on whether that file exists. 3600 is
+# what production runs; widening it is a policy question, tracked in #975.
+findtime = 3600
 
 # nginx logs to files only — it writes nothing to the journal — so under the
 # DEFAULT systemd backend both nginx jails tail an empty stream and can never
