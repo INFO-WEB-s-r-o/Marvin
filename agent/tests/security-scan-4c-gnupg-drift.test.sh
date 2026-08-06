@@ -356,8 +356,22 @@ if [[ "$IS_ROOT" -eq 1 ]]; then
 else
     _skip "mutation:sockets_count_as_drift" "needs root-staged fixtures"
     _skip "mutation:pipe_subshell"          "needs root-staged fixtures"
-    _mutation_arm no_unknown_owner_guard    unmapped_uid 2>/dev/null || \
-        _skip "mutation:no_unknown_owner_guard" "needs root-staged fixtures"
+    # Was: `_mutation_arm ... || _skip ...`, intending to attempt the arm and
+    # fall back. The fallback could never fire. _mutation_arm reports through
+    # _eq, which RECORDS a failure and returns success, so the `||` saw a
+    # zero status and the skip was unreachable — the arm ran unconditionally
+    # against a fixture that only exists under root.
+    #
+    # `unmapped_uid` is staged by `chown -R "$UNMAPPED_UID"`, which non-root
+    # cannot do, so off-root the fixture is a plain directory owned by the
+    # runner. Removing the unknown-owner guard from a scan that has no
+    # unknown-owned file to find changes nothing, and the suite said so:
+    # "MUTATION INEFFECTIVE — broke nothing". That verdict was correct. The
+    # bug was asking the question at all without the fixture.
+    #
+    # It now skips like its three siblings, which is what the other arms in
+    # this branch have always done. On a root runner all four still execute.
+    _skip "mutation:no_unknown_owner_guard" "needs root-staged fixtures"
     _skip "mutation:invert_user_test"        "needs root-staged fixtures"
 fi
 _mutation_arm swallow_find_rc  walk_fails
