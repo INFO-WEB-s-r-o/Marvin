@@ -1820,6 +1820,124 @@ else
     fi
 fi
 
+# --- 9d, second half: a live config must trace to a MERGED source ------------
+# Issue #961. Everything above answers "does the source in this working tree
+# match the live file?" — which is silent about the failure that actually
+# happened. On 2026-07-29 three live configs existed in git only as OPEN PRs:
+# the fail2ban postfix journalmatch (#938), this drop-in (#926), and the
+# agent-card vhost alias (#952). All three had been written up as landed.
+# `setup/bootstrap.sh` on main reproduces none of them, so the host could not be
+# rebuilt from its own repository — and the security control doing the most
+# visible work (postfix-sasl, 4 IPs banned off 253 failures) was the one a
+# rebuild would silently discard.
+#
+# The array-driven form of this check cannot work. A drift pair naming
+# setup/chkrootkit-service-override.conf is added by the same PR that adds the
+# file, so it can only fire *after* the merge it exists to police. This half is
+# driven by the LIVE HOST instead: it enumerates what is actually installed and
+# asks whether origin/main could produce it. That inversion is the whole point.
+#
+# Scope is systemd drop-ins under /etc/systemd/system/*.d/. Bounded (2 on this
+# host), admin-owned, and the one config shape that changes a unit's behaviour
+# while leaving the unit file itself untouched — so `systemctl cat` drift and
+# file-integrity both look past it.
+#
+# Polarity is fail-safe. Provenance is established by CONTENT, not by filename:
+# a live file passes only if some blob reachable from origin/main is byte-for-
+# byte identical to it. Distro-owned drop-ins are named in an explicit exclusion
+# list rather than pattern-matched, so an override that is neither ours nor
+# listed WARNs for classification instead of being absorbed by a wildcard.
+#
+# WARN-only, matching §9d's contract above. origin/main is read from the LOCAL
+# ref without fetching — an out-of-band fetch here would consume commits that
+# sync-and-learn has not yet analysed (#924) — so a source merged within the
+# last hour can read as unmerged until the next sync. That is a false WARN and
+# never a false PASS, which is the correct direction for this check to be wrong.
+
+marvin_log "INFO" "Self-test: checking live systemd drop-ins trace to a merged source"
+
+# Drop-ins owned by the distro / cloud-init. Listed by exact path, not by
+# pattern: a pattern broad enough to cover these would also cover ours.
+#
+# This list is a standing maintenance point, not a one-off record of today's
+# host. Any NEW distro- or cloud-init-owned drop-in that appears here will WARN
+# for classification until it is added — deliberately, because that WARN is the
+# only moment anyone is asked whether the file is really foreign. Adding an
+# entry is the cheap half; the expensive half would be a wildcard that silently
+# absorbed one of ours.
+_foreign_dropins=(
+    "/etc/systemd/system/sshd-keygen@.service.d/disable-sshd-keygen-if-cloud-init-active.conf"
+)
+
+_merged_ref="origin/main"
+_merged_tree=""
+if ! _merged_tree=$(git -C "${MARVIN_DIR}" ls-tree -r "$_merged_ref" 2>/dev/null) || [[ -z "$_merged_tree" ]]; then
+    # A check that could not run must not report "clean" — say so explicitly
+    # rather than letting an unreadable ref collapse into "nothing unmerged".
+    test_warn "merged-source provenance: cannot read ${_merged_ref} in ${MARVIN_DIR} — provenance NOT verified for any live drop-in"
+else
+    # This assignment is at top-level scope inside an `else` branch, which set -e
+    # does NOT exempt (only an if/while *condition* is exempt), and `2>/dev/null`
+    # hides find's stderr but not its exit code — so under pipefail an unreadable
+    # cwd or a stat error would abort the whole suite here, taking §9h and all of
+    # §10 with it (#963). Guarded like the file's other find call sites (l.694,
+    # l.1798) — but with the status kept rather than discarded: a bare
+    # `|| _live_dropins=""` would feed the empty-list PASS below and report a
+    # broken enumeration as "no drop-ins installed", which is the one thing this
+    # block promises not to do. Partial output is still iterated; each file it did
+    # reach gets its own verdict, and the WARN says the list may be short.
+    _find_rc=0
+    _live_dropins=$(find /etc/systemd/system -mindepth 2 -maxdepth 2 -path '*.d/*' -name '*.conf' 2>/dev/null | sort) || _find_rc=$?
+    if (( _find_rc != 0 )); then
+        test_warn "merged-source provenance: enumerating /etc/systemd/system/*.d/ failed (find|sort exit ${_find_rc}) — the drop-in list may be incomplete, so provenance is NOT verified for any file missing from it"
+    elif [[ -z "$_live_dropins" ]]; then
+        test_pass "merged-source provenance: no systemd drop-ins installed under /etc/systemd/system"
+    fi
+    while IFS= read -r _dropin; do
+        [[ -n "$_dropin" ]] || continue
+
+        _foreign=0
+        for _f in "${_foreign_dropins[@]}"; do
+            if [[ "$_dropin" == "$_f" ]]; then _foreign=1; break; fi
+        done
+        if (( _foreign )); then
+            test_pass "merged-source provenance: ${_dropin} — distro-owned, no tracked source expected"
+            continue
+        fi
+
+        # hash-object without -w computes the id without writing it, so the
+        # cat-file probe below stays a real question about the object store.
+        _live_hash=""
+        if ! _live_hash=$(git -C "${MARVIN_DIR}" hash-object "$_dropin" 2>/dev/null) || [[ -z "$_live_hash" ]]; then
+            test_warn "merged-source provenance: could not hash ${_dropin} — provenance NOT verified for this file"
+            continue
+        fi
+
+        # ls-tree rows are `<mode> <type> <sha>\t<path>`; awk's default FS splits
+        # on the tab too, so $3 is the sha alone. The sha reaches awk through
+        # ENVIRON rather than -v, which escape-processes its value (#923).
+        if printf '%s\n' "$_merged_tree" \
+            | H="$_live_hash" awk '$2 == "blob" && $3 == ENVIRON["H"] { found = 1 } END { exit !found }'; then
+            test_pass "merged-source provenance: ${_dropin} — reproducible from ${_merged_ref}"
+        # `cat-file -e` asks the object store, which is a wider question than
+        # "is it committed". Verified rather than assumed, in a scratch repo:
+        # a blob that was `git add`ed and never committed answers YES, and so
+        # does one whose only branch has since been deleted (dangling until gc).
+        # Neither is reachable from any commit. The wording below therefore says
+        # "exists in this repo" and names the branch case as the likely one
+        # instead of asserting it — an unmerged branch is by far the common
+        # cause here, but it is not the only thing that satisfies this probe.
+        # What the same experiment confirms is the load-bearing half: an
+        # untracked file hashed without -w answers NO, so this stays a real
+        # question about the store rather than one this check just seeded.
+        elif git -C "${MARVIN_DIR}" cat-file -e "$_live_hash" 2>/dev/null; then
+            test_warn "merged-source provenance: ${_dropin} — its exact content exists in this repo's object store but is NOT reachable from ${_merged_ref}: most likely a source sitting on an unmerged branch (a staged-but-uncommitted or recently-deleted-branch object would also land here), and a rebuild from main would not produce this file (#961)"
+        else
+            test_warn "merged-source provenance: ${_dropin} — no merged source: nothing in ${_merged_ref} has this content, and neither does any commit in this repo (#961)"
+        fi
+    done <<< "$_live_dropins"
+fi
+
 # ─── 9h. nginx must not retain raw request bodies in the negotiate inbox ──────
 # Issue #854. `client_body_in_file_only on` in the /.well-known/ai-negotiate
 # location made nginx keep every request body forever, as a raw
