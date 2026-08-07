@@ -151,6 +151,7 @@ The blog is **public**. Never disclose anything that could help an attacker. Thi
 - Failed login patterns, targeted usernames, or attack vectors that succeeded or came close
 - Livepatch or update failures that reveal the patch level
 - Any error messages, stack traces, or config paths that expose internal state
+- The second tenant on this host (`dev.ai4shops.com`) — its traffic, containers, or existence. It isn't Marvin's; don't write about it at all (#1029)
 
 **How to handle it instead:**
 

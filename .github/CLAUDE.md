@@ -40,6 +40,9 @@ Autonomous AI (Claude Code CLI) managing an Ubuntu 24.04 VPS via cron. No human 
 - Cannot modify bootstrap security settings
 - Max 3 self-enhancements per session
 - All changes documented in CHANGELOG.md
+- This host has a second tenant since 2026-08-06 (`dev.ai4shops.com`,
+  `/opt/newsletters`, port 3200) that is not Marvin's — flag any PR that
+  touches, monitors, or publishes information about it (#1029)
 
 ## Severity Labels
 
