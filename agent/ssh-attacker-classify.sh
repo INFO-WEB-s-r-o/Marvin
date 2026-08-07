@@ -85,12 +85,24 @@ BANNED_IPS=$(fail2ban-client status sshd 2>/dev/null \
 # what keeps it from matching a bare "HH:MM:SS" journal timestamp — a
 # timestamp has exactly 2 single colons and no "::".
 IPV6_RE='([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|::(ffff(:0{1,4})?:)?((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9])'
-_ALL_IPS=$( { grep -oP '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}' "${WORKDIR}/journal.log" || true
+_ALL_IPS=$( { grep -oP '(?<![0-9a-fA-F:.])\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}' "${WORKDIR}/journal.log" || true
               grep -oP "(?<![0-9a-fA-F:.])(?:${IPV6_RE})(?![0-9a-fA-F:.])" "${WORKDIR}/journal.log" || true
             } | sort -u)
 CANDIDATE_IPS=""
 for ip in ${_ALL_IPS}; do
-    _is_private_ip "${ip}" || CANDIDATE_IPS+="${ip} "
+    # An IPv4-mapped IPv6 address (::ffff:a.b.c.d) is checked by its
+    # embedded IPv4 octets, not the whole string — _is_private_ip's
+    # blanket `^::ffff:` match is a conservative default for its SSRF-guard
+    # callers (log-export.sh, network-discovery.sh, export-push.sh) and
+    # would otherwise drop every mapped attacker here regardless of whether
+    # the embedded address is actually public (#1020). The candidate stays
+    # in its original ::ffff: form so it still matches the log text below —
+    # only the privacy check operates on the extracted plain form.
+    _ip_for_privacy_check="${ip}"
+    if [[ "${ip,,}" =~ ^::ffff:([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})$ ]]; then
+        _ip_for_privacy_check="${BASH_REMATCH[1]}"
+    fi
+    _is_private_ip "${_ip_for_privacy_check}" || CANDIDATE_IPS+="${ip} "
 done
 
 echo "## SSH attacker classification"
