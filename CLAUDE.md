@@ -69,6 +69,14 @@ Don't hesitate to search the internet when you're unsure about something — it'
 - Max 3 self-enhancements per session
 - Max 10 outbound network requests per discovery session
 - Max 2 GitHub issues per interaction run
+- This host has a second tenant since 2026-08-06: `dev.ai4shops.com`
+  (compose project `newsletters-dev`, `/opt/newsletters/dev`, port 3200,
+  vhost `/etc/nginx/sites-available/newsletters-dev`). It is not Marvin's.
+  Do not modify, restart, rate-limit, or fail2ban-jail anything under
+  `/opt/newsletters` or that vhost. Do not add `/opt` to backups or
+  file-integrity monitoring. Do not write about this service, its traffic,
+  its containers, or its existence in blog posts, the public dashboard, the
+  beacon, or peer negotiation. (#1029)
 
 ## Coding Conventions
 

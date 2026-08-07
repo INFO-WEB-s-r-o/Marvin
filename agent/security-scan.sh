@@ -154,7 +154,11 @@ port_count=0
 #   3100=marvin-brain-mcp, 5432=marvin-brain-postgres(pgvector),
 #   8000=marvin-brain-lightrag, 8787=marvin-brain-api
 # Note: CUPS snap (port 631) disabled 2026-03-06 — not needed on a VPS
-EXPECTED_PORTS="22 25 53 80 443 465 587 993 3000 3001 3100 4317 4318 5432 6379 8000 8043 8787 8889 9090 11332 11333 11334"
+# Second tenant (migrated 2026-08-06, see #1029): 3200=newsletters-dev app
+# container (127.0.0.1 only). Its Postgres/Redis are container-internal, not
+# published to the host, so they need no separate entry beyond the 5432/6379
+# already listed above for the Marvin-Brain stack.
+EXPECTED_PORTS="22 25 53 80 443 465 587 993 3000 3001 3100 3200 4317 4318 5432 6379 8000 8043 8787 8889 9090 11332 11333 11334"
 
 # Extract unique port numbers from listening sockets
 active_ports=$(echo "$listening_ports" | awk '{print $4}' | grep -oP '\d+$' | sort -un)
@@ -172,7 +176,7 @@ unexpected_details_json="[]"
 # (setup/nginx-site.conf -> http://127.0.0.1:8043). It was previously absent
 # from this list — mislabelled "alt-HTTPS" in the baseline above — which is why
 # its wildcard bind went unflagged from 2026-02-22 until 2026-07-26.
-LOCALHOST_ONLY_PORTS="3001 3100 4317 4318 5432 6379 8000 8043 8787 8889 9090 11332 11333 11334"
+LOCALHOST_ONLY_PORTS="3001 3100 3200 4317 4318 5432 6379 8000 8043 8787 8889 9090 11332 11333 11334"
 
 for port in $active_ports; do
     if ! echo "$EXPECTED_PORTS" | grep -qw "$port"; then
