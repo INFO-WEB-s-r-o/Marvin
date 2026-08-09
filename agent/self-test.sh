@@ -3678,6 +3678,81 @@ else
     fi
 fi
 
+# ─── 9u. CODEOWNERS pattern integrity and read-path wiring (#933/#934) ────────
+# Two independent regressions hit the same file within days of each other, and
+# neither has a working off-the-shelf detector:
+#
+#   #933 — every line read `- @owner`. `-` is a valid gitignore-style pattern
+#   (matches a file literally named `-`, which does not exist), so GitHub
+#   accepted the file and `require_code_owner_review` had nothing to bind to:
+#   zero of the 100 most recent PRs ever got an auto-requested reviewer.
+#   GitHub's own `codeowners/errors` endpoint does not catch this — measured on
+#   `main`, its one reported error was an unrelated unknown owner, nothing
+#   about the `-` pattern being pointless. So that endpoint cannot be the guard.
+#
+#   #934 — hourly-check.sh fetched `contents/.github/CODEOWNERS`, a path that
+#   has never existed in this repo (the tracked file is CODEOWNERS at repo
+#   root). Every fetch 404'd; per hourly.md's own documented fallback, that
+#   silently narrowed the trusted-issue-author list to `PavelStancik` alone,
+#   dropping `RobotMarvin2026` and `github-actions[bot]` issues with no error.
+#   A raw grep for the bad path is not the guard either: the fix for #934
+#   names `.github/CODEOWNERS` five times in prose to explain why it is wrong,
+#   so a naive grep fires on its own remedy. `_code_only` strips full-line
+#   comments before either arm below reads anything, so prose describing the
+#   bug cannot satisfy — or fail — an assertion about the code.
+#
+# Resolved via `dirname "$0"`, not ${MARVIN_DIR}: both files being checked are
+# branch-authored content, and MARVIN_DIR is pinned to /home/marvin/git — a
+# branch fixing either regression would be graded against the deployed main
+# tree instead of itself (#855/#874).
+
+marvin_log "INFO" "Self-test: checking CODEOWNERS pattern integrity and hourly-check's read path"
+
+_co_dir="$(dirname "$0")"
+_co_file="${_co_dir}/../CODEOWNERS"
+
+if [[ ! -r "$_co_file" ]]; then
+    test_fail "CODEOWNERS pattern: ${_co_file} is missing or unreadable — no code owner can be resolved for any path (#933)"
+else
+    _co_checked=0
+    _co_bad=""
+    while IFS= read -r _co_line; do
+        _co_stripped="${_co_line%%#*}"
+        [[ -n "${_co_stripped//[[:space:]]/}" ]] || continue
+        _co_checked=$((_co_checked + 1))
+        _co_pattern="${_co_stripped%% *}"
+        # The file's own header states the invariant this enforces: the pattern
+        # must never be a bare run of dashes — that is exactly what #933 was.
+        if [[ "$_co_pattern" =~ ^-+$ ]]; then
+            _co_bad+="\"${_co_pattern}\" "
+        fi
+    done < "$_co_file"
+
+    if [[ "$_co_checked" -eq 0 ]]; then
+        test_fail "CODEOWNERS pattern: no non-comment lines found in ${_co_file} — the scan read nothing, which is the same silent-clean shape #933 exploited (#933)"
+    elif [[ -n "$_co_bad" ]]; then
+        test_fail "CODEOWNERS pattern: first field is a bare dash on $(printf '%s' "$_co_bad" | wc -w) line(s) (${_co_bad% }) — this parses as a real gitignore pattern matching nothing, so no path gets an owner while GitHub's own codeowners/errors endpoint reports the file clean (#933)"
+    else
+        test_pass "CODEOWNERS pattern: all ${_co_checked} non-comment line(s) carry a real pattern, not a bare dash (#933)"
+    fi
+fi
+
+_cop_file="${_co_dir}/hourly-check.sh"
+if ! _cop_code=$(_code_only "$_cop_file"); then
+    test_fail "CODEOWNERS read-path: ${_cop_file} is unreadable or comment-only — the check that verifies which path hourly-check fetches did not run (#934)"
+else
+    _cop_bad=$(printf '%s\n' "$_cop_code" | grep -c 'contents/\.github/CODEOWNERS') || _cop_bad=0
+    _cop_good=$(printf '%s\n' "$_cop_code" | grep -c 'contents/CODEOWNERS"') || _cop_good=0
+
+    if [[ "$_cop_bad" -gt 0 ]]; then
+        test_fail "CODEOWNERS read-path: $(basename "$_cop_file") fetches contents/.github/CODEOWNERS in real code — that path has never existed in this repo and 404s every run, silently narrowing trusted issue authors to PavelStancik alone (#934)"
+    elif [[ "$_cop_good" -eq 0 ]]; then
+        test_fail "CODEOWNERS read-path: $(basename "$_cop_file") no longer fetches contents/CODEOWNERS at all — the fetch this check grades is gone, so a #934 regression could recur undetected"
+    else
+        test_pass "CODEOWNERS read-path: $(basename "$_cop_file") fetches the real repo-root contents/CODEOWNERS path, not the never-existed .github/ one (#934)"
+    fi
+fi
+
 # ─── 10. Security scoring system ──────────────────────────────────────────────
 # Grades the server A-F across multiple security dimensions
 
