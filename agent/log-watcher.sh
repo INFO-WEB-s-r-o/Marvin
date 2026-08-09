@@ -420,9 +420,21 @@ fi
 # Try to extract JSON from the output
 analysis_json=$(echo "$raw_output" | sed -n '/^\[/,/^\]/p' | head -500)
 
-if [[ -z "$analysis_json" ]]; then
-    # Try extracting from code block
-    analysis_json=$(echo "$raw_output" | sed -n '/```json/,/```/p' | sed '1d;$d')
+# The range above finds a line starting with "[" and reads through a LATER
+# line starting with "]" — but sed never tests the end pattern against the
+# same line that matched the start. For a single-line array (Claude's common
+# "nothing happened" reply, a bare `[]`), the closing bracket is on the
+# matching line itself, so the range never closes and extraction runs on
+# into the trailing ``` fence, producing invalid JSON. Measured against
+# production forensic dumps: 35 of the last 40 `log-analysis-raw-*.txt`
+# files were exactly this — a benign empty result misfiled as unparseable.
+# Retry with the code-block extraction, which handles single-line arrays
+# correctly, before giving up.
+if [[ -z "$analysis_json" ]] || ! echo "$analysis_json" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    fenced_json=$(echo "$raw_output" | sed -n '/```json/,/```/p' | sed '1d;$d')
+    if [[ -n "$fenced_json" ]] && echo "$fenced_json" | jq -e 'type == "array"' >/dev/null 2>&1; then
+        analysis_json="$fenced_json"
+    fi
 fi
 
 if [[ -z "$analysis_json" ]]; then

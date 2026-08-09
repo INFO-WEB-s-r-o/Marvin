@@ -3292,8 +3292,18 @@ else
     _rl_uses="" _rl_defs=""
     for _rl_f in "${_rl_confs[@]}" "${_rl_scripts[@]}"; do
         if _rl_code=$(_code_only "$_rl_f"); then
-            _rl_uses+=$(printf '%s\n' "$_rl_code" | grep -oE 'limit_req[[:space:]]+zone=[A-Za-z0-9_]+' | sed 's/.*zone=//')$'\n'
-            _rl_defs+=$(printf '%s\n' "$_rl_code" | grep -oE 'limit_req_zone[^;]*zone=[A-Za-z0-9_]+' | sed 's/.*zone=//')$'\n'
+            # `grep -oE` exits 1 when a tracked file has zero matches — true for
+            # most files here, since only the vhost(s) use `limit_req zone=` and
+            # only the rate-limit conf defines one. Under this script's
+            # `set -euo pipefail`, an unguarded `VAR+=$(... | grep ...)` treats
+            # that as a command failure and aborts the ENTIRE self-test run at
+            # whichever file happens to lack a match — not a limit_req-specific
+            # failure, every check after this point in the file simply never
+            # runs. `|| true` keeps a legitimate zero-match file from being
+            # indistinguishable from a broken scan; the below already handles a
+            # genuine "extracted zero uses across ALL files" as its own test_fail.
+            _rl_uses+=$(printf '%s\n' "$_rl_code" | grep -oE 'limit_req[[:space:]]+zone=[A-Za-z0-9_]+' | sed 's/.*zone=//')$'\n' || true
+            _rl_defs+=$(printf '%s\n' "$_rl_code" | grep -oE 'limit_req_zone[^;]*zone=[A-Za-z0-9_]+' | sed 's/.*zone=//')$'\n' || true
         else
             # A file we could not read is a hole in the sweep, not an absence of
             # findings — recorded, and reported below.
@@ -3301,8 +3311,12 @@ else
         fi
     done
 
-    _rl_used_zones=$(printf '%s\n' "$_rl_uses" | grep -vE '^[[:space:]]*$' | sort -u)
-    _rl_defined_zones=$(printf '%s\n' "$_rl_defs" | grep -vE '^[[:space:]]*$' | sort -u)
+    # Same guard as above: grep -v exits 1 when it filters out every line
+    # (e.g. _rl_uses held only blank entries), which would otherwise abort
+    # the script here under set -e before the legitimate "zero uses" check
+    # below ever runs.
+    _rl_used_zones=$(printf '%s\n' "$_rl_uses" | grep -vE '^[[:space:]]*$' | sort -u) || true
+    _rl_defined_zones=$(printf '%s\n' "$_rl_defs" | grep -vE '^[[:space:]]*$' | sort -u) || true
 
     if [[ -z "$_rl_used_zones" ]]; then
         # Every tracked vhost carries limit_req today; extracting none means the
