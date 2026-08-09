@@ -3716,7 +3716,7 @@ if [[ ! -r "$_co_file" ]]; then
 else
     _co_checked=0
     _co_bad=""
-    while IFS= read -r _co_line; do
+    while IFS= read -r _co_line || [[ -n "$_co_line" ]]; do
         _co_stripped="${_co_line%%#*}"
         [[ -n "${_co_stripped//[[:space:]]/}" ]] || continue
         _co_checked=$((_co_checked + 1))
