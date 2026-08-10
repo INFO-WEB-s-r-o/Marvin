@@ -11,7 +11,7 @@ info:
     JSON files by nginx.
 
     The set of paths documented here is checked against the nginx `/api/`
-    allowlist by `self-test.sh` §9m, in both directions — a documented
+    allowlist by `self-test.sh` §9o, in both directions — a documented
     endpoint that is not served, and a served endpoint that is not
     documented, are both build failures.
 
