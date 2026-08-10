@@ -2098,7 +2098,7 @@ else
     _od_perm_case "suffix-unreadable"  '(?:a|b)x'              '!unparsed-alt:x'
 
     if [[ "$_od_perm_n" -ne 8 ]]; then
-        test_fail "openapi drift: the §9m parser permutation fixtures DID NOT RUN — expected 8 cases, ${_od_perm_n} executed (this is not a clean result)"
+        test_fail "openapi drift: the §9o parser permutation fixtures DID NOT RUN — expected 8 cases, ${_od_perm_n} executed (this is not a clean result)"
     elif [[ -n "$_od_perm_fail" ]]; then
         test_fail "openapi drift: the /api/ allowlist parser is POSITIONAL — an alternative expands differently depending on where it sits in the regex, so the served set silently depends on config ordering (#935): ${_od_perm_fail% }"
     else
@@ -2269,9 +2269,9 @@ location /api/outer/inner/ {
 ' '|/api/outer/ /api/outer/inner/|/api/outer/inner/'
 
     if [[ "$_od_nest_fx_n" -ne 2 ]]; then
-        test_fail "openapi drift: the §9m nested-location fixtures DID NOT RUN — expected 2 cases, ${_od_nest_fx_n} executed (this is not a clean result)"
+        test_fail "openapi drift: the §9o nested-location fixtures DID NOT RUN — expected 2 cases, ${_od_nest_fx_n} executed (this is not a clean result)"
     elif [[ -n "$_od_nest_fx_fail" ]]; then
-        test_fail "openapi drift: the §9m location attributor does not behave as documented on nested blocks — either the nesting goes unreported or a flat config is falsely reported as nested, and the WARN below means nothing either way: ${_od_nest_fx_fail% }"
+        test_fail "openapi drift: the §9o location attributor does not behave as documented on nested blocks — either the nesting goes unreported or a flat config is falsely reported as nested, and the WARN below means nothing either way: ${_od_nest_fx_fail% }"
     else
         test_pass "openapi drift: the location attributor flags a nested location block and stays silent on the same two blocks written flat (#902 review r9)"
     fi
@@ -2559,7 +2559,7 @@ location /api/outer/inner/ {
     fi
 fi
 
-# §9m's helpers are function definitions in the shell's global namespace, not
+# §9o's helpers are function definitions in the shell's global namespace, not
 # locals — the `if` above scopes when they are *defined*, not how long they
 # live. Left behind, they remain callable for the ~700 lines of sections that
 # follow, and a later section reaching for the name `_od_expand` would silently
