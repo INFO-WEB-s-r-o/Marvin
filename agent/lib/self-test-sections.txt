@@ -66,5 +66,6 @@ Test helpers
 9r. Network calls in cron-triggered scripts must be time-bounded
 9s. limit_req zones must be defined in a tracked file that something installs
 9t. Configured DNSBLs must distinguish a listed host from a clean one
+9u. CODEOWNERS pattern integrity and read-path wiring (#933/#934)
 10. Security scoring system
 Report
