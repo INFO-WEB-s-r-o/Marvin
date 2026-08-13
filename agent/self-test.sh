@@ -3274,12 +3274,16 @@ _rl_confs=()
 while IFS= read -r _rl_f; do
     [[ -n "$_rl_f" ]] && _rl_confs+=("$_rl_f")
 done < <(find "$_rl_setup" -maxdepth 1 -name '*.conf' -type f 2>/dev/null | sort)
+# procsub-guarded (#1044) — the emptiness check below (`_rl_confs` size) is a
+# FAIL naming itself as inert, not a silent pass on a dead `find | sort`.
 
 # Tracked shell scripts that could install anything.
 _rl_scripts=()
 while IFS= read -r _rl_f; do
     [[ -n "$_rl_f" ]] && _rl_scripts+=("$_rl_f")
 done < <(find "$_rl_setup" "$(dirname "$0")" -maxdepth 1 -name '*.sh' -type f 2>/dev/null | sort)
+# procsub-guarded (#1044) — same shape: `_rl_scripts` size is checked below and
+# a zero-count run FAILs rather than reading as "nothing to scan."
 
 if [[ ${#_rl_confs[@]} -eq 0 ]]; then
     test_fail "limit_req zones: found ZERO tracked *.conf files under ${_rl_setup} — the sweep did NOT run, this is not a clean result (#957)"
