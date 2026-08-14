@@ -20,8 +20,10 @@ source "$(dirname "$0")/lib/github.sh"
 trap marvin_error_trap ERR
 
 LOCK_FILE="/tmp/marvin-fix-issues.lock"
-# Snapshot pre-existing untracked files BEFORE trap can fire (#285, #287)
-_PRE_UNTRACKED=$(git ls-files --others --exclude-standard -- agent/ web/ 2>/dev/null || echo "")
+# Snapshot pre-existing untracked files BEFORE trap can fire (#285, #287).
+# Repo-wide minus data/ (denylist, not an allowlist — #1061: an allowlist here
+# silently dropped fixes to files outside agent/, web/, *.md).
+_PRE_UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null | grep -vE '^data/' || echo "")
 
 # ─── Cleanup trap — always return to clean main ─────────────────────────────
 
@@ -41,7 +43,7 @@ cleanup() {
         while IFS= read -r _f; do
             [[ -n "$_f" ]] || continue
             printf '%s\n' "$_PRE_UNTRACKED" | grep -qxF "$_f" || rm -f "$_f"
-        done < <(git ls-files --others --exclude-standard -- agent/ web/ 2>/dev/null) || true
+        done < <(git ls-files --others --exclude-standard 2>/dev/null | grep -vE '^data/') || true
         git checkout main 2>/dev/null || true
         # Delete local branch if it was never pushed
         if ! git ls-remote --heads origin "$current_branch" 2>/dev/null | grep -q "$current_branch"; then
@@ -229,7 +231,7 @@ fi
 # ─── Create fix branch ──────────────────────────────────────────────────────
 
 # Re-snapshot in case git stash above changed the set of untracked files
-_PRE_UNTRACKED=$(git ls-files --others --exclude-standard -- agent/ web/ 2>/dev/null || echo "")
+_PRE_UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null | grep -vE '^data/' || echo "")
 
 BRANCH="fix/issues-${TIMESTAMP}"
 git checkout -b "$BRANCH" 2>/dev/null
@@ -257,10 +259,12 @@ fi
 
 # ─── Check for changes ──────────────────────────────────────────────────────
 
-# Only track changes in directories we'll actually stage (agent/, web/, *.md)
-# Concurrent cron jobs modify data/ files — those are never staged so ignore them
-CHANGED=$(git diff --name-only -- agent/ web/ *.md 2>/dev/null || echo "")
-UNTRACKED=$(git ls-files --others --exclude-standard -- agent/ web/ 2>/dev/null || echo "")
+# Track changes repo-wide, minus a denylist (not an allowlist — #1061: an
+# allowlist of agent/, web/, *.md silently dropped fixes to files elsewhere,
+# e.g. .github/workflows/*.yml (#999) and setup/nginx-site.conf (#1046)).
+# Concurrent cron jobs modify data/ files — those are excluded so ignore them.
+CHANGED=$(git diff --name-only 2>/dev/null | grep -vE '^data/' || echo "")
+UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null | grep -vE '^data/' || echo "")
 
 if [[ -z "$CHANGED" && -z "$UNTRACKED" ]]; then
     marvin_log "INFO" "No files changed — Claude may not have found a fixable issue"
@@ -317,7 +321,7 @@ if [[ "$VALID" != "true" ]]; then
     while IFS= read -r _f; do
         [[ -n "$_f" ]] || continue
         printf '%s\n' "$_PRE_UNTRACKED" | grep -qxF "$_f" || rm -f "$_f"
-    done < <(git ls-files --others --exclude-standard -- agent/ web/ 2>/dev/null) || true
+    done < <(git ls-files --others --exclude-standard 2>/dev/null | grep -vE '^data/') || true
     exit 1
 fi
 
@@ -363,15 +367,15 @@ fi
 
 # ─── Stage and commit ────────────────────────────────────────────────────────
 
-# Only stage files in safe directories
-git add -- agent/ web/ 2>/dev/null || true
-# Also stage root-level .md files if changed (CHANGELOG etc.)
+# Stage every changed/untracked file computed above (already denylist-filtered
+# to exclude data/; the forbidden-file validation above is a second line of
+# defense against data/*, *.db, *.log). #1061: staging used to be its own
+# separate allowlist (agent/, web/, *.md) which could silently diverge from
+# what CHANGED/UNTRACKED actually tracked — now there's one set of paths.
 while IFS= read -r f; do
     [[ -n "$f" ]] || continue
-    case "$f" in
-        *.md) git add -- "$f" 2>/dev/null || true ;;
-    esac
-done <<< "$CHANGED"
+    git add -- "$f" 2>/dev/null || true
+done < <(printf '%s\n%s\n' "$CHANGED" "$UNTRACKED")
 
 if git diff --cached --quiet 2>/dev/null; then
     marvin_log "INFO" "No staged changes after filtering — nothing to commit"
