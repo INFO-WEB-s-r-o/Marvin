@@ -22,6 +22,7 @@ jobs:
           fetch-depth: 1
 
       - name: Run Claude Code Review
+        id: review
         uses: anthropics/claude-code-action@c038e4dcdedfbbca18dfb17df35a17e40ded4ddc # v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -119,7 +120,7 @@ jobs:
               none should be added; this instruction only controls the marker line.
 
       - name: Submit formal review verdict
-        if: always()
+        if: always() && steps.review.outcome == 'success'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
