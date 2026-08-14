@@ -270,7 +270,13 @@ if [[ -n "$swap_total" ]] && [[ "$swap_total" -gt 0 ]]; then
         swap_state_dir="${DATA_DIR}/state"
         swap_state_file="${swap_state_dir}/swap-paging.state"
         swap_state_persist_ok=1
-        mkdir -p "$swap_state_dir" 2>/dev/null || swap_state_persist_ok=0
+        # Write-eligibility tracks mkdir only, independent of persist_ok
+        # below — a read failure must still WARN, but must not block the
+        # write that would replace a corrupted/newline-less state file
+        # with good data. Gating the write on the read's own success trapped
+        # a truncated file in a permanent, self-perpetuating failure state.
+        swap_state_write_ok=1
+        mkdir -p "$swap_state_dir" 2>/dev/null || { swap_state_persist_ok=0; swap_state_write_ok=0; }
 
         pswpin_now=$(awk '/^pswpin /{print $2}' /proc/vmstat 2>/dev/null || echo "")
         pswpout_now=$(awk '/^pswpout /{print $2}' /proc/vmstat 2>/dev/null || echo "")
@@ -288,7 +294,7 @@ if [[ -n "$swap_total" ]] && [[ "$swap_total" -gt 0 ]]; then
 
         swap_delta_pages=$(_swap_paging_delta "$pswpin_now" "$pswpout_now" "$pswpin_prev" "$pswpout_prev")
 
-        if [[ "$swap_state_persist_ok" -eq 1 ]]; then
+        if [[ "$swap_state_write_ok" -eq 1 ]]; then
             echo "${pswpin_now} ${pswpout_now}" > "$swap_state_file" 2>/dev/null || swap_state_persist_ok=0
         fi
         # Persistence failure (disk full, permissions, read-only fs, or an
