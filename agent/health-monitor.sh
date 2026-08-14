@@ -269,7 +269,8 @@ if [[ -n "$swap_total" ]] && [[ "$swap_total" -gt 0 ]]; then
     if [[ "$swap_percent" -gt 80 ]]; then
         swap_state_dir="${DATA_DIR}/state"
         swap_state_file="${swap_state_dir}/swap-paging.state"
-        mkdir -p "$swap_state_dir" 2>/dev/null || true
+        swap_state_persist_ok=1
+        mkdir -p "$swap_state_dir" 2>/dev/null || swap_state_persist_ok=0
 
         pswpin_now=$(awk '/^pswpin /{print $2}' /proc/vmstat 2>/dev/null || echo "")
         pswpout_now=$(awk '/^pswpout /{print $2}' /proc/vmstat 2>/dev/null || echo "")
@@ -287,7 +288,16 @@ if [[ -n "$swap_total" ]] && [[ "$swap_total" -gt 0 ]]; then
 
         swap_delta_pages=$(_swap_paging_delta "$pswpin_now" "$pswpout_now" "$pswpin_prev" "$pswpout_prev")
 
-        echo "${pswpin_now} ${pswpout_now}" > "$swap_state_file" 2>/dev/null || true
+        if [[ "$swap_state_persist_ok" -eq 1 ]]; then
+            echo "${pswpin_now} ${pswpout_now}" > "$swap_state_file" 2>/dev/null || swap_state_persist_ok=0
+        fi
+        # Persistence failure (disk full, permissions, read-only fs) must be
+        # loud: silently swallowing it reseeds prev=now on every tick and the
+        # check reports "idle" forever, masking real paging indefinitely —
+        # at the exact moment (disk full) real swap pressure is most likely.
+        if [[ "$swap_state_persist_ok" -eq 0 ]]; then
+            marvin_log "WARN" "swap-paging state file ${swap_state_file} could not be written — paging delta cannot be tracked between ticks, swap check will read idle until this is fixed"
+        fi
 
         if [[ "$swap_delta_pages" -gt 0 ]]; then
             ISSUES+=("WARNING: Swap at ${swap_percent}% (actively paging, ${swap_delta_pages} pages since last check)")
