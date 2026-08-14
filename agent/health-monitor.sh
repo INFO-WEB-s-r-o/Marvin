@@ -279,7 +279,7 @@ if [[ -n "$swap_total" ]] && [[ "$swap_total" -gt 0 ]]; then
 
         pswpin_prev="" pswpout_prev=""
         if [[ -f "$swap_state_file" ]]; then
-            read -r pswpin_prev pswpout_prev < "$swap_state_file" 2>/dev/null || true
+            read -r pswpin_prev pswpout_prev < "$swap_state_file" 2>/dev/null || swap_state_persist_ok=0
         fi
         # No prior state (first run, or file lost) — seed prev=now so this
         # tick reads as idle rather than a false-positive spike.
@@ -291,12 +291,13 @@ if [[ -n "$swap_total" ]] && [[ "$swap_total" -gt 0 ]]; then
         if [[ "$swap_state_persist_ok" -eq 1 ]]; then
             echo "${pswpin_now} ${pswpout_now}" > "$swap_state_file" 2>/dev/null || swap_state_persist_ok=0
         fi
-        # Persistence failure (disk full, permissions, read-only fs) must be
-        # loud: silently swallowing it reseeds prev=now on every tick and the
-        # check reports "idle" forever, masking real paging indefinitely —
-        # at the exact moment (disk full) real swap pressure is most likely.
+        # Persistence failure (disk full, permissions, read-only fs, or an
+        # unreadable existing file) must be loud: silently swallowing it
+        # reseeds prev=now on every tick and the check reports "idle"
+        # forever, masking real paging indefinitely — at the exact moment
+        # (disk full) real swap pressure is most likely.
         if [[ "$swap_state_persist_ok" -eq 0 ]]; then
-            marvin_log "WARN" "swap-paging state file ${swap_state_file} could not be written — paging delta cannot be tracked between ticks, swap check will read idle until this is fixed"
+            marvin_log "WARN" "swap-paging state file ${swap_state_file} could not be read or written — paging delta cannot be tracked between ticks, swap check will read idle until this is fixed"
         fi
 
         if [[ "$swap_delta_pages" -gt 0 ]]; then
