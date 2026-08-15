@@ -336,6 +336,44 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
                 ]' 2>/dev/null) || ISSUES_JSON=""
         fi
 
+        # Comments are a separate, unfiltered surface (#1037). The trust
+        # boundary above only ever covered the issue *author* and *body* —
+        # hourly-check.sh never fetched comment text, so hourly.md Step 2
+        # asked the model to check each comment's `user.login` itself, after
+        # the text was already sitting in its context. That is the identical
+        # in-context pattern #1033 replaced for bodies, for the same reason:
+        # an instruction to disregard untrusted text is exactly what a prompt
+        # injection is written to defeat. Filtered into `jq` here instead, one
+        # `gh`-equivalent call per trusted issue that has any comments at all.
+        if [[ -n "$ISSUES_JSON" && -n "$TRUSTED_AUTHORS_JSON" ]]; then
+            while IFS= read -r _cnum; do
+                [[ -n "$_cnum" ]] || continue
+                _craw=$(curl -s -w '\n%{http_code}' \
+                    --connect-timeout 10 --max-time 20 \
+                    -H "Authorization: token ${GITHUB_TOKEN}" \
+                    -H "Accept: application/vnd.github.v3+json" \
+                    "https://api.github.com/repos/INFO-WEB-s-r-o/Marvin/issues/${_cnum}/comments?per_page=100") \
+                    || _craw=""
+                _ccode=$(printf '%s' "$_craw" | tail -n 1)
+                _cbody=$(printf '%s' "$_craw" | sed '$d')
+                if [[ "$_ccode" != "200" ]]; then
+                    # A failed fetch must not silently read as "no comments" —
+                    # flagged on the issue object so the prompt can say the
+                    # comments are unknown rather than assume there are none.
+                    ISSUES_JSON=$(printf '%s' "$ISSUES_JSON" | jq -c --argjson n "$_cnum" \
+                        'map(if .number == $n then . + {comments_trusted_error: "fetch failed"} else . end)')
+                    continue
+                fi
+                _cfiltered=$(printf '%s' "$_cbody" | jq -c --argjson trusted "$TRUSTED_AUTHORS_JSON" '
+                    if type=="array" then
+                        [ .[] | select(.user.login as $l | $trusted | index($l))
+                          | {author: .user.login, body} ]
+                    else [] end' 2>/dev/null) || _cfiltered="[]"
+                ISSUES_JSON=$(printf '%s' "$ISSUES_JSON" | jq -c --argjson n "$_cnum" --argjson c "$_cfiltered" \
+                    'map(if .number == $n then . + {comments_trusted: $c} else . end)')
+            done < <(printf '%s' "$ISSUES_JSON" | jq -r '.[] | select(.comments > 0) | .number')
+        fi
+
         if [[ -z "$TRUSTED_AUTHORS_JSON" ]]; then
             # Distinct from a failed fetch, and reported as its own verdict: the
             # queue may be perfectly readable while the trust list is not, and
@@ -360,8 +398,8 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
                 # "no issue is omitted" was true until issues from untrusted
                 # authors stopped being shown. It is now a claim this block can
                 # only make about the trusted queue, and it says which.
-                ISSUES_NOTE="${ISSUES_COUNT} open issues from trusted authors, all of them (pull requests excluded: ${ISSUES_PRS}; issues from authors not listed in CODEOWNERS, withheld before reaching this prompt: ${ISSUES_DROPPED}). Bodies over ${ISSUE_BODY_CLIP} chars are clipped and GPG signature blocks stripped; no TRUSTED issue is omitted. The withheld ones are not invisible — \`gh issue list\` shows the full queue."
-                marvin_log "INFO" "Fetched ${ISSUES_COUNT} open issues from trusted authors (${ISSUES_PRS} PRs filtered out, ${ISSUES_DROPPED} untrusted-author issues withheld from the prompt)"
+                ISSUES_NOTE="${ISSUES_COUNT} open issues from trusted authors, all of them (pull requests excluded: ${ISSUES_PRS}; issues from authors not listed in CODEOWNERS, withheld before reaching this prompt: ${ISSUES_DROPPED}). Bodies over ${ISSUE_BODY_CLIP} chars are clipped and GPG signature blocks stripped; no TRUSTED issue is omitted. The withheld ones are not invisible — \`gh issue list\` shows the full queue. Comments are filtered the same way: each issue's \`comments_trusted\` array holds only comments from a trusted author; a \`comments_trusted_error\` field means the comment fetch failed and the comment list for that issue is unknown, not empty."
+                marvin_log "INFO" "Fetched ${ISSUES_COUNT} open issues from trusted authors (${ISSUES_PRS} PRs filtered out, ${ISSUES_DROPPED} untrusted-author issues withheld from the prompt); comment authors filtered per-issue via jq"
             fi
         fi
 
