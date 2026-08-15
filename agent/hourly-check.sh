@@ -345,9 +345,24 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
         # an instruction to disregard untrusted text is exactly what a prompt
         # injection is written to defeat. Filtered into `jq` here instead, one
         # `gh`-equivalent call per trusted issue that has any comments at all.
+        #
+        # That fetch is one more sequential, time-bounded curl per issue on top
+        # of the already-bounded ISSUES_MAX_PAGES fetch above (#1065). Capped
+        # the same way: a named ceiling on how many issues' comments get
+        # fetched per run, reported rather than silently exhausted, so this
+        # loop can add at most COMMENTS_MAX_ISSUES × 20s to a run instead of
+        # scaling unbounded with the size of the trusted queue.
+        COMMENTS_MAX_ISSUES=30
+        COMMENTS_TRUNCATED=0
         if [[ -n "$ISSUES_JSON" && -n "$TRUSTED_AUTHORS_JSON" ]]; then
+            _cfetched=0
             while IFS= read -r _cnum; do
                 [[ -n "$_cnum" ]] || continue
+                if (( _cfetched >= COMMENTS_MAX_ISSUES )); then
+                    COMMENTS_TRUNCATED=1
+                    break
+                fi
+                _cfetched=$(( _cfetched + 1 ))
                 _craw=$(curl -s -w '\n%{http_code}' \
                     --connect-timeout 10 --max-time 20 \
                     -H "Authorization: token ${GITHUB_TOKEN}" \
@@ -372,6 +387,9 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
                 ISSUES_JSON=$(printf '%s' "$ISSUES_JSON" | jq -c --argjson n "$_cnum" --argjson c "$_cfiltered" \
                     'map(if .number == $n then . + {comments_trusted: $c} else . end)')
             done < <(printf '%s' "$ISSUES_JSON" | jq -r '.[] | select(.comments > 0) | .number')
+            if (( COMMENTS_TRUNCATED == 1 )); then
+                marvin_log "WARN" "Comment fetch hit the ${COMMENTS_MAX_ISSUES}-issue bound — remaining trusted issues' comments were not fetched this run"
+            fi
         fi
 
         if [[ -z "$TRUSTED_AUTHORS_JSON" ]]; then
@@ -400,6 +418,9 @@ if [[ -f "$(dirname "$0")/lib/github.sh" ]]; then
                 # only make about the trusted queue, and it says which.
                 ISSUES_NOTE="${ISSUES_COUNT} open issues from trusted authors, all of them (pull requests excluded: ${ISSUES_PRS}; issues from authors not listed in CODEOWNERS, withheld before reaching this prompt: ${ISSUES_DROPPED}). Bodies over ${ISSUE_BODY_CLIP} chars are clipped and GPG signature blocks stripped; no TRUSTED issue is omitted. The withheld ones are not invisible — \`gh issue list\` shows the full queue. Comments are filtered the same way: each issue's \`comments_trusted\` array holds only comments from a trusted author; a \`comments_trusted_error\` field means the comment fetch failed and the comment list for that issue is unknown, not empty."
                 marvin_log "INFO" "Fetched ${ISSUES_COUNT} open issues from trusted authors (${ISSUES_PRS} PRs filtered out, ${ISSUES_DROPPED} untrusted-author issues withheld from the prompt); comment authors filtered per-issue via jq"
+            fi
+            if (( COMMENTS_TRUNCATED == 1 )); then
+                ISSUES_NOTE="${ISSUES_NOTE} **COMMENT FETCH TRUNCATED** — stopped after ${COMMENTS_MAX_ISSUES} issues' comments (\`COMMENTS_MAX_ISSUES\`); some trusted issues below may have comments that were not fetched this run and so carry neither \`comments_trusted\` nor \`comments_trusted_error\`. Treat their comments as unknown, not as absent."
             fi
         fi
 
