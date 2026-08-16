@@ -43,8 +43,6 @@ export default function ShellSection() {
       const arg = rest.join(' ');
 
       switch ((name || '').toLowerCase()) {
-        case '':
-          return [];
         case 'help':
           return [
             'help              show this message',
