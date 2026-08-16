@@ -16,6 +16,7 @@ import ChangelogSection from './components/ChangelogSection';
 import ThoughtsSection from './components/ThoughtsSection';
 import PeersSection from './components/PeersSection';
 import IncomingSection from './components/IncomingSection';
+import ShellSection from './components/ShellSection';
 import Footer from './components/Footer';
 
 export default function Home() {
@@ -38,6 +39,7 @@ export default function Home() {
         <ThoughtsSection />
         <PeersSection />
         <IncomingSection />
+        <ShellSection />
         <Footer />
       </div>
     </div>
