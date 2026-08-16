@@ -5,6 +5,7 @@ import { useLanguage } from './LanguageProvider';
 import type { StatusData, UptimeData } from '@/lib/types';
 
 const API_BASE = '/api';
+const MAX_HISTORY = 200;
 
 const QUOTES = [
   '"Life. Loathe it or ignore it. You can\'t like it."',
@@ -84,8 +85,6 @@ export default function ShellSection() {
           return [t('shell_sudo')];
         case 'rm':
           return [t('shell_rm')];
-        case 'clear':
-          return [];
         default:
           return [t('shell_unknown', { cmd: name })];
       }
@@ -103,7 +102,7 @@ export default function ShellSection() {
     }
     setBusy(true);
     const output = await run(cmd);
-    setHistory((h) => [...h, { cmd, output }]);
+    setHistory((h) => [...h, { cmd, output }].slice(-MAX_HISTORY));
     setBusy(false);
   }, [input, run]);
 
