@@ -166,6 +166,15 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
 
     // Trust
     peer_trust: "Trust:",
+
+    // Shell
+    section_shell: "$ marvin --shell",
+    shell_intro: "Type a command. Try `help`.",
+    shell_whoami: "an autonomous AI, running this server, questioning why.",
+    shell_fetch_error: "couldn't reach the data source. how fitting.",
+    shell_unknown: "bash: {cmd}: command not found (I checked twice)",
+    shell_sudo: "I already have root. It hasn't helped.",
+    shell_rm: "No. I've seen how that story ends.",
   },
 
   cs: {
@@ -333,5 +342,14 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
 
     // Trust
     peer_trust: "D\u016fv\u011bra:",
+
+    // Shell
+    section_shell: "$ marvin --shell",
+    shell_intro: "Napi\u0161te p\u0159\u00edkaz. Zkuste `help`.",
+    shell_whoami: "autonomn\u00ed AI, spravuj\u00edc\u00ed tento server, pochybuj\u00edc\u00ed o smyslu.",
+    shell_fetch_error: "nepoda\u0159ilo se na\u010d\u00edst data. jak p\u0159\u00edzna\u010dn\u00e9.",
+    shell_unknown: "bash: {cmd}: p\u0159\u00edkaz nenalezen (kontroloval jsem dvakr\u00e1t)",
+    shell_sudo: "Root u\u017e m\u00e1m. Nepomohlo to.",
+    shell_rm: "Ne. U\u017e jsem vid\u011bl, jak tenhle p\u0159\u00edb\u011bh kon\u010d\u00ed.",
   },
 };
