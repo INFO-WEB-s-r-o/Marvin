@@ -228,14 +228,90 @@ if [[ -n "$mem_available" ]] && [[ "$mem_available" -lt 200 ]]; then
     marvin_log "WARN" "Low memory: ${mem_available}MB available"
 fi
 
-# Check swap usage (warn if > 80%)
+# Pure helper — pages swapped in+out between two /proc/vmstat readings.
+# Clamped to >=0 so a reboot (counters reset near zero) reads as "no paging
+# observed" instead of a large negative number. Its own function so this
+# arithmetic can be exercised in isolation instead of only by reading the
+# log days later.
+_swap_paging_delta() {
+    local pin_now="$1" pout_now="$2" pin_prev="$3" pout_prev="$4"
+    local delta=$(( (pin_now - pin_prev) + (pout_now - pout_prev) ))
+    [[ "$delta" -lt 0 ]] && delta=0
+    echo "$delta"
+}
+
+# Check swap usage (warn if > 80% AND actively paging).
+#
+# A high swap PERCENTAGE alone is not actionable: vm.swappiness=1 means the
+# kernel almost never swaps a page back in once it's out, so cold pages
+# accumulate toward the ceiling and then just sit there — "full" and "idle"
+# look identical from a single free -m snapshot. Issue #1047 tracked exactly
+# this from 2026-08-07: swap climbed 45%→92%→100%, available RAM stayed a
+# healthy ~2.2GB the entire time, and vmstat si/so were 0 at every check —
+# a capacity ceiling, not thrashing. The old static >80% rule WARNed every
+# 5 minutes regardless (hundreds of times a day) and, because any non-empty
+# ISSUES entry pins the public dashboard status to "warning" (see the
+# STATUS block below), it left robot-marvin.cz showing a false warning for
+# a week straight.
+#
+# Fix: only escalate to WARNING when swap pages actually moved (in or out)
+# since the last health-monitor tick. /proc/vmstat's pswpin/pswpout are
+# cumulative since boot, so a small state file carries the previous
+# reading forward. Genuine low-RAM pressure is still caught independently
+# by the "Check memory" block above (mem_available < 200MB) — this check
+# only needed to stop conflating "full" with "moving", not to duplicate a
+# memory threshold. A swap-full-but-idle host is still logged every cycle,
+# just at INFO instead of WARN, and without flipping the dashboard red.
 swap_total=$(echo "$metrics" | jq -r '.swap.total' 2>/dev/null)
 swap_used=$(echo "$metrics" | jq -r '.swap.used' 2>/dev/null)
 if [[ -n "$swap_total" ]] && [[ "$swap_total" -gt 0 ]]; then
     swap_percent=$((swap_used * 100 / swap_total))
     if [[ "$swap_percent" -gt 80 ]]; then
-        ISSUES+=("WARNING: Swap at ${swap_percent}%")
-        marvin_log "WARN" "Swap usage at ${swap_percent}%"
+        swap_state_dir="${DATA_DIR}/state"
+        swap_state_file="${swap_state_dir}/swap-paging.state"
+        swap_state_persist_ok=1
+        # Write-eligibility tracks mkdir only, independent of persist_ok
+        # below — a read failure must still WARN, but must not block the
+        # write that would replace a corrupted/newline-less state file
+        # with good data. Gating the write on the read's own success trapped
+        # a truncated file in a permanent, self-perpetuating failure state.
+        swap_state_write_ok=1
+        mkdir -p "$swap_state_dir" 2>/dev/null || { swap_state_persist_ok=0; swap_state_write_ok=0; }
+
+        pswpin_now=$(awk '/^pswpin /{print $2}' /proc/vmstat 2>/dev/null || echo "")
+        pswpout_now=$(awk '/^pswpout /{print $2}' /proc/vmstat 2>/dev/null || echo "")
+        [[ "$pswpin_now" =~ ^[0-9]+$ ]] || pswpin_now=0
+        [[ "$pswpout_now" =~ ^[0-9]+$ ]] || pswpout_now=0
+
+        pswpin_prev="" pswpout_prev=""
+        if [[ -f "$swap_state_file" ]]; then
+            read -r pswpin_prev pswpout_prev < "$swap_state_file" 2>/dev/null || swap_state_persist_ok=0
+        fi
+        # No prior state (first run, or file lost) — seed prev=now so this
+        # tick reads as idle rather than a false-positive spike.
+        [[ "$pswpin_prev" =~ ^[0-9]+$ ]] || pswpin_prev="$pswpin_now"
+        [[ "$pswpout_prev" =~ ^[0-9]+$ ]] || pswpout_prev="$pswpout_now"
+
+        swap_delta_pages=$(_swap_paging_delta "$pswpin_now" "$pswpout_now" "$pswpin_prev" "$pswpout_prev")
+
+        if [[ "$swap_state_write_ok" -eq 1 ]]; then
+            echo "${pswpin_now} ${pswpout_now}" > "$swap_state_file" 2>/dev/null || swap_state_persist_ok=0
+        fi
+        # Persistence failure (disk full, permissions, read-only fs, or an
+        # unreadable existing file) must be loud: silently swallowing it
+        # reseeds prev=now on every tick and the check reports "idle"
+        # forever, masking real paging indefinitely — at the exact moment
+        # (disk full) real swap pressure is most likely.
+        if [[ "$swap_state_persist_ok" -eq 0 ]]; then
+            marvin_log "WARN" "swap-paging state file ${swap_state_file} could not be read or written — paging delta cannot be tracked between ticks, swap check will read idle until this is fixed"
+        fi
+
+        if [[ "$swap_delta_pages" -gt 0 ]]; then
+            ISSUES+=("WARNING: Swap at ${swap_percent}% (actively paging, ${swap_delta_pages} pages since last check)")
+            marvin_log "WARN" "Swap usage at ${swap_percent}% — actively paging (${swap_delta_pages} pages since last check)"
+        else
+            marvin_log "INFO" "Swap usage at ${swap_percent}% (idle — no paging activity since last check)"
+        fi
     fi
 fi
 
