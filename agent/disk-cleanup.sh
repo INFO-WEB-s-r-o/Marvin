@@ -578,29 +578,26 @@ while IFS= read -r -d '' f; do
 done < <(find "${LOGS_DIR}" -maxdepth 1 -type f -name 'claude-output-*.tmp' -mtime +0 -print0 2>/dev/null)
 track_freed "Orphaned Claude output temp files (>1d)" "$claude_tmp_size"
 
-# ─── 6c. Orphaned scratch directories in /tmp ───────────────────────────────
-# Section 6 above is -type f only, so it never sweeps directories. self-test.sh
-# and ad hoc verification runs create scratch dirs via plain `mktemp -d` (no
-# template), which coreutils names 'tmp.XXXXXXXXXX', that are normally
-# rm -rf'd by the script itself but leak — same root cause as 6b — when the
-# run is killed (timeout, OOM) before its own cleanup executes. Nothing else
-# ever sweeps them, so they accumulate indefinitely (34MB removed by hand on
-# 2026-07-27). Root-owned + >7d mirrors section 6's file sweep. This is an
-# allow-list scoped to that one naming pattern, not a deny-list of everything
-# else under /tmp — a deny-list keyed off whatever root-owned dirs happened to
-# exist on this host on a given day (X11 sockets, snap/systemd private tmp,
-# ssh-agent forwarding, etc.) would silently rm -rf any other root-owned
-# directory a future daemon or container runtime drops in /tmp and leaves
-# idle for a week (#1018).
-tmp_dir_size=0
-while IFS= read -r -d '' d; do
-    dsize=$(du -sb "$d" 2>/dev/null | cut -f1)
-    tmp_dir_size=$((tmp_dir_size + ${dsize:-0}))
-    marvin_is_dry_run || rm -rf "$d"
-done < <(find /tmp -mindepth 1 -maxdepth 1 -type d -user root -mtime +7 \
-    -name 'tmp.*' \
-    -print0 2>/dev/null)
-track_freed "Old scratch directories (>7d)" "$tmp_dir_size"
+# ─── 6c. Orphaned scratch directories in /tmp — REMOVED, folded into 6a ─────
+# This used to be its own allow-list sweep (`-name 'tmp.*'`, root-owned, >7d)
+# for self-test.sh's and ad hoc verification runs' unqualified `mktemp -d`
+# scratch dirs. Issue #1040: it had two gaps 6a doesn't — no in-use check (a
+# directory actively held open by a live process was still a deletion
+# candidate) and staleness keyed on the directory's own mtime rather than the
+# newest mtime anywhere in its subtree (6a's #2: unlinking a file bumps the
+# parent directory's mtime to now, so an old-looking directory can still hold
+# fresh content and vice versa).
+#
+# 6a's `_stale_tmp_dirs` (above) already walks every root-owned directory
+# directly under /tmp, not just ones matching a name pattern — its skip-list
+# excludes known long-lived system directories (dot-prefixed, systemd/snap
+# private tmp, session sockets) but does not exclude `tmp.*`, so a scratch
+# directory from a bare `mktemp -d` was always already a 6a candidate, with
+# 6a's in-use and newest-subtree-mtime protections applied. Confirmed by
+# fixture: a `tmp.XXXXXXXXXX`-named, root-owned, 8-day-old directory is
+# selected by `_stale_tmp_dirs`, and the same directory held open by a live
+# process (a path under it passed via `in_use`) is correctly skipped — the
+# exact case this section's `find` had no way to protect.
 
 # ─── 6d. Orphaned log-watcher forensic artifacts in COMMS_DIR (>30 days) ────
 # log-watcher.sh writes two forensic-only files when Claude is unavailable or
