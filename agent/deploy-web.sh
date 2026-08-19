@@ -152,6 +152,17 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
             fi
         fi
 
+        # Pre-flight ownership fix: `next build` (standalone mode) starts by
+        # recursively deleting the previous .next/standalone before writing
+        # the new one. If that directory is root-owned going INTO this build
+        # (from any earlier root-run process), the marvin user can't unlink
+        # its contents and the build dies immediately, before the post-build
+        # chown below ever runs — a self-perpetuating failure with no
+        # automatic recovery (#1076).
+        if [[ -d "${BUILD_DIR}" ]]; then
+            ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" 2>/dev/null || true
+        fi
+
         marvin_log "INFO" "Building Next.js app (timeout ${BUILD_TIMEOUT}s)..."
         build_start=$(date +%s)
         if [[ "$_run_as_marvin" == "true" ]]; then
