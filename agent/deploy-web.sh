@@ -166,7 +166,8 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
         if [[ -d "${BUILD_DIR}" ]]; then
             _build_user="marvin"
             [[ "$_run_as_marvin" != "true" ]] && _build_user="$(id -un)"
-            ${SUDO:+$SUDO} chown -R "${_build_user}:${_build_user}" "${BUILD_DIR}" 2>/dev/null || true
+            ${SUDO:+$SUDO} chown -R "${_build_user}:${_build_user}" "${BUILD_DIR}" || \
+                marvin_log "WARN" "pre-flight chown to ${_build_user} failed — build may hit EACCES"
         fi
 
         marvin_log "INFO" "Building Next.js app (timeout ${BUILD_TIMEOUT}s)..."
