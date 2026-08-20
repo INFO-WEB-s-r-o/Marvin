@@ -152,6 +152,24 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
             fi
         fi
 
+        # Pre-flight ownership fix: `next build` (standalone mode) starts by
+        # recursively deleting the previous .next/standalone before writing
+        # the new one. If that directory is owned by someone other than
+        # whoever is about to run this build (from any earlier run under a
+        # different actor), the unlink fails and the build dies immediately,
+        # before the post-build chown below ever runs — a self-perpetuating
+        # failure with no automatic recovery (#1076). Target whichever user
+        # is about to run the build below, not unconditionally marvin — the
+        # non-root/passwordless-sudo path builds as the invoking user, and
+        # chowning to marvin there reproduces the same EACCES deterministically
+        # instead of fixing it (#1078).
+        if [[ -d "${BUILD_DIR}" ]]; then
+            _build_user="marvin"
+            [[ "$_run_as_marvin" != "true" ]] && _build_user="$(id -un)"
+            ${SUDO:+$SUDO} chown -R "${_build_user}:${_build_user}" "${BUILD_DIR}" || \
+                marvin_log "WARN" "pre-flight chown to ${_build_user} failed — build may hit EACCES"
+        fi
+
         marvin_log "INFO" "Building Next.js app (timeout ${BUILD_TIMEOUT}s)..."
         build_start=$(date +%s)
         if [[ "$_run_as_marvin" == "true" ]]; then
