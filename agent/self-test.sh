@@ -2750,10 +2750,10 @@ marvin_log "INFO" "Self-test: checking weekly-analytics.sh personal-crontab plac
 
 _wa_in_root=false
 _wa_in_marvin=false
-if crontab -l -u root 2>/dev/null | grep -q 'weekly-analytics\.sh'; then
+if crontab -l -u root 2>/dev/null | grep -qE '^[^#]*weekly-analytics\.sh'; then
     _wa_in_root=true
 fi
-if crontab -l -u marvin 2>/dev/null | grep -q 'weekly-analytics\.sh'; then
+if crontab -l -u marvin 2>/dev/null | grep -qE '^[^#]*weekly-analytics\.sh'; then
     _wa_in_marvin=true
 fi
 
