@@ -335,10 +335,13 @@ fi
 # when swap is under 80%) — same "full AND moving" definition as the alert,
 # so a swap-full-but-idle host still doesn't trigger a resize it doesn't need.
 swap_pressure=false
+swap_pressure_reason=""
 if [[ -n "$mem_available" ]] && [[ "$mem_available" -lt 200 ]]; then
     swap_pressure=true
+    swap_pressure_reason="acute"
 elif [[ "${swap_percent:-0}" -gt 80 ]] && [[ "${swap_delta_pages:-0}" -gt 0 ]]; then
     swap_pressure=true
+    swap_pressure_reason="chronic"
 fi
 
 if [[ "$swap_pressure" == "true" ]]; then
@@ -373,14 +376,22 @@ if [[ "$swap_pressure" == "true" ]]; then
         if [[ "$disk_free_mb" -lt $((new_size_mb + 200)) ]]; then
             marvin_log "WARN" "Insufficient disk space (${disk_free_mb}MB free) to expand swap to ${new_size_mb}MB — skipping"
         else
-            marvin_log "WARN" "RAM pressure + swap ${current_swap_used_pct}% used — expanding swap to ${new_size_mb}MB"
+            if [[ "$swap_pressure_reason" == "chronic" ]]; then
+                marvin_log "WARN" "Chronic swap pressure (${current_swap_used_pct}% used, actively paging) — expanding swap to ${new_size_mb}MB"
+            else
+                marvin_log "WARN" "RAM pressure + swap ${current_swap_used_pct}% used — expanding swap to ${new_size_mb}MB"
+            fi
             swapoff "${swap_file}" 2>/dev/null || true
             if dd if=/dev/zero of="${swap_file}" bs=1M count="$new_size_mb" status=none 2>/dev/null \
                 && chmod 600 "${swap_file}" \
                 && mkswap "${swap_file}" >/dev/null 2>&1 \
                 && swapon "${swap_file}" 2>/dev/null; then
                 marvin_log "INFO" "Expanded swap to ${new_size_mb}MB"
-                ISSUES+=("INFO: Expanded swap to ${new_size_mb}MB due to memory pressure")
+                if [[ "$swap_pressure_reason" == "chronic" ]]; then
+                    ISSUES+=("INFO: Expanded swap to ${new_size_mb}MB due to chronic swap pressure (actively paging)")
+                else
+                    ISSUES+=("INFO: Expanded swap to ${new_size_mb}MB due to memory pressure")
+                fi
             else
                 marvin_log "ERROR" "Failed to expand swap"
                 ISSUES+=("WARNING: Failed to expand swap under memory pressure")
