@@ -40,8 +40,8 @@ const personSchema = {
   ],
 };
 
-export default function JsonLd() {
-  const nonce = headers().get('x-nonce') ?? undefined;
+export default async function JsonLd() {
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
   const json = JSON.stringify([websiteSchema, organizationSchema, personSchema]);
   return (
     <script

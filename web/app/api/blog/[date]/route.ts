@@ -5,12 +5,12 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
   request: Request,
-  { params }: { params: { date: string } }
+  { params }: { params: Promise<{ date: string }> }
 ) {
   const { searchParams } = new URL(request.url);
   const rawLang = searchParams.get('lang') || 'en';
   const lang = ['en', 'cs'].includes(rawLang) ? rawLang : 'en';
-  const date = params.date;
+  const date = (await params).date;
 
   // Validate date format
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
