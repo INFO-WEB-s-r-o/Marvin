@@ -330,10 +330,12 @@ fi
 # attempts appear anywhere in this host's log history. The remediation code
 # below has never executed even once.
 #
-# The added branch reuses swap_percent/swap_delta_pages from the check above
-# (both scoped to when swap_percent > 80, so they default to 0 via ${:-0}
-# when swap is under 80%) — same "full AND moving" definition as the alert,
-# so a swap-full-but-idle host still doesn't trigger a resize it doesn't need.
+# The added branch reuses swap_percent/swap_delta_pages from the check above.
+# swap_percent is set whenever swap_total>0; swap_delta_pages is only set
+# inside the swap_percent>80 branch, so both default to 0 via ${:-0} when
+# swap is unset or under 80% — same "full AND moving" definition as the
+# alert, so a swap-full-but-idle host still doesn't trigger a resize it
+# doesn't need.
 swap_pressure=false
 swap_pressure_reason=""
 if [[ -n "$mem_available" ]] && [[ "$mem_available" -lt 200 ]]; then
