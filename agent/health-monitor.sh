@@ -316,8 +316,32 @@ if [[ -n "$swap_total" ]] && [[ "$swap_total" -gt 0 ]]; then
 fi
 
 # Automatic swap management — expand if RAM pressure detected
-# Triggers when: available RAM < 200MB AND swap is either missing or >80% used
+#
+# Triggers when: available RAM < 200MB (acute pressure), OR swap is already
+# missing/>80% used AND actively paging (chronic pressure).
+#
+# The acute-only gate was the ENTIRE trigger until now, and on this host it
+# never fires: mem_available sits around a healthy ~2.5GB even while swap
+# climbs to capacity, because the same swappiness=1 behaviour that made a
+# static >80% alert unactionable (see the comment above, #1047) also means
+# genuinely full, actively-thrashing swap coexists with plenty of free RAM.
+# Measured: swap hit 511/511MB (100%) on 2026-08-17 and sat pinned there for
+# days, and today alone logged 58 "actively paging" WARNs — 0 expand/create
+# attempts appear anywhere in this host's log history. The remediation code
+# below has never executed even once.
+#
+# The added branch reuses swap_percent/swap_delta_pages from the check above
+# (both scoped to when swap_percent > 80, so they default to 0 via ${:-0}
+# when swap is under 80%) — same "full AND moving" definition as the alert,
+# so a swap-full-but-idle host still doesn't trigger a resize it doesn't need.
+swap_pressure=false
 if [[ -n "$mem_available" ]] && [[ "$mem_available" -lt 200 ]]; then
+    swap_pressure=true
+elif [[ "${swap_percent:-0}" -gt 80 ]] && [[ "${swap_delta_pages:-0}" -gt 0 ]]; then
+    swap_pressure=true
+fi
+
+if [[ "$swap_pressure" == "true" ]]; then
     swap_file="/swap"
     current_swap_mb=${swap_total:-0}
     current_swap_used_pct=0
