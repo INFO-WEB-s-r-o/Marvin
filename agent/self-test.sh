@@ -2737,6 +2737,34 @@ else
     fi
 fi
 
+# --- 9d, personal-crontab half: weekly-analytics.sh must stay in root's ------
+# personal crontab, not marvin's (#1010). setup-cron.sh documents this job as
+# intentionally OUTSIDE /etc/cron.d/marvin (root's personal crontab, Sun
+# 11:30), so the array-driven check above never sees it — a source⇆live diff
+# has nothing to compare against for a job with no tracked source. On
+# 2026-08-03 the entry silently hopped into marvin's personal crontab; the
+# log-redirect it inherited still assumed root, so every run failed
+# permission-denied before the script itself ever started, for about a week,
+# with no alert. Same WARN-only contract as the rest of §9d.
+marvin_log "INFO" "Self-test: checking weekly-analytics.sh personal-crontab placement"
+
+_wa_in_root=false
+_wa_in_marvin=false
+if crontab -l -u root 2>/dev/null | grep -qE '^[^#]*weekly-analytics\.sh'; then
+    _wa_in_root=true
+fi
+if crontab -l -u marvin 2>/dev/null | grep -qE '^[^#]*weekly-analytics\.sh'; then
+    _wa_in_marvin=true
+fi
+
+if [[ "$_wa_in_marvin" == true ]]; then
+    test_warn "config drift: weekly-analytics.sh cron entry found in marvin's personal crontab (should be root's, per setup-cron.sh) — its log redirect assumes root and will fail permission-denied, silently skipping the job (#1010)"
+elif [[ "$_wa_in_root" == true ]]; then
+    test_pass "config in sync: weekly-analytics.sh cron entry present in root's personal crontab"
+else
+    test_warn "config drift: weekly-analytics.sh cron entry not found in root's or marvin's personal crontab — cannot verify placement"
+fi
+
 # --- 9d, second half: a live config must trace to a MERGED source ------------
 # Issue #961. Everything above answers "does the source in this working tree
 # match the live file?" — which is silent about the failure that actually
