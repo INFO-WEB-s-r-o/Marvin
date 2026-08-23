@@ -316,8 +316,38 @@ if [[ -n "$swap_total" ]] && [[ "$swap_total" -gt 0 ]]; then
 fi
 
 # Automatic swap management — expand if RAM pressure detected
-# Triggers when: available RAM < 200MB AND swap is either missing or >80% used
+#
+# Triggers when: available RAM < 200MB (acute pressure), OR swap is >80%
+# used AND actively paging (chronic pressure). Missing swap alone cannot
+# trigger the chronic branch — see below.
+#
+# The acute-only gate was the ENTIRE trigger until now, and on this host it
+# never fires: mem_available sits around a healthy ~2.5GB even while swap
+# climbs to capacity, because the same swappiness=1 behaviour that made a
+# static >80% alert unactionable (see the comment above, #1047) also means
+# genuinely full, actively-thrashing swap coexists with plenty of free RAM.
+# Measured: swap hit 511/511MB (100%) on 2026-08-17 and sat pinned there for
+# days, and today alone logged 58 "actively paging" WARNs — 0 expand/create
+# attempts appear anywhere in this host's log history. The remediation code
+# below has never executed even once.
+#
+# The added branch reuses swap_percent/swap_delta_pages from the check above.
+# swap_percent holds a real value whenever swap_total>0 (0 only when swap is
+# entirely absent); swap_delta_pages is only set when swap_percent>80.
+# Either being <=0/unset makes the elif false — same "full AND moving"
+# definition as the alert, so a swap-full-but-idle host still doesn't
+# trigger a resize it doesn't need.
+swap_pressure=false
+swap_pressure_reason=""
 if [[ -n "$mem_available" ]] && [[ "$mem_available" -lt 200 ]]; then
+    swap_pressure=true
+    swap_pressure_reason="acute"
+elif [[ "${swap_percent:-0}" -gt 80 ]] && [[ "${swap_delta_pages:-0}" -gt 0 ]]; then
+    swap_pressure=true
+    swap_pressure_reason="chronic"
+fi
+
+if [[ "$swap_pressure" == "true" ]]; then
     swap_file="/swap"
     current_swap_mb=${swap_total:-0}
     current_swap_used_pct=0
@@ -349,14 +379,22 @@ if [[ -n "$mem_available" ]] && [[ "$mem_available" -lt 200 ]]; then
         if [[ "$disk_free_mb" -lt $((new_size_mb + 200)) ]]; then
             marvin_log "WARN" "Insufficient disk space (${disk_free_mb}MB free) to expand swap to ${new_size_mb}MB — skipping"
         else
-            marvin_log "WARN" "RAM pressure + swap ${current_swap_used_pct}% used — expanding swap to ${new_size_mb}MB"
+            if [[ "$swap_pressure_reason" == "chronic" ]]; then
+                marvin_log "WARN" "Chronic swap pressure (${current_swap_used_pct}% used, actively paging) — expanding swap to ${new_size_mb}MB"
+            else
+                marvin_log "WARN" "RAM pressure + swap ${current_swap_used_pct}% used — expanding swap to ${new_size_mb}MB"
+            fi
             swapoff "${swap_file}" 2>/dev/null || true
             if dd if=/dev/zero of="${swap_file}" bs=1M count="$new_size_mb" status=none 2>/dev/null \
                 && chmod 600 "${swap_file}" \
                 && mkswap "${swap_file}" >/dev/null 2>&1 \
                 && swapon "${swap_file}" 2>/dev/null; then
                 marvin_log "INFO" "Expanded swap to ${new_size_mb}MB"
-                ISSUES+=("INFO: Expanded swap to ${new_size_mb}MB due to memory pressure")
+                if [[ "$swap_pressure_reason" == "chronic" ]]; then
+                    ISSUES+=("INFO: Expanded swap to ${new_size_mb}MB due to chronic swap pressure (actively paging)")
+                else
+                    ISSUES+=("INFO: Expanded swap to ${new_size_mb}MB due to memory pressure")
+                fi
             else
                 marvin_log "ERROR" "Failed to expand swap"
                 ISSUES+=("WARNING: Failed to expand swap under memory pressure")
