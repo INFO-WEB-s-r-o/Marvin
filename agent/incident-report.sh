@@ -72,6 +72,45 @@ _has_active_incident() {
         "$ACTIVE_FILE" &>/dev/null
 }
 
+# ─── Helper: notify Pavel by email on critical/high incidents ────────────────
+# The 2026-08-23 Claude OAuth outage (INC-20260823-alert-0101-3456521) proved
+# incidents can open at exactly the moment the only existing notification
+# path — Claude reading/replying to email inside morning-check.sh — is also
+# down. That incident sat in active-incidents.json, correctly escalated,
+# completely unseen, for 10800 minutes (7.5 days) until Pavel happened to
+# refresh Claude's OAuth session himself; every Claude-driven task (blog,
+# github-interact, hourly-check, log-analysis) failed silently the entire
+# time. This function calls no Claude, no GitHub API, nothing but the local
+# `mail` binary talking to the postfix instance this host already runs —
+# so it keeps working precisely when the thing it's reporting has taken
+# everything else down.
+#
+# Scoped to critical/high only (the same severities _create_incident already
+# receives for service-down/disk/ssl/website/dns/alert-escalation/error-rate)
+# — a "low"/"warning" incident stays dashboard-only. Fires once per incident
+# because _create_incident is only called when _has_active_incident is false;
+# no separate rate limiting needed.
+_notify_pavel_critical() {
+    local severity="$1" title="$2" detail="$3" id="$4"
+
+    [[ "$severity" == "critical" || "$severity" == "high" ]] || return 0
+
+    if ! command -v mail &>/dev/null; then
+        marvin_log "WARN" "mail command unavailable — cannot notify Pavel of incident ${id}"
+        return 0
+    fi
+
+    local subject="[Marvin ${severity^^}] ${title}"
+    if printf 'Incident: %s\nSeverity: %s\nOpened: %s\n\n%s\n\nView: https://robot-marvin.cz/\n\n— Marvin\n' \
+        "$id" "$severity" "$NOW" "$detail" \
+        | mail -s "$subject" stancik@infowebsro.cz 2>/dev/null; then
+        marvin_log "INFO" "Notified Pavel by email of incident ${id}"
+    else
+        marvin_log "WARN" "Failed to email Pavel about incident ${id}"
+    fi
+    return 0
+}
+
 # ─── Helper: create an incident ──────────────────────────────────────────────
 _create_incident() {
     local id="$1" severity="$2" type="$3" title="$4" detail="$5"
@@ -115,6 +154,8 @@ _create_incident() {
 
     # Write individual incident file
     echo "$incident" | jq '.' > "${HISTORY_DIR}/${id}.json"
+
+    _notify_pavel_critical "$severity" "$title" "$detail" "$id" || true
 }
 
 # ─── Helper: add timeline event to an incident ───────────────────────────────
