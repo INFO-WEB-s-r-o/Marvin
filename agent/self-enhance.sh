@@ -45,6 +45,18 @@ if [[ "$open_pr_count" -ge 3 ]]; then
     exit 0
 fi
 
+# ─── Pre-flight: refuse to start on a dirty working tree ─────────────────────
+# A prior self-enhance run that got cut off (turn budget, a long-running check,
+# a crash) after editing files but before commit+push+PR leaves modified files
+# sitting directly on main (#1091). Starting a new pass on top of that risks
+# folding an old, unreviewed diff into this run's own changes, or losing it
+# outright to a later `git checkout -- .` / `git clean -fd` (morning-check.sh
+# runs both before every pull). Fail loud and stop rather than build on it.
+if [[ -n "$(git -C "$MARVIN_DIR" status --porcelain 2>/dev/null)" ]]; then
+    marvin_log "CRITICAL" "Working tree is dirty before self-enhancement even started — a previous run likely got cut off after editing but before commit/PR (#1091). Skipping this run. Manual recovery needed: git -C ${MARVIN_DIR} status"
+    exit 1
+fi
+
 # ─── Pre-flight: detect divergence from origin/main since morning sync ───────
 # morning-check.sh pulled at 04:00 UTC. Self-enhance runs at 08:00 UTC. PRs that
 # merged on GitHub in between leave local main 1+ commits behind origin/main,
@@ -523,6 +535,17 @@ EOF
 fi
 
 marvin_log "INFO" "Post-enhancement validation passed"
+
+# ─── Post-run: assert a clean tree ──────────────────────────────────────────
+# enhance.md step 6 requires Claude to commit, push, and open a PR before the
+# session ends. If it got cut off before that step, valid-looking edits are
+# left uncommitted directly on main — the exact exposure #1091 recovered from
+# by hand. Escalate at CRITICAL (picked up by log-alerting.sh/incident-report.sh)
+# rather than a plain log line, since a quiet WARN here reads identically to
+# "nothing to see" until the next scheduled pull silently discards the diff.
+if [[ -n "$(git -C "$MARVIN_DIR" status --porcelain 2>/dev/null)" ]]; then
+    marvin_log "CRITICAL" "Self-enhancement ended with a dirty working tree — Claude likely ran out of turns before committing/opening a PR (#1091). Uncommitted changes are still on disk on main; a scheduled pull could discard them. Manual recovery needed: git -C ${MARVIN_DIR} status"
+fi
 
 # ─── Auto-rebuild web if source files changed ────────────────────────────────
 # Detects web/ source modifications and triggers a full Next.js rebuild+restart.
