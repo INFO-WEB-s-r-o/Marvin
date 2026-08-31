@@ -290,6 +290,17 @@ if [[ "$_health_ok" == "true" ]]; then
     marvin_log_json "INFO" "deploy-web" "Deploy successful" \
         "$(jq -nc --arg old "${_old_build_id:-unknown}" --arg new "$_new_build_id" --argjson wait "$_waited" \
             '{old_build: $old, new_build: $new, health_wait_s: $wait}')"
+    # Record the git tree that's now actually running, so callers can detect
+    # drift by comparing against HEAD:web regardless of which pull (or none)
+    # brought the change in (#1084). Only meaningful when we actually built —
+    # --restart reuses whatever was last built, which may predate HEAD:web.
+    if [[ "$SKIP_BUILD" == "false" ]]; then
+        _web_tree_deployed=$(git -C "${MARVIN_DIR}" rev-parse HEAD:web 2>/dev/null || echo "")
+        if [[ -n "$_web_tree_deployed" ]]; then
+            echo "$_web_tree_deployed" > "${DATA_DIR}/web-deployed-tree" || \
+                marvin_log "WARN" "Failed to write web-deployed-tree marker"
+        fi
+    fi
     exit 0
 else
     marvin_log "ERROR" "Health check failed after ${MAX_HEALTH_WAIT}s — attempting rollback"
