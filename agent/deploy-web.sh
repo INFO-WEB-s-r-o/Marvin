@@ -238,8 +238,11 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
             marvin_log "INFO" "Static assets copied to standalone directory"
         fi
 
-        # Set ownership so marvin-web service (runs as marvin) can read
-        ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || {
+        # Set ownership so marvin-web service (runs as marvin) can read.
+        # -h: BUILD_DIR is npm/Next.js build output, not a hand-verified tree —
+        # a symlink planted there by a dependency must never redirect this
+        # root-run chown onto a target outside the repo (same class as #1096).
+        ${SUDO:+$SUDO} chown -Rh marvin:marvin "${BUILD_DIR}" || {
             marvin_log "WARN" "chown failed — file ownership may be incorrect"
         }
     fi
@@ -333,7 +336,8 @@ else
             marvin_log "WARN" "tar extraction warnings: ${_tar_err}"
         fi
         if [[ "$_tar_ok" == "true" ]]; then
-            ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || true
+            # -h: same symlink-dereference guard as the two chowns above (#1096)
+            ${SUDO:+$SUDO} chown -Rh marvin:marvin "${BUILD_DIR}" || true
 
             marvin_log "INFO" "Backup restored — restarting service..."
             if ${SUDO:+$SUDO} systemctl restart marvin-web; then
