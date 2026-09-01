@@ -163,12 +163,23 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
         # non-root/passwordless-sudo path builds as the invoking user, and
         # chowning to marvin there reproduces the same EACCES deterministically
         # instead of fixing it (#1078).
-        if [[ -d "${BUILD_DIR}" ]]; then
-            _build_user="marvin"
-            [[ "$_run_as_marvin" != "true" ]] && _build_user="$(id -un)"
-            ${SUDO:+$SUDO} chown -R "${_build_user}:${_build_user}" "${BUILD_DIR}" || \
-                marvin_log "WARN" "pre-flight chown to ${_build_user} failed — build may hit EACCES"
-        fi
+        #
+        # Covers all of WEB_SRC, not just BUILD_DIR: a root-run `git pull`
+        # (morning-check.sh) leaves any tracked file touched by a merge
+        # commit owned by root, including config Next.js writes to at build
+        # time (tsconfig.json, next-env.d.ts). That went unnoticed for months
+        # because it only surfaces as EACCES once the TypeScript-check phase
+        # is reached, and until 2026-09-01 a build-breaking bug earlier in
+        # the pipeline meant the build always died first without ever
+        # reaching that phase (#1094).
+        _build_user="marvin"
+        [[ "$_run_as_marvin" != "true" ]] && _build_user="$(id -un)"
+        # Exclude node_modules — npm ci above already installed it as
+        # _build_user, and it is by far the largest subtree here, so
+        # recursing into it again would be pure overhead.
+        ${SUDO:+$SUDO} find "${WEB_SRC}" -mindepth 1 -maxdepth 1 ! -name node_modules \
+            -exec chown -R "${_build_user}:${_build_user}" {} + || \
+            marvin_log "WARN" "pre-flight chown to ${_build_user} failed — build may hit EACCES"
 
         marvin_log "INFO" "Building Next.js app (timeout ${BUILD_TIMEOUT}s)..."
         build_start=$(date +%s)
