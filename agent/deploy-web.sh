@@ -177,8 +177,13 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
         # Exclude node_modules — npm ci above already installed it as
         # _build_user, and it is by far the largest subtree here, so
         # recursing into it again would be pure overhead.
+        #
+        # -h: never dereference symlinks. Unlike BUILD_DIR (build output),
+        # WEB_SRC is the tracked source tree — a symlink merged into web/
+        # pointing outside the repo would otherwise hand _build_user
+        # ownership of whatever it points at, run as root via ${SUDO} (#1096).
         ${SUDO:+$SUDO} find "${WEB_SRC}" -mindepth 1 -maxdepth 1 ! -name node_modules \
-            -exec chown -R "${_build_user}:${_build_user}" {} + || \
+            -exec chown -Rh "${_build_user}:${_build_user}" {} + || \
             marvin_log "WARN" "pre-flight chown to ${_build_user} failed — build may hit EACCES"
 
         marvin_log "INFO" "Building Next.js app (timeout ${BUILD_TIMEOUT}s)..."
