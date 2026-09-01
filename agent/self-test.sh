@@ -2915,6 +2915,10 @@ if [[ ! -f "$_jail_src" ]]; then
 elif [[ ! -f "$_jail_live" ]]; then
     test_warn "config drift: live fail2ban jail.local not present (${_jail_live})"
 else
+    # \047 octal escape requires GNU awk (gawk) — same dependency as the cron
+    # drift check above (line 2742); this host's /usr/bin/awk is gawk 5.2.1,
+    # but under mawk this regex silently never matches, degrading to a
+    # permanent WARN rather than a false PASS.
     _jail_generated=$(awk '/cat > \/etc\/fail2ban\/jail\.local << \047EOF\047/{f=1;next} f&&/^EOF$/{exit} f' "$_jail_src" 2>/dev/null)
     if [[ -z "$_jail_generated" ]]; then
         test_warn "config drift: could not extract fail2ban jail.local heredoc from bootstrap.sh"
