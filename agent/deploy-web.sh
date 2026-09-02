@@ -217,13 +217,19 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
             fi
         }
 
+        # npm ci/install runs before `next build` touches .next/standalone, so
+        # the currently-serving build is untouched by a failure here and the
+        # running service doesn't depend on ${WEB_SRC}/node_modules at runtime
+        # (standalone output bundles its own) — no rollback/restart needed (#1102).
         if [[ -f "${WEB_SRC}/package-lock.json" ]]; then
             if ! _run_npm npm ci --prefix "${WEB_SRC}" --loglevel=error 2>&1 | tail -5; then
-                _rollback_and_exit "npm ci failed"
+                marvin_log "ERROR" "npm ci failed — service untouched, nothing to roll back"
+                exit 1
             fi
         else
             if ! _run_npm npm install --prefix "${WEB_SRC}" --loglevel=error 2>&1 | tail -5; then
-                _rollback_and_exit "npm install failed"
+                marvin_log "ERROR" "npm install failed — service untouched, nothing to roll back"
+                exit 1
             fi
         fi
 
