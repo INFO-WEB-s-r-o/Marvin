@@ -13,12 +13,14 @@
 #   5. Gracefully restart marvin-web service
 #   6. Wait for health check (HTTP 200 + JS asset integrity)
 #
-# Recovery: On any failure once a build has been backed up — npm/build
-# failure, invalid build output, or post-deploy health check failure — the
-# script automatically rolls back to the previous build from
-# ${DATA_DIR}/web-backup/ and restarts the service. If rollback also fails,
-# health-monitor.sh (cron every 5 min) detects persistent failures and
-# restarts the service (but cannot itself repair a missing/invalid build).
+# Recovery: On any failure once a build has been backed up — build failure,
+# invalid build output, service restart failure, or post-deploy health check
+# failure — the script automatically rolls back to the previous build from
+# ${DATA_DIR}/web-backup/ and restarts the service. (npm ci/install failures
+# happen before a build exists to back up, so they exit 1 with the service
+# left untouched — see #1102.) If rollback also fails, health-monitor.sh
+# (cron every 5 min) detects persistent failures and restarts the service
+# (but cannot itself repair a missing/invalid build).
 #
 # Privileges: This script requires root or a sudoers rule granting the
 # running user passwordless access to systemctl and chown. Example:
