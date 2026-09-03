@@ -67,7 +67,9 @@ track_freed "Marvin run logs (>14d)" "$run_logs_size"
 # Covers every one-file-per-day .log family in LOGS_DIR:
 #   - ????-??-??.log                    (bare daily log)
 #   - fix-issues-????-??-??.log         (agent/fix-issues.sh)
-#   - *-????-??-??.findings.log         (e.g. morning-check-*.findings.log)
+#   - *-????-??-??.findings.log         (no current producer confirmed — matches
+#                                         legacy files observed on the live host,
+#                                         e.g. morning-check-2026-07-30.findings.log)
 # Deliberately excludes non-dated append logs like incidents.log and
 # morning-actions.log, which have no per-day filename and are kept indefinitely.
 
