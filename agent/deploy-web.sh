@@ -33,7 +33,7 @@
 #
 # Exit codes:
 #   0 = success
-#   1 = pre-flight check failed (nothing built or touched — no rollback needed)
+#   1 = pre-flight check or npm install failed (nothing built or touched — no rollback needed)
 #   2 = build, restart, or health check failed but rollback succeeded (service recovered)
 #   3 = manual intervention required (no backup, extraction failure,
 #       restart failure, or post-rollback health check failure)
