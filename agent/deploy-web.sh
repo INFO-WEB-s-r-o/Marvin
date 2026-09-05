@@ -13,10 +13,14 @@
 #   5. Gracefully restart marvin-web service
 #   6. Wait for health check (HTTP 200 + JS asset integrity)
 #
-# Recovery: On health check failure, the script automatically rolls back to
-# the previous build from ${DATA_DIR}/web-backup/ and restarts the service.
-# If rollback also fails, health-monitor.sh (cron every 5 min) detects
-# persistent failures and restarts the service.
+# Recovery: On any failure once a build has been backed up — build failure,
+# invalid build output, service restart failure, or post-deploy health check
+# failure — the script automatically rolls back to the previous build from
+# ${DATA_DIR}/web-backup/ and restarts the service. (npm ci/install failures
+# happen before a build exists to back up, so they exit 1 with the service
+# left untouched — see #1102.) If rollback also fails, health-monitor.sh
+# (cron every 5 min) detects persistent failures and restarts the service
+# (but cannot itself repair a missing/invalid build).
 #
 # Privileges: This script requires root or a sudoers rule granting the
 # running user passwordless access to systemctl and chown. Example:
@@ -29,8 +33,8 @@
 #
 # Exit codes:
 #   0 = success
-#   1 = build failed or pre-flight check failed
-#   2 = health check failed but rollback succeeded (service recovered)
+#   1 = pre-flight check or npm install failed (nothing built or touched — no rollback needed)
+#   2 = build, restart, or health check failed but rollback succeeded (service recovered)
 #   3 = manual intervention required (no backup, extraction failure,
 #       restart failure, or post-rollback health check failure)
 # =============================================================================
@@ -48,6 +52,81 @@ MAX_HEALTH_WAIT=60  # seconds to wait for health check
 BUILD_TIMEOUT=600   # seconds before killing a hung build
 
 marvin_log_json "INFO" "deploy-web" "Deploy script starting"
+
+# ─── Rollback ────────────────────────────────────────────────────────────────
+# Shared by every failure path once a backup exists: a build-stage failure
+# (npm, `next build`, or invalid output) leaves .next/standalone deleted or
+# half-written, exactly like a health-check failure does — `next build`
+# unconditionally deletes the previous standalone/ before writing the new
+# one, so a build that never finishes leaves nothing there (2026-09-02: this
+# is what turned a 25s build error into a 3.5h outage, because only the
+# health-check-failure path used to call this). Logs $1 as the reason, then
+# either exits 2 (rolled back, service recovered) or 3 (manual intervention).
+_rollback_and_exit() {
+    local _reason="$1"
+    marvin_log "ERROR" "${_reason} — attempting rollback"
+
+    local _rollback_file
+    _rollback_file=$(ls -t "${BACKUP_DIR}"/build-*.tar.gz 2>/dev/null | head -1 || true)
+
+    if [[ -z "$_rollback_file" ]]; then
+        marvin_log "ERROR" "No backup available for rollback — manual intervention required"
+        marvin_log "WARN" "health-monitor.sh will detect persistent failures (runs every 5 min)"
+        exit 3
+    fi
+
+    marvin_log "INFO" "Rolling back from: ${_rollback_file}"
+
+    local _tar_err _tar_ok
+    _tar_err=$(tar -xzf "$_rollback_file" -C "${WEB_SRC}" 2>&1) && _tar_ok=true || _tar_ok=false
+    if [[ -n "$_tar_err" ]]; then
+        marvin_log "WARN" "tar extraction warnings: ${_tar_err}"
+    fi
+    if [[ "$_tar_ok" != "true" ]]; then
+        marvin_log "ERROR" "Failed to extract backup from ${_rollback_file}"
+        exit 3
+    fi
+
+    # Defense-in-depth: some older backups were taken before the static-copy
+    # step below existed, so standalone/.next/static can be absent even after
+    # a "successful" extraction. Re-derive it from the restored top-level
+    # .next/static rather than trusting the archive shipped a complete tree.
+    if [[ -d "${BUILD_DIR}/static" && -d "${STANDALONE_DIR}" ]]; then
+        mkdir -p "${STANDALONE_DIR}/.next/static"
+        cp -a "${BUILD_DIR}/static/." "${STANDALONE_DIR}/.next/static/" || \
+            marvin_log "WARN" "Failed to re-copy static assets into restored standalone dir"
+    fi
+
+    ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || true
+
+    marvin_log "INFO" "Backup restored — restarting service..."
+    if ! ${SUDO:+$SUDO} systemctl restart marvin-web; then
+        marvin_log "ERROR" "Failed to restart service after rollback"
+        exit 3
+    fi
+
+    # Health check on rolled-back build (same retry pattern as deploy)
+    local _rb_max_wait=30 _rb_waited=0 _rb_ok=false _rb_code
+    marvin_log "INFO" "Rollback health check (max ${_rb_max_wait}s)..."
+    while [[ "$_rb_waited" -lt "$_rb_max_wait" ]]; do
+        sleep 3
+        _rb_waited=$((_rb_waited + 3))
+        _rb_code=$(curl -so /dev/null -w '%{http_code}' --max-time 5 "${LOCAL_URL}/" 2>/dev/null || echo "000")
+        if [[ "$_rb_code" == "200" ]]; then
+            _rb_ok=true
+            break
+        fi
+        marvin_log "INFO" "Rollback health check: HTTP ${_rb_code} (waiting...)"
+    done
+
+    if [[ "$_rb_ok" == "true" ]]; then
+        marvin_log "INFO" "Rollback successful — service restored (HTTP ${_rb_code}, ${_rb_waited}s)"
+        exit 2
+    else
+        marvin_log "WARN" "Rollback service started but health check failed after ${_rb_max_wait}s (last HTTP ${_rb_code})"
+        exit 3
+    fi
+}
 
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 SKIP_BUILD=false
@@ -140,14 +219,18 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
             fi
         }
 
+        # npm ci/install runs before `next build` touches .next/standalone, so
+        # the currently-serving build is untouched by a failure here and the
+        # running service doesn't depend on ${WEB_SRC}/node_modules at runtime
+        # (standalone output bundles its own) — no rollback/restart needed (#1102).
         if [[ -f "${WEB_SRC}/package-lock.json" ]]; then
             if ! _run_npm npm ci --prefix "${WEB_SRC}" --loglevel=error 2>&1 | tail -5; then
-                marvin_log "ERROR" "npm ci failed"
+                marvin_log "ERROR" "npm ci failed — service untouched, nothing to roll back"
                 exit 1
             fi
         else
             if ! _run_npm npm install --prefix "${WEB_SRC}" --loglevel=error 2>&1 | tail -5; then
-                marvin_log "ERROR" "npm install failed"
+                marvin_log "ERROR" "npm install failed — service untouched, nothing to roll back"
                 exit 1
             fi
         fi
@@ -197,30 +280,26 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
         build_duration=$((build_end - build_start))
 
         if [[ "$build_exit" -eq 124 ]]; then
-            marvin_log "ERROR" "Next.js build timed out after ${BUILD_TIMEOUT}s — killing hung process"
-            exit 1
+            _rollback_and_exit "Next.js build timed out after ${BUILD_TIMEOUT}s — killed hung process"
         fi
 
         if [[ "$build_exit" -ne 0 ]]; then
-            marvin_log "ERROR" "Next.js build failed (exit ${build_exit}, ${build_duration}s)"
             # Log last 20 lines of build output for debugging
             echo "$build_output" | tail -20 | while IFS= read -r line; do
                 marvin_log "ERROR" "  build: ${line}"
             done
-            exit 1
+            _rollback_and_exit "Next.js build failed (exit ${build_exit}, ${build_duration}s)"
         fi
 
         marvin_log "INFO" "Build complete (${build_duration}s)"
 
         # Validate build output
         if [[ ! -f "${STANDALONE_DIR}/server.js" ]]; then
-            marvin_log "ERROR" "Build produced no standalone/server.js — output invalid"
-            exit 1
+            _rollback_and_exit "Build produced no standalone/server.js — output invalid"
         fi
 
         if [[ ! -d "${BUILD_DIR}/static" ]]; then
-            marvin_log "ERROR" "Build produced no .next/static/ directory — output invalid"
-            exit 1
+            _rollback_and_exit "Build produced no .next/static/ directory — output invalid"
         fi
 
         _new_build_id=$(cat "${BUILD_DIR}/BUILD_ID" 2>/dev/null || echo "unknown")
@@ -232,8 +311,7 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
         if [[ -d "${BUILD_DIR}/static" && -d "${STANDALONE_DIR}" ]]; then
             mkdir -p "${STANDALONE_DIR}/.next/static"
             if ! cp -a "${BUILD_DIR}/static/." "${STANDALONE_DIR}/.next/static/"; then
-                marvin_log "ERROR" "Failed to copy static assets to standalone — deploy would cause JS 404s"
-                exit 1
+                _rollback_and_exit "Failed to copy static assets to standalone — deploy would cause JS 404s"
             fi
             marvin_log "INFO" "Static assets copied to standalone directory"
         fi
@@ -259,8 +337,7 @@ fi
 
 marvin_log "INFO" "Restarting marvin-web service..."
 if ! ${SUDO:+$SUDO} systemctl restart marvin-web; then
-    marvin_log "ERROR" "Failed to restart marvin-web service — manual intervention required"
-    exit 3
+    _rollback_and_exit "Failed to restart marvin-web service"
 fi
 
 # ─── Health check ────────────────────────────────────────────────────────────
