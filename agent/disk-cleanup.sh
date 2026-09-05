@@ -64,13 +64,21 @@ done < <(find "${LOGS_DIR}" -type f -name "*.md" -mtime +14 -print0 2>/dev/null)
 track_freed "Marvin run logs (>14d)" "$run_logs_size"
 
 # ─── 4. Old Marvin daily logs (>30 days) ────────────────────────────────────
+# Covers every one-file-per-day .log family in LOGS_DIR:
+#   - ????-??-??.log                    (bare daily log)
+#   - fix-issues-????-??-??.log         (agent/fix-issues.sh)
+#   - *-????-??-??.findings.log         (no current producer confirmed — matches
+#                                         legacy files observed on the live host,
+#                                         e.g. morning-check-2026-07-30.findings.log)
+# Deliberately excludes non-dated append logs like incidents.log and
+# morning-actions.log, which have no per-day filename and are kept indefinitely.
 
 daily_logs_size=0
 while IFS= read -r -d '' f; do
     fsize=$(stat -c%s "$f" 2>/dev/null || echo 0)
     daily_logs_size=$((daily_logs_size + fsize))
     marvin_is_dry_run || rm -f "$f"
-done < <(find "${LOGS_DIR}" -type f -name "????-??-??.log" -mtime +30 -print0 2>/dev/null)
+done < <(find "${LOGS_DIR}" -type f \( -name "????-??-??.log" -o -name "fix-issues-????-??-??.log" -o -name "*-????-??-??.findings.log" \) -mtime +30 -print0 2>/dev/null)
 track_freed "Marvin daily logs (>30d)" "$daily_logs_size"
 
 # ─── 5. Compress time-series JSONL files (>30 days) ─────────────────────────
