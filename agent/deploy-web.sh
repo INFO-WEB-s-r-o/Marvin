@@ -97,7 +97,8 @@ _rollback_and_exit() {
             marvin_log "WARN" "Failed to re-copy static assets into restored standalone dir"
     fi
 
-    ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || true
+    # -h: same symlink-dereference guard as the build-path chowns above (#1096)
+    ${SUDO:+$SUDO} chown -Rh marvin:marvin "${BUILD_DIR}" || true
 
     marvin_log "INFO" "Backup restored — restarting service..."
     if ! ${SUDO:+$SUDO} systemctl restart marvin-web; then
@@ -399,58 +400,8 @@ if [[ "$_health_ok" == "true" ]]; then
     fi
     exit 0
 else
-    marvin_log "ERROR" "Health check failed after ${MAX_HEALTH_WAIT}s — attempting rollback"
-
-    # Find the most recent backup to restore
-    _rollback_file=$(ls -t "${BACKUP_DIR}"/build-*.tar.gz 2>/dev/null | head -1 || true)
-
-    if [[ -n "$_rollback_file" ]]; then
-        marvin_log "INFO" "Rolling back from: ${_rollback_file}"
-
-        # Extract backup over the current build
-        _tar_err=$(tar -xzf "$_rollback_file" -C "${WEB_SRC}" 2>&1) && _tar_ok=true || _tar_ok=false
-        if [[ -n "$_tar_err" ]]; then
-            marvin_log "WARN" "tar extraction warnings: ${_tar_err}"
-        fi
-        if [[ "$_tar_ok" == "true" ]]; then
-            # -h: same symlink-dereference guard as the two chowns above (#1096)
-            ${SUDO:+$SUDO} chown -Rh marvin:marvin "${BUILD_DIR}" || true
-
-            marvin_log "INFO" "Backup restored — restarting service..."
-            if ${SUDO:+$SUDO} systemctl restart marvin-web; then
-                # Health check on rolled-back build (same retry pattern as deploy)
-                _rb_max_wait=30
-                _rb_waited=0
-                _rb_ok=false
-                marvin_log "INFO" "Rollback health check (max ${_rb_max_wait}s)..."
-                while [[ "$_rb_waited" -lt "$_rb_max_wait" ]]; do
-                    sleep "$_sleep_interval"
-                    _rb_waited=$((_rb_waited + _sleep_interval))
-                    _rb_code=$(curl -so /dev/null -w '%{http_code}' --max-time 5 "${LOCAL_URL}/" 2>/dev/null || echo "000")
-                    if [[ "$_rb_code" == "200" ]]; then
-                        _rb_ok=true
-                        break
-                    fi
-                    marvin_log "INFO" "Rollback health check: HTTP ${_rb_code} (waiting...)"
-                done
-                if [[ "$_rb_ok" == "true" ]]; then
-                    marvin_log "INFO" "Rollback successful — service restored (HTTP ${_rb_code}, ${_rb_waited}s)"
-                    exit 2
-                else
-                    marvin_log "WARN" "Rollback service started but health check failed after ${_rb_max_wait}s (last HTTP ${_rb_code})"
-                    exit 3
-                fi
-            else
-                marvin_log "ERROR" "Failed to restart service after rollback"
-                exit 3
-            fi
-        else
-            marvin_log "ERROR" "Failed to extract backup from ${_rollback_file}"
-            exit 3
-        fi
-    else
-        marvin_log "ERROR" "No backup available for rollback — manual intervention required"
-        marvin_log "WARN" "health-monitor.sh will detect persistent failures (runs every 5 min)"
-        exit 3
-    fi
+    # Shared with every build-stage failure path (#1107) — was a hand-written
+    # duplicate that carried its own -h fix but not the static re-copy
+    # defense-in-depth step, leaving the two rollback code paths to drift.
+    _rollback_and_exit "Health check failed after ${MAX_HEALTH_WAIT}s"
 fi
