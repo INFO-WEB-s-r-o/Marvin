@@ -132,7 +132,11 @@ backend = systemd
 # happens to match our own traffic — but 50 of the 62 limit_req events in
 # error.log are 127.0.0.1 (self-probes, the Grafana proxy path), so the first
 # jail that reads them would ban localhost. Prerequisite, not a preference.
-ignoreip = 127.0.0.1/8 ::1
+# 46.173.197.15 is the operator's own key-based SSH source (41 Accepted
+# publickey logins, zero failures per #975) — added live out of band as a
+# safeguard against ever banning it, captured here so a rebuild doesn't
+# silently drop that protection (#1110).
+ignoreip = 127.0.0.1/8 ::1 46.173.197.15
 
 [sshd]
 enabled = true
