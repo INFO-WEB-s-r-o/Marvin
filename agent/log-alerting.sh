@@ -146,9 +146,17 @@ if [[ -n "$one_hour_ago" ]]; then
 fi
 
 # ─── 4. Detect service restart loops ────────────────────────────────────────
-# If a service was restarted > 2 times today, it's probably in a crash loop
+# If a service was restarted > 2 times in the last 2 hours, it's probably in a
+# crash loop. Windowed the same way as section 2 (CRITICAL events) — without
+# this, a crash loop that already recovered stays "active" for the rest of
+# the UTC day just because 3+ old "attempting restart" lines are still in
+# today's log file (#1099: paged Pavel 5.5h after the service had stabilized).
 
 restart_lines=$(grep 'attempting restart' "$LOG_FILE" 2>/dev/null || true)
+_restart_cutoff=$(date -u -d "2 hours ago" +%Y-%m-%dT%H:%M 2>/dev/null || echo "")
+if [[ -n "$_restart_cutoff" && -n "$restart_lines" ]]; then
+    restart_lines=$(echo "$restart_lines" | awk -v cutoff="[$_restart_cutoff" '$1 >= cutoff' || true)
+fi
 if [[ -n "$restart_lines" ]]; then
     while IFS= read -r line; do
         count=$(echo "$line" | awk '{print $1}')
@@ -156,7 +164,7 @@ if [[ -n "$restart_lines" ]]; then
         if [[ "$count" -gt 2 ]]; then
             svc_name=$(echo "$service_msg" | grep -oP '\w+(?= is down)' || echo "unknown")
             alert_id="restart-loop-${svc_name}"
-            NEW_ALERTS+=("$(_make_alert "$alert_id" "critical" "Service restart loop: ${svc_name}" "${count} restart attempts today" "$count")")
+            NEW_ALERTS+=("$(_make_alert "$alert_id" "critical" "Service restart loop: ${svc_name}" "${count} restart attempts in the last 2h" "$count")")
         fi
     done < <(echo "$restart_lines" | sed 's/^\[[^]]*\] //' | sort | uniq -c | sort -rn)
 fi
