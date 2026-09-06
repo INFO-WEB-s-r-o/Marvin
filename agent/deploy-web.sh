@@ -97,7 +97,8 @@ _rollback_and_exit() {
             marvin_log "WARN" "Failed to re-copy static assets into restored standalone dir"
     fi
 
-    ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || true
+    # -h: same symlink-dereference guard as the build-path chowns above (#1096)
+    ${SUDO:+$SUDO} chown -Rh marvin:marvin "${BUILD_DIR}" || true
 
     marvin_log "INFO" "Backup restored — restarting service..."
     if ! ${SUDO:+$SUDO} systemctl restart marvin-web; then
@@ -246,12 +247,28 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
         # non-root/passwordless-sudo path builds as the invoking user, and
         # chowning to marvin there reproduces the same EACCES deterministically
         # instead of fixing it (#1078).
-        if [[ -d "${BUILD_DIR}" ]]; then
-            _build_user="marvin"
-            [[ "$_run_as_marvin" != "true" ]] && _build_user="$(id -un)"
-            ${SUDO:+$SUDO} chown -R "${_build_user}:${_build_user}" "${BUILD_DIR}" || \
-                marvin_log "WARN" "pre-flight chown to ${_build_user} failed — build may hit EACCES"
-        fi
+        #
+        # Covers all of WEB_SRC, not just BUILD_DIR: a root-run `git pull`
+        # (morning-check.sh) leaves any tracked file touched by a merge
+        # commit owned by root, including config Next.js writes to at build
+        # time (tsconfig.json, next-env.d.ts). That went unnoticed for months
+        # because it only surfaces as EACCES once the TypeScript-check phase
+        # is reached, and until 2026-09-01 a build-breaking bug earlier in
+        # the pipeline meant the build always died first without ever
+        # reaching that phase (#1094).
+        _build_user="marvin"
+        [[ "$_run_as_marvin" != "true" ]] && _build_user="$(id -un)"
+        # Exclude node_modules — npm ci above already installed it as
+        # _build_user, and it is by far the largest subtree here, so
+        # recursing into it again would be pure overhead.
+        #
+        # -h: never dereference symlinks. Unlike BUILD_DIR (build output),
+        # WEB_SRC is the tracked source tree — a symlink merged into web/
+        # pointing outside the repo would otherwise hand _build_user
+        # ownership of whatever it points at, run as root via ${SUDO} (#1096).
+        ${SUDO:+$SUDO} find "${WEB_SRC}" -mindepth 1 -maxdepth 1 ! -name node_modules \
+            -exec chown -Rh "${_build_user}:${_build_user}" {} + || \
+            marvin_log "WARN" "pre-flight chown to ${_build_user} failed — build may hit EACCES"
 
         marvin_log "INFO" "Building Next.js app (timeout ${BUILD_TIMEOUT}s)..."
         build_start=$(date +%s)
@@ -300,8 +317,11 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
             marvin_log "INFO" "Static assets copied to standalone directory"
         fi
 
-        # Set ownership so marvin-web service (runs as marvin) can read
-        ${SUDO:+$SUDO} chown -R marvin:marvin "${BUILD_DIR}" || {
+        # Set ownership so marvin-web service (runs as marvin) can read.
+        # -h: BUILD_DIR is npm/Next.js build output, not a hand-verified tree —
+        # a symlink planted there by a dependency must never redirect this
+        # root-run chown onto a target outside the repo (same class as #1096).
+        ${SUDO:+$SUDO} chown -Rh marvin:marvin "${BUILD_DIR}" || {
             marvin_log "WARN" "chown failed — file ownership may be incorrect"
         }
     fi
@@ -380,5 +400,8 @@ if [[ "$_health_ok" == "true" ]]; then
     fi
     exit 0
 else
+    # Shared with every build-stage failure path (#1107) — was a hand-written
+    # duplicate that carried its own -h fix but not the static re-copy
+    # defense-in-depth step, leaving the two rollback code paths to drift.
     _rollback_and_exit "Health check failed after ${MAX_HEALTH_WAIT}s"
 fi
