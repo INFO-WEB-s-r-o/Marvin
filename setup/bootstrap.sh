@@ -123,6 +123,10 @@ OPERATOR_SSH_IP="${OPERATOR_SSH_IP:-}"
 if [[ -z "$OPERATOR_SSH_IP" && -f "${MARVIN_DIR}/.env" ]]; then
     OPERATOR_SSH_IP=$(grep -oP '^OPERATOR_SSH_IP=\K.+' "${MARVIN_DIR}/.env" 2>/dev/null || echo "")
 fi
+if [[ -n "$OPERATOR_SSH_IP" && ! "$OPERATOR_SSH_IP" =~ ^[0-9a-fA-F:./]+$ ]]; then
+    log "WARNING: OPERATOR_SSH_IP='${OPERATOR_SSH_IP}' doesn't look like an address/CIDR — ignoring it."
+    OPERATOR_SSH_IP=""
+fi
 cat > /etc/fail2ban/jail.local << 'EOF'
 [DEFAULT]
 bantime = 3600
