@@ -119,6 +119,14 @@ echo "y" | ufw enable
 log "Firewall configured."
 
 log "Configuring fail2ban..."
+OPERATOR_SSH_IP="${OPERATOR_SSH_IP:-}"
+if [[ -z "$OPERATOR_SSH_IP" && -f "${MARVIN_DIR}/.env" ]]; then
+    OPERATOR_SSH_IP=$(grep -oP '^OPERATOR_SSH_IP=\K.+' "${MARVIN_DIR}/.env" 2>/dev/null || echo "")
+fi
+if [[ -n "$OPERATOR_SSH_IP" && ! "$OPERATOR_SSH_IP" =~ ^[0-9a-fA-F:./]+$ ]]; then
+    log "WARNING: OPERATOR_SSH_IP='${OPERATOR_SSH_IP}' doesn't look like an address/CIDR — ignoring it."
+    OPERATOR_SSH_IP=""
+fi
 cat > /etc/fail2ban/jail.local << 'EOF'
 [DEFAULT]
 bantime = 3600
@@ -132,6 +140,10 @@ backend = systemd
 # happens to match our own traffic — but 50 of the 62 limit_req events in
 # error.log are 127.0.0.1 (self-probes, the Grafana proxy path), so the first
 # jail that reads them would ban localhost. Prerequisite, not a preference.
+# An operator SSH source may also need protection against self-banning (see
+# #975) — that address is never written here. If OPERATOR_SSH_IP is set in
+# .env, it's appended below after this heredoc, so a rebuild picks it up
+# without the literal address ever living in tracked source (#1110, #1112).
 ignoreip = 127.0.0.1/8 ::1
 
 [sshd]
@@ -201,6 +213,11 @@ filter = dovecot[mode=aggressive]
 maxretry = 3
 bantime = 86400
 EOF
+
+if [[ -n "$OPERATOR_SSH_IP" ]]; then
+    sed -i "s|^ignoreip = 127.0.0.1/8 ::1\$|ignoreip = 127.0.0.1/8 ::1 ${OPERATOR_SSH_IP}|" /etc/fail2ban/jail.local
+    log "Added OPERATOR_SSH_IP from .env to fail2ban ignoreip."
+fi
 
 systemctl enable fail2ban
 systemctl restart fail2ban
