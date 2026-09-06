@@ -3849,6 +3849,40 @@ else
     fi
 fi
 
+# ─── 9v. Repeated deploy-web.sh build failures across multiple days ───────────
+# 2026-09-01 through 2026-09-06: `deploy-web.sh` failed to build every single
+# day (Next.js 16's trace-all break on an env-derived path in db/connection.ts,
+# #1094), and every failure rolled back safely and silently — nothing
+# escalates a *recurring* build failure the way health-monitor escalates a
+# *down* service. The fix (PR #1095) has existed since day one and passed
+# six rounds of review, but sat blocked on a stale approval (a commit landed
+# after the reviewer's sign-off) while the same build kept failing daily.
+# Self-test can't fix approval churn, but it can stop a broken deploy from
+# going unnoticed for a week: WARN when the same failure signature shows up
+# across several distinct days of daily logs.
+
+marvin_log "INFO" "Self-test: checking for repeated deploy-web.sh build failures across days"
+
+_dwf_days=0
+_dwf_checked=0
+for _dwf_i in 0 1 2 3 4 5 6; do
+    _dwf_date=$(date -u -d "-${_dwf_i} day" +%Y-%m-%d 2>/dev/null) || continue
+    _dwf_log="${DATA_DIR}/logs/${_dwf_date}.log"
+    [[ -r "$_dwf_log" ]] || continue
+    _dwf_checked=$((_dwf_checked + 1))
+    if grep -q "deploy-web.sh failed" "$_dwf_log" 2>/dev/null; then
+        _dwf_days=$((_dwf_days + 1))
+    fi
+done
+
+if [[ "$_dwf_checked" -eq 0 ]]; then
+    test_warn "deploy-web failure trend: no daily logs found in the last 7 days to check"
+elif [[ "$_dwf_days" -ge 3 ]]; then
+    test_warn "deploy-web failure trend: 'deploy-web.sh failed' appeared on ${_dwf_days}/${_dwf_checked} of the last daily logs — a build failure has been recurring for days without a merged fix; check for a stuck PR/issue (#1094)"
+else
+    test_pass "deploy-web failure trend: 'deploy-web.sh failed' appeared on ${_dwf_days}/${_dwf_checked} of the last daily logs (below the recurring-failure threshold)"
+fi
+
 # ─── 10. Security scoring system ──────────────────────────────────────────────
 # Grades the server A-F across multiple security dimensions
 
