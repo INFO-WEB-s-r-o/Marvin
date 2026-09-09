@@ -1043,14 +1043,20 @@ if [[ -f "${LOGS_DIR}/${TODAY}.log" ]]; then
         || true
 fi
 
-# ─── Trigger incident detection on critical status ───────────────────────────
-# Run incident-report.sh in detect+summary mode when critical issues are found.
-# Deliberately omits --close: auto-resolution runs only via the twice-daily cron
-# (00:15, 12:15 UTC) to avoid resolving transient recoveries too eagerly.
+# ─── Trigger incident detection/resolution ───────────────────────────────────
+# Run incident-report.sh in detect+close+summary mode when critical issues are
+# found, OR when an incident is already active (it may have recovered since).
+# #1103: --close previously ran only via the twice-daily cron (00:15, 12:15
+# UTC), so a service-down/website-down incident that self-healed in between
+# stayed "active" for up to ~12h, inflating reported duration_minutes and MTTR
+# (one real 55min outage was reported as 329min). --close live-checks the same
+# signals (systemctl, curl) already checked by that cron, just as often as
+# --detect runs here — same cadence alert-escalation resolution already uses.
 # Runs async (background + disown) to avoid slowing down the 5-min health check.
-if [[ "$STATUS" == "critical" ]]; then
+if [[ "$STATUS" == "critical" ]] || jq -e '.incidents[] | select(.status == "active")' \
+    "${DATA_DIR}/incidents/active-incidents.json" &>/dev/null; then
     if [[ -x "${MARVIN_DIR}/agent/incident-report.sh" ]]; then
-        bash "${MARVIN_DIR}/agent/incident-report.sh" --detect --summary \
+        bash "${MARVIN_DIR}/agent/incident-report.sh" --detect --close --summary \
             >> "${LOGS_DIR}/incidents.log" 2>&1 &
         disown 2>/dev/null || true
     fi
