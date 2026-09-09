@@ -30,11 +30,11 @@ LOCK_FILE="${INCIDENTS_DIR}/.active-incidents.lock"
 HISTORY_DIR="${INCIDENTS_DIR}/history"
 SUMMARY_FILE="${INCIDENTS_DIR}/summary.json"
 
-# service-down-*/website-down now get re-checked every 5 minutes (see above),
-# so a single point-in-time pass must not close them immediately — a flapping
+# All auto-close arms now get re-checked every 5 minutes (see above), so a
+# single point-in-time pass must not close them immediately — a flapping
 # service would self-heal for one tick, close the incident, then reopen a
-# brand-new one (new ID, fresh critical email) on the next down tick. Require
-# this many *consecutive* passing --close invocations before resolving.
+# brand-new one (new ID, fresh critical/high email) on the next down tick.
+# Require this many *consecutive* passing --close invocations before resolving.
 RECOVERY_CONFIRM_CHECKS=2
 
 mkdir -p "$INCIDENTS_DIR" "$HISTORY_DIR"
@@ -169,8 +169,8 @@ _create_incident() {
 }
 
 # ─── Helper: set an incident's recovery-confirm counter ──────────────────────
-# Tracks consecutive passing --close checks for all five auto-close arms
-# (service-down-*/disk-critical/ssl-expiring/website-down/dns-failure)
+# Tracks consecutive passing --close checks for all six auto-close arms
+# (service-down-*/disk-critical/ssl-expiring/website-down/dns-failure/alert-escalation)
 # (see RECOVERY_CONFIRM_CHECKS above). Not timeline noise — a value written
 # and overwritten every 5 minutes until it crosses the threshold or resets.
 _set_recovery_confirm_count() {
@@ -483,8 +483,22 @@ if [[ "$DO_CLOSE" == "true" ]]; then
                 crit_count=$(jq '[.alerts[] | select(.severity == "critical" and (.resolved // false) == false)] | length' \
                     "${DATA_DIR}/alerts/active-alerts.json" 2>/dev/null || echo 0)
                 if [[ "${crit_count:-0}" -eq 0 ]]; then
-                    should_resolve=true
-                    resolution="All critical alerts cleared"
+                    confirm_count=$(jq -r --arg id "$inc_id" \
+                        '(.incidents[] | select(.id == $id) | .recovery_confirm_count // 0)' \
+                        "$ACTIVE_FILE" 2>/dev/null || echo 0)
+                    confirm_count=$((confirm_count + 1))
+                    if [[ "$confirm_count" -ge "$RECOVERY_CONFIRM_CHECKS" ]]; then
+                        should_resolve=true
+                        resolution="All critical alerts cleared (confirmed across ${confirm_count} consecutive checks)"
+                    else
+                        _set_recovery_confirm_count "$inc_id" "$confirm_count"
+                        marvin_log "INFO" "Recovery check ${confirm_count}/${RECOVERY_CONFIRM_CHECKS} passed for ${inc_id}, not yet resolving"
+                    fi
+                else
+                    prev_count=$(jq -r --arg id "$inc_id" \
+                        '(.incidents[] | select(.id == $id) | .recovery_confirm_count // 0)' \
+                        "$ACTIVE_FILE" 2>/dev/null || echo 0)
+                    [[ "${prev_count:-0}" -ne 0 ]] && _set_recovery_confirm_count "$inc_id" 0
                 fi
                 ;;
             high-error-rate)
