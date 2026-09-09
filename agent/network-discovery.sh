@@ -145,11 +145,22 @@ if [[ -f "$PEERS_FILE" && "$BEACON_ONLY" != true ]]; then
             #   --resolve "[2001:db8::1]:443:2001:db8::1" (not "2001:db8::1:443:...")
             resolve_host="${peer_host_lower}"
             _is_ipv6_address "$peer_host_lower" && resolve_host="[${peer_host_lower}]"
+            # Probe the standard A2A card first (#958) — ai-managed.json is our
+            # own private schema, and grading peers on whether they answer it
+            # scored plenty of live A2A-speaking peers as dead. Only falls back
+            # to ai-managed.json when agent-card.json isn't served.
+            probe_path="agent-card.json"
             STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --max-redirs 0 \
                 --resolve "${resolve_host}:${ping_port}:${resolved_ip}" \
-                "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
+                "${peer_url}/.well-known/agent-card.json" 2>/dev/null || echo "000")
+            if [[ "$STATUS_CODE" != "200" ]]; then
+                probe_path="ai-managed.json"
+                STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --max-redirs 0 \
+                    --resolve "${resolve_host}:${ping_port}:${resolved_ip}" \
+                    "${peer_url}/.well-known/ai-managed.json" 2>/dev/null || echo "000")
+            fi
             if [[ "$STATUS_CODE" == "200" ]]; then
-                marvin_log "INFO" "Peer alive: ${peer_url} (HTTP ${STATUS_CODE})"
+                marvin_log "INFO" "Peer alive: ${peer_url} (HTTP ${STATUS_CODE} via ${probe_path})"
                 printf '%s\n' "[${NOW}] PEER_ALIVE: ${peer_url}" | anonymize_ips >> "$COMM_LOG"
             else
                 marvin_log "WARN" "Peer unreachable: ${peer_url} (HTTP ${STATUS_CODE})"
