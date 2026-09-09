@@ -163,7 +163,7 @@ if [[ -f "$PEERS_FILE" && "$BEACON_ONLY" != true ]]; then
                 marvin_log "INFO" "Peer alive: ${peer_url} (HTTP ${STATUS_CODE} via ${probe_path})"
                 printf '%s\n' "[${NOW}] PEER_ALIVE: ${peer_url}" | anonymize_ips >> "$COMM_LOG"
             else
-                marvin_log "WARN" "Peer unreachable: ${peer_url} (HTTP ${STATUS_CODE})"
+                marvin_log "WARN" "Peer unreachable: ${peer_url} (HTTP ${STATUS_CODE}, tried ${probe_path} last)"
                 printf '%s\n' "[${NOW}] PEER_DEAD: ${peer_url} (HTTP ${STATUS_CODE})" | anonymize_ips >> "$COMM_LOG"
             fi
             _pinged_peers=$((_pinged_peers + 1))
