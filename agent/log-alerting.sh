@@ -75,7 +75,7 @@ if [[ -n "$_error_lines" ]]; then
             severity="warning"
             title="Repeated error (${count}x)"
             # A repeated "GitHub token validation failed (HTTP 4xx)" is the same
-            # shape as the Claude-auth escalation in section 5 below: 4xx from
+            # shape as the Claude-auth escalation in section 6 below: 4xx from
             # github_check_token() (lib/github.sh) means the credential itself
             # is bad/expired, not a transient upstream hiccup — those are 5xx/000
             # and get retried + logged at WARN, never reaching this ERROR-only
