@@ -72,7 +72,23 @@ if [[ -n "$_error_lines" ]]; then
         if [[ "$count" -gt 3 ]]; then
             # Create a stable ID from the message hash
             alert_id="repeated-$(echo "$msg" | sha256sum | cut -c1-12)"
-            NEW_ALERTS+=("$(_make_alert "$alert_id" "warning" "Repeated error (${count}x)" "$msg" "$count")")
+            severity="warning"
+            title="Repeated error (${count}x)"
+            # A repeated "GitHub token validation failed (HTTP 4xx)" is the same
+            # shape as the Claude-auth escalation in section 6 below: 4xx from
+            # github_check_token() (lib/github.sh) means the credential itself
+            # is bad/expired, not a transient upstream hiccup — those are 5xx/000
+            # and get retried + logged at WARN, never reaching this ERROR-only
+            # scan. No cron retry and no code fix can recover this; it silently
+            # disables every GitHub-dependent task (fix-issues.sh,
+            # github-interact.sh, self-enhance's PR check) until a human rotates
+            # the token. Left at "warning" this ran for 18+ hours on 2026-09-08
+            # (34 occurrences) without ever paging Pavel — issue #1122.
+            if [[ "$msg" == *"GitHub token validation failed (HTTP 4"* ]]; then
+                severity="critical"
+                title="GitHub token invalid — pipeline halted (${count}x)"
+            fi
+            NEW_ALERTS+=("$(_make_alert "$alert_id" "$severity" "$title" "$msg" "$count")")
         fi
     done < <(echo "$_error_lines" | sed 's/^\[[^]]*\] //' | sort | uniq -c | sort -rn | head -10)
 fi
