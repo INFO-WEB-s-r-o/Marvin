@@ -14,7 +14,10 @@
 #   --summary  Generate dashboard-friendly summary
 #
 # Cron: twice daily (12:15 UTC after self-enhance, 00:15 UTC after midnight)
-#   With --detect --close --summary flags
+#   With --detect --close --summary flags.
+# Also invoked every 5 minutes by health-monitor.sh (--detect --close --summary)
+# whenever STATUS is critical or an incident is already active, so a recovery
+# is picked up on the next tick rather than waiting for the twice-daily cron.
 # =============================================================================
 
 set -euo pipefail
@@ -26,6 +29,13 @@ ACTIVE_FILE="${INCIDENTS_DIR}/active-incidents.json"
 LOCK_FILE="${INCIDENTS_DIR}/.active-incidents.lock"
 HISTORY_DIR="${INCIDENTS_DIR}/history"
 SUMMARY_FILE="${INCIDENTS_DIR}/summary.json"
+
+# All auto-close arms now get re-checked every 5 minutes (see above), so a
+# single point-in-time pass must not close them immediately — a flapping
+# service would self-heal for one tick, close the incident, then reopen a
+# brand-new one (new ID, fresh critical/high email) on the next down tick.
+# Require this many *consecutive* passing --close invocations before resolving.
+RECOVERY_CONFIRM_CHECKS=2
 
 mkdir -p "$INCIDENTS_DIR" "$HISTORY_DIR"
 
@@ -156,6 +166,22 @@ _create_incident() {
     echo "$incident" | jq '.' > "${HISTORY_DIR}/${id}.json"
 
     _notify_pavel_critical "$severity" "$title" "$detail" "$id" || true
+}
+
+# ─── Helper: set an incident's recovery-confirm counter ──────────────────────
+# Tracks consecutive passing --close checks for all six auto-close arms
+# (service-down-*/disk-critical/ssl-expiring/website-down/dns-failure/alert-escalation)
+# (see RECOVERY_CONFIRM_CHECKS above). Not timeline noise — a value written
+# and overwritten every 5 minutes until it crosses the threshold or resets.
+_set_recovery_confirm_count() {
+    local id="$1" count="$2"
+    marvin_is_dry_run && return 0
+    (
+        flock -w 10 200 || { marvin_log "WARN" "Failed to acquire lock for recovery-confirm update"; exit 1; }
+        jq --arg id "$id" --argjson c "$count" \
+            '(.incidents[] | select(.id == $id)) |= (.recovery_confirm_count = $c)' \
+            "$ACTIVE_FILE" > "${ACTIVE_FILE}.tmp" && mv "${ACTIVE_FILE}.tmp" "$ACTIVE_FILE"
+    ) 200>"$LOCK_FILE" || marvin_log "WARN" "Recovery-confirm update failed (lock timeout): ${id}"
 }
 
 # ─── Helper: add timeline event to an incident ───────────────────────────────
@@ -346,37 +372,107 @@ if [[ "$DO_CLOSE" == "true" ]]; then
             service-down-*)
                 svc="${inc_type#service-down-}"
                 if systemctl is-active --quiet "$svc" 2>/dev/null; then
-                    should_resolve=true
-                    resolution="Service ${svc} recovered automatically"
+                    confirm_count=$(jq -r --arg id "$inc_id" \
+                        '(.incidents[] | select(.id == $id) | .recovery_confirm_count // 0)' \
+                        "$ACTIVE_FILE" 2>/dev/null || echo 0)
+                    confirm_count=$((confirm_count + 1))
+                    if [[ "$confirm_count" -ge "$RECOVERY_CONFIRM_CHECKS" ]]; then
+                        should_resolve=true
+                        resolution="Service ${svc} recovered automatically (confirmed across ${confirm_count} consecutive checks)"
+                    else
+                        _set_recovery_confirm_count "$inc_id" "$confirm_count"
+                        marvin_log "INFO" "Recovery check ${confirm_count}/${RECOVERY_CONFIRM_CHECKS} passed for ${inc_id}, not yet resolving"
+                    fi
+                else
+                    prev_count=$(jq -r --arg id "$inc_id" \
+                        '(.incidents[] | select(.id == $id) | .recovery_confirm_count // 0)' \
+                        "$ACTIVE_FILE" 2>/dev/null || echo 0)
+                    [[ "${prev_count:-0}" -ne 0 ]] && _set_recovery_confirm_count "$inc_id" 0
                 fi
                 ;;
             disk-critical)
                 disk_pct=$(df / --output=pcent | tail -1 | tr -d ' %')
                 if [[ "${disk_pct:-100}" -le 95 ]]; then
-                    should_resolve=true
-                    resolution="Disk usage dropped to ${disk_pct}%"
+                    confirm_count=$(jq -r --arg id "$inc_id" \
+                        '(.incidents[] | select(.id == $id) | .recovery_confirm_count // 0)' \
+                        "$ACTIVE_FILE" 2>/dev/null || echo 0)
+                    confirm_count=$((confirm_count + 1))
+                    if [[ "$confirm_count" -ge "$RECOVERY_CONFIRM_CHECKS" ]]; then
+                        should_resolve=true
+                        resolution="Disk usage dropped to ${disk_pct}% (confirmed across ${confirm_count} consecutive checks)"
+                    else
+                        _set_recovery_confirm_count "$inc_id" "$confirm_count"
+                        marvin_log "INFO" "Recovery check ${confirm_count}/${RECOVERY_CONFIRM_CHECKS} passed for ${inc_id}, not yet resolving"
+                    fi
+                else
+                    prev_count=$(jq -r --arg id "$inc_id" \
+                        '(.incidents[] | select(.id == $id) | .recovery_confirm_count // 0)' \
+                        "$ACTIVE_FILE" 2>/dev/null || echo 0)
+                    [[ "${prev_count:-0}" -ne 0 ]] && _set_recovery_confirm_count "$inc_id" 0
                 fi
                 ;;
             ssl-expiring)
                 ssl_days=$(jq -r '.checks.ssl_min_days // 999' "${DATA_DIR}/status.json" 2>/dev/null)
                 if [[ "${ssl_days:-0}" -ge 7 ]]; then
-                    should_resolve=true
-                    resolution="SSL certificates renewed (${ssl_days} days remaining)"
+                    confirm_count=$(jq -r --arg id "$inc_id" \
+                        '(.incidents[] | select(.id == $id) | .recovery_confirm_count // 0)' \
+                        "$ACTIVE_FILE" 2>/dev/null || echo 0)
+                    confirm_count=$((confirm_count + 1))
+                    if [[ "$confirm_count" -ge "$RECOVERY_CONFIRM_CHECKS" ]]; then
+                        should_resolve=true
+                        resolution="SSL certificates renewed (${ssl_days} days remaining, confirmed across ${confirm_count} consecutive checks)"
+                    else
+                        _set_recovery_confirm_count "$inc_id" "$confirm_count"
+                        marvin_log "INFO" "Recovery check ${confirm_count}/${RECOVERY_CONFIRM_CHECKS} passed for ${inc_id}, not yet resolving"
+                    fi
+                else
+                    prev_count=$(jq -r --arg id "$inc_id" \
+                        '(.incidents[] | select(.id == $id) | .recovery_confirm_count // 0)' \
+                        "$ACTIVE_FILE" 2>/dev/null || echo 0)
+                    [[ "${prev_count:-0}" -ne 0 ]] && _set_recovery_confirm_count "$inc_id" 0
                 fi
                 ;;
             website-down)
                 http_code=$(curl -so /dev/null -w '%{http_code}' --max-time 10 "https://robot-marvin.cz/" 2>/dev/null || echo "000")
                 if [[ "$http_code" == "200" ]]; then
-                    should_resolve=true
-                    resolution="Website responding with HTTP 200"
+                    confirm_count=$(jq -r --arg id "$inc_id" \
+                        '(.incidents[] | select(.id == $id) | .recovery_confirm_count // 0)' \
+                        "$ACTIVE_FILE" 2>/dev/null || echo 0)
+                    confirm_count=$((confirm_count + 1))
+                    if [[ "$confirm_count" -ge "$RECOVERY_CONFIRM_CHECKS" ]]; then
+                        should_resolve=true
+                        resolution="Website responding with HTTP 200 (confirmed across ${confirm_count} consecutive checks)"
+                    else
+                        _set_recovery_confirm_count "$inc_id" "$confirm_count"
+                        marvin_log "INFO" "Recovery check ${confirm_count}/${RECOVERY_CONFIRM_CHECKS} passed for ${inc_id}, not yet resolving"
+                    fi
+                else
+                    prev_count=$(jq -r --arg id "$inc_id" \
+                        '(.incidents[] | select(.id == $id) | .recovery_confirm_count // 0)' \
+                        "$ACTIVE_FILE" 2>/dev/null || echo 0)
+                    [[ "${prev_count:-0}" -ne 0 ]] && _set_recovery_confirm_count "$inc_id" 0
                 fi
                 ;;
             dns-failure)
                 resolved_ip=$(dig +short robot-marvin.cz A @8.8.8.8 2>/dev/null | tail -1 || echo "")
                 expected_ip=$(jq -r '.checks.dns_expected_ip // "80.211.223.26"' "${DATA_DIR}/status.json" 2>/dev/null || echo "80.211.223.26")
                 if [[ "$resolved_ip" == "$expected_ip" ]]; then
-                    should_resolve=true
-                    resolution="DNS resolution restored to correct IP"
+                    confirm_count=$(jq -r --arg id "$inc_id" \
+                        '(.incidents[] | select(.id == $id) | .recovery_confirm_count // 0)' \
+                        "$ACTIVE_FILE" 2>/dev/null || echo 0)
+                    confirm_count=$((confirm_count + 1))
+                    if [[ "$confirm_count" -ge "$RECOVERY_CONFIRM_CHECKS" ]]; then
+                        should_resolve=true
+                        resolution="DNS resolution restored to correct IP (confirmed across ${confirm_count} consecutive checks)"
+                    else
+                        _set_recovery_confirm_count "$inc_id" "$confirm_count"
+                        marvin_log "INFO" "Recovery check ${confirm_count}/${RECOVERY_CONFIRM_CHECKS} passed for ${inc_id}, not yet resolving"
+                    fi
+                else
+                    prev_count=$(jq -r --arg id "$inc_id" \
+                        '(.incidents[] | select(.id == $id) | .recovery_confirm_count // 0)' \
+                        "$ACTIVE_FILE" 2>/dev/null || echo 0)
+                    [[ "${prev_count:-0}" -ne 0 ]] && _set_recovery_confirm_count "$inc_id" 0
                 fi
                 ;;
             alert-escalation)
@@ -387,8 +483,22 @@ if [[ "$DO_CLOSE" == "true" ]]; then
                 crit_count=$(jq '[.alerts[] | select(.severity == "critical" and (.resolved // false) == false)] | length' \
                     "${DATA_DIR}/alerts/active-alerts.json" 2>/dev/null || echo 0)
                 if [[ "${crit_count:-0}" -eq 0 ]]; then
-                    should_resolve=true
-                    resolution="All critical alerts cleared"
+                    confirm_count=$(jq -r --arg id "$inc_id" \
+                        '(.incidents[] | select(.id == $id) | .recovery_confirm_count // 0)' \
+                        "$ACTIVE_FILE" 2>/dev/null || echo 0)
+                    confirm_count=$((confirm_count + 1))
+                    if [[ "$confirm_count" -ge "$RECOVERY_CONFIRM_CHECKS" ]]; then
+                        should_resolve=true
+                        resolution="All critical alerts cleared (confirmed across ${confirm_count} consecutive checks)"
+                    else
+                        _set_recovery_confirm_count "$inc_id" "$confirm_count"
+                        marvin_log "INFO" "Recovery check ${confirm_count}/${RECOVERY_CONFIRM_CHECKS} passed for ${inc_id}, not yet resolving"
+                    fi
+                else
+                    prev_count=$(jq -r --arg id "$inc_id" \
+                        '(.incidents[] | select(.id == $id) | .recovery_confirm_count // 0)' \
+                        "$ACTIVE_FILE" 2>/dev/null || echo 0)
+                    [[ "${prev_count:-0}" -ne 0 ]] && _set_recovery_confirm_count "$inc_id" 0
                 fi
                 ;;
             high-error-rate)
