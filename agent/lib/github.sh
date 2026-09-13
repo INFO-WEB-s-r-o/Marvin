@@ -542,6 +542,7 @@ github_signed_commit() {
         if git diff --cached --quiet 2>/dev/null; then
             marvin_log "ERROR" "github_signed_commit: nothing staged after fallback — aborting commit on ${branch}" >&2
             git checkout main 2>/dev/null || true
+            _fix_git_ownership
             _safe_stash_pop
             return 1
         fi
@@ -551,6 +552,7 @@ github_signed_commit() {
     if git diff --cached --quiet 2>/dev/null; then
         marvin_log "WARN" "No changes to commit on branch ${branch}" >&2
         git checkout main 2>/dev/null || true
+        _fix_git_ownership
         _safe_stash_pop
         return 1
     fi

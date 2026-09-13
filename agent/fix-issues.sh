@@ -393,9 +393,11 @@ Validated: bash syntax OK, no conflict markers, no forbidden files."
 # instead of letting set -e kill the script silently (this was causing a loop
 # where fixes were reverted by the cleanup trap with no error log).
 if ! git commit -S -m "$COMMIT_MSG" 2>&1; then
+    _fix_git_ownership
     marvin_log "ERROR" "git commit -S failed for issue #${FIXED_ISSUE:-unknown} (GPG signing may have failed)"
     exit 1
 fi
+_fix_git_ownership
 marvin_log "INFO" "Committed fix on branch ${BRANCH}: #${FIXED_ISSUE:-unknown} — ${FIXED_TITLE}"
 
 # ─── Push, create PR, merge ─────────────────────────────────────────────────
