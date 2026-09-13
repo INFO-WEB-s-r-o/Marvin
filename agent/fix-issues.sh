@@ -58,6 +58,11 @@ cleanup() {
             git stash drop --quiet 2>/dev/null || true
         fi
     fi
+    # This trap runs on every exit (success and failure), always after the
+    # writes above, so it's the true last touch on .git — the one place that
+    # reliably covers every git operation in this script, including the
+    # `git push` (#1128) that earlier inline _fix_git_ownership calls missed.
+    _fix_git_ownership
     rm -f "$LOCK_FILE"
     exit $exit_code
 }

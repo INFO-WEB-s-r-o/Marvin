@@ -542,8 +542,8 @@ github_signed_commit() {
         if git diff --cached --quiet 2>/dev/null; then
             marvin_log "ERROR" "github_signed_commit: nothing staged after fallback — aborting commit on ${branch}" >&2
             git checkout main 2>/dev/null || true
-            _fix_git_ownership
             _safe_stash_pop
+            _fix_git_ownership
             return 1
         fi
     fi
@@ -552,26 +552,30 @@ github_signed_commit() {
     if git diff --cached --quiet 2>/dev/null; then
         marvin_log "WARN" "No changes to commit on branch ${branch}" >&2
         git checkout main 2>/dev/null || true
-        _fix_git_ownership
         _safe_stash_pop
+        _fix_git_ownership
         return 1
     fi
 
     # Commit (git is already configured to GPG-sign via setup-gpg.sh)
-    git commit -S -m "$message" >&2 2>&1 || {
-        _fix_git_ownership
-        marvin_log "ERROR" "GPG-signed commit failed" >&2
+    # _fix_git_ownership runs last on every path below — after the trailing
+    # `checkout main`/`_safe_stash_pop` — because git rewrites HEAD/index via
+    # lockfile-then-rename, not in place, so chowning before those two would
+    # just get overwritten by them (#1129).
+    if ! git commit -S -m "$message" >&2 2>&1; then
         git checkout main 2>/dev/null || true
         _safe_stash_pop
+        _fix_git_ownership
+        marvin_log "ERROR" "GPG-signed commit failed" >&2
         return 1
-    }
+    fi
 
-    _fix_git_ownership
     marvin_log "INFO" "Created GPG-signed commit on ${branch}: ${message}" >&2
 
     # Return to main, keep the branch
     git checkout main 2>/dev/null || true
     _safe_stash_pop
+    _fix_git_ownership
     return 0
 }
 
