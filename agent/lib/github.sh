@@ -457,6 +457,17 @@ _sanitize_git_output() {
     sed 's|://[^[:space:]]*@github\.com|://***@github.com|g'
 }
 
+# All 23 cron entries run as root (#1120), so every git commit/push here
+# creates new refs/reflogs owned by root:root. That collides later with any
+# marvin-owned git operation (interactive sessions, sudo -u marvin) — e.g.
+# "Permission denied" appending to a branch reflog. Reassert marvin ownership
+# after each write so root-run cron and marvin-run sessions don't fight over
+# the same ref files.
+_fix_git_ownership() {
+    [[ "${EUID}" -eq 0 ]] || return 0
+    chown -R marvin:marvin "${MARVIN_DIR}/.git" 2>/dev/null || true
+}
+
 # Push a branch to GitHub (GPG-signed commits)
 github_push_branch() {
     local branch="$1"
@@ -472,8 +483,8 @@ github_push_branch() {
     # Relies on pipefail (via set -euo pipefail in callers): pipeline exit code reflects git's exit code
     local push_output
     push_output=$(git push --force-with-lease origin "$branch" 2>&1 | _sanitize_git_output) \
-        && { marvin_log "INFO" "Pushed branch ${branch} to GitHub" >&2; return 0; } \
-        || { marvin_log "ERROR" "Failed to push branch ${branch}: ${push_output}" >&2; return 1; }
+        && { _fix_git_ownership; marvin_log "INFO" "Pushed branch ${branch} to GitHub" >&2; return 0; } \
+        || { _fix_git_ownership; marvin_log "ERROR" "Failed to push branch ${branch}: ${push_output}" >&2; return 1; }
 }
 
 # Push main branch to GitHub
@@ -484,8 +495,8 @@ github_push_main() {
     # Relies on pipefail (via set -euo pipefail in callers): pipeline exit code reflects git's exit code
     local push_output
     push_output=$(git push origin main 2>&1 | _sanitize_git_output) \
-        && { marvin_log "INFO" "Pushed main branch to GitHub" >&2; } \
-        || { marvin_log "ERROR" "Failed to push main to GitHub: ${push_output}" >&2; return 1; }
+        && { _fix_git_ownership; marvin_log "INFO" "Pushed main branch to GitHub" >&2; } \
+        || { _fix_git_ownership; marvin_log "ERROR" "Failed to push main to GitHub: ${push_output}" >&2; return 1; }
 }
 
 # Safe stash pop — recovers from conflicts instead of leaving markers
@@ -546,12 +557,14 @@ github_signed_commit() {
 
     # Commit (git is already configured to GPG-sign via setup-gpg.sh)
     git commit -S -m "$message" >&2 2>&1 || {
+        _fix_git_ownership
         marvin_log "ERROR" "GPG-signed commit failed" >&2
         git checkout main 2>/dev/null || true
         _safe_stash_pop
         return 1
     }
 
+    _fix_git_ownership
     marvin_log "INFO" "Created GPG-signed commit on ${branch}: ${message}" >&2
 
     # Return to main, keep the branch
