@@ -58,6 +58,11 @@ cleanup() {
             git stash drop --quiet 2>/dev/null || true
         fi
     fi
+    # This trap runs on every exit (success and failure), always after the
+    # writes above, so it's the true last touch on .git — the one place that
+    # reliably covers every git operation in this script, including the
+    # `git push` (#1128) that earlier inline _fix_git_ownership calls missed.
+    _fix_git_ownership
     rm -f "$LOCK_FILE"
     exit $exit_code
 }
@@ -393,9 +398,11 @@ Validated: bash syntax OK, no conflict markers, no forbidden files."
 # instead of letting set -e kill the script silently (this was causing a loop
 # where fixes were reverted by the cleanup trap with no error log).
 if ! git commit -S -m "$COMMIT_MSG" 2>&1; then
+    _fix_git_ownership
     marvin_log "ERROR" "git commit -S failed for issue #${FIXED_ISSUE:-unknown} (GPG signing may have failed)"
     exit 1
 fi
+_fix_git_ownership
 marvin_log "INFO" "Committed fix on branch ${BRANCH}: #${FIXED_ISSUE:-unknown} — ${FIXED_TITLE}"
 
 # ─── Push, create PR, merge ─────────────────────────────────────────────────

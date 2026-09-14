@@ -17,6 +17,16 @@ source "$(dirname "$0")/common.sh"
 source "$(dirname "$0")/lib/github.sh"
 trap marvin_error_trap ERR
 
+# #1130: the rollback `git checkout -- agent/ web/` below runs directly, never
+# through lib/github.sh, so cron's root euid can leave .git internals
+# root-owned exactly like #1120's fix-issues.sh failure mode.
+_git_ownership_exit_trap() {
+    local _rc=$?
+    declare -f _fix_git_ownership >/dev/null 2>&1 && _fix_git_ownership
+    exit "$_rc"
+}
+trap _git_ownership_exit_trap EXIT
+
 marvin_log "INFO" "=== SELF-ENHANCEMENT STARTING ==="
 
 check_claude || exit 1
