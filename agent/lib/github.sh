@@ -518,6 +518,10 @@ github_signed_commit() {
     git checkout main 2>/dev/null || true
     git checkout -b "$branch" 2>/dev/null || git checkout "$branch"
 
+    # Restore the caller's stashed edits onto the new branch before staging —
+    # otherwise git add has nothing to stage for files the caller just edited (#1133)
+    _safe_stash_pop
+
     # Stage files — only safe directories to avoid committing runtime data
     if [[ ${#files[@]} -gt 0 ]]; then
         for f in "${files[@]}"; do
