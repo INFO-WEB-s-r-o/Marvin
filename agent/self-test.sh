@@ -2923,6 +2923,27 @@ else
     if [[ -z "$_jail_generated" ]]; then
         test_warn "config drift: could not extract fail2ban jail.local heredoc from bootstrap.sh"
     else
+        # bootstrap.sh doesn't stop at the heredoc: when OPERATOR_SSH_IP is set
+        # (env or .env), a `sed -i` right after it (setup/bootstrap.sh:217-219)
+        # appends that address to the ignoreip line before the file ever
+        # touches disk (#1110/#1112 — deliberately kept out of the heredoc
+        # itself so the address never lives in tracked source). Diffing the
+        # bare heredoc against a live file that HAS been through that sed
+        # step reports permanent "drift" on ignoreip even though a real
+        # bootstrap.sh run reproduces it exactly — the false alarm that
+        # prompted #1111's since-reverted hardcoded-IP mistake (#1112).
+        # Mirror bootstrap.sh's own resolution + validation (lines 122-128)
+        # exactly, so the two can't drift apart from each other.
+        _jail_operator_ip="${OPERATOR_SSH_IP:-}"
+        if [[ -z "$_jail_operator_ip" && -f "${MARVIN_DIR}/.env" ]]; then
+            _jail_operator_ip=$(grep -oP '^OPERATOR_SSH_IP=\K.+' "${MARVIN_DIR}/.env" 2>/dev/null || echo "")
+        fi
+        if [[ -n "$_jail_operator_ip" && ! "$_jail_operator_ip" =~ ^[0-9a-fA-F:./]+$ ]]; then
+            _jail_operator_ip=""
+        fi
+        if [[ -n "$_jail_operator_ip" ]]; then
+            _jail_generated=$(printf '%s\n' "$_jail_generated" | sed "s|^ignoreip = 127.0.0.1/8 ::1\$|ignoreip = 127.0.0.1/8 ::1 ${_jail_operator_ip}|")
+        fi
         _jail_norm_src=$(printf '%s\n' "$_jail_generated" | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$') || _jail_norm_src=""
         _jail_norm_live=$(grep -v '^[[:space:]]*#' "$_jail_live" | grep -v '^[[:space:]]*$') || _jail_norm_live=""
         if diff -q <(printf '%s\n' "$_jail_norm_src") <(printf '%s\n' "$_jail_norm_live") >/dev/null 2>&1; then
