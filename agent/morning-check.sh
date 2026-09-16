@@ -16,6 +16,19 @@ set -euo pipefail
 source "$(dirname "$0")/common.sh"
 trap marvin_error_trap ERR
 
+# #1130: this script's own git checkout/stash/pull calls (Phase 0 below) never
+# went through lib/github.sh, so cron's root euid could leave .git internals
+# root-owned exactly like #1120's fix-issues.sh failure mode. lib/github.sh is
+# sourced conditionally further down, so this trap is registered before
+# _fix_git_ownership necessarily exists — it checks at exit time, when Phase 0
+# has (if the file is present) already sourced it.
+_git_ownership_exit_trap() {
+    local _rc=$?
+    declare -f _fix_git_ownership >/dev/null 2>&1 && _fix_git_ownership
+    exit "$_rc"
+}
+trap _git_ownership_exit_trap EXIT
+
 marvin_log_json "INFO" "morning-check" "Morning check starting"
 
 # ─────────────────────────────────────────────────────────────────────────────
