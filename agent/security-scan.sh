@@ -158,7 +158,16 @@ port_count=0
 # container (127.0.0.1 only). Its Postgres/Redis are container-internal, not
 # published to the host, so they need no separate entry beyond the 5432/6379
 # already listed above for the Marvin-Brain stack.
-EXPECTED_PORTS="22 25 53 80 443 465 587 993 3000 3001 3100 3200 4317 4318 5432 6379 8000 8043 8787 8889 9090 11332 11333 11334"
+# Third tenant, pre-existing and unrelated to Marvin's own stack (confirmed
+# 2026-09-17): 8080=iot-monitor.service, a hardened systemd unit (dedicated
+# user, NoNewPrivileges, ProtectSystem=strict) serving a reverse-SSH-tunnel
+# fleet dashboard, proxied publicly only via /iot/ on the monitoring vhost
+# behind its own Basic Auth. 22001-22006=sshd reverse-tunnel endpoints for
+# the same tenant (user `iottun`, see lesson iottun-bind-noise-not-marvins).
+# All seven are 127.0.0.1-only (verified via `ss`, no UFW rule exists or is
+# needed) and had fired "Unexpected listener" on every run since at least
+# 2026-09-01 — 17 straight days of daily false-positive noise per port.
+EXPECTED_PORTS="22 25 53 80 443 465 587 993 3000 3001 3100 3200 4317 4318 5432 6379 8000 8043 8080 8787 8889 9090 11332 11333 11334 22001 22002 22003 22004 22005 22006"
 
 # Extract unique port numbers from listening sockets
 active_ports=$(echo "$listening_ports" | awk '{print $4}' | grep -oP '\d+$' | sort -un)
@@ -176,7 +185,11 @@ unexpected_details_json="[]"
 # (setup/nginx-site.conf -> http://127.0.0.1:8043). It was previously absent
 # from this list — mislabelled "alt-HTTPS" in the baseline above — which is why
 # its wildcard bind went unflagged from 2026-02-22 until 2026-07-26.
-LOCALHOST_ONLY_PORTS="3001 3100 3200 4317 4318 5432 6379 8000 8043 8787 8889 9090 11332 11333 11334"
+# 8080 and 22001-22006 belong to the pre-existing iot-monitor/iottun tenant
+# (see EXPECTED_PORTS comment above) — listed here too so a future wildcard
+# bind on any of them (e.g. iot-monitor exposed off-loopback by mistake)
+# still raises a real alert instead of being silently expected everywhere.
+LOCALHOST_ONLY_PORTS="3001 3100 3200 4317 4318 5432 6379 8000 8043 8080 8787 8889 9090 11332 11333 11334 22001 22002 22003 22004 22005 22006"
 
 for port in $active_ports; do
     if ! echo "$EXPECTED_PORTS" | grep -qw "$port"; then
