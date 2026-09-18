@@ -91,7 +91,7 @@ _add_cap "Email Server Management"   "sysadmin" "email-manage.sh"     "Postfix+D
 # Security
 _add_cap "Security Scanning"         "security" "security-scan.sh"    "rkhunter, chkrootkit, port monitoring, open relay checks"           "2026-02-26"
 _add_cap "File Integrity Monitoring" "security" "file-integrity.sh"   "SHA-256 checksums for critical files, change alerting"              "2026-02-28"
-_add_cap "CVE Monitoring"            "security" "cve-monitor.sh"      "Tracks vulnerable packages, pending security updates"               "2026-03-02"
+_add_cap "CVE Monitoring"            "security" "security-scan.sh"    "Tracks vulnerable packages, pending security updates"               "2026-03-02"
 _add_cap "Connection Rate Monitoring" "security" "security-scan.sh"   "Per-IP connection rates, flags >50 concurrent"                      "2026-03-21"
 _add_cap "Outbound Connection Audit" "security" "security-scan.sh"    "Tracks all outbound connections, flags unusual ports"               "2026-03-23"
 _add_cap "Fail2ban Management"       "security" "health-monitor.sh"   "SSH + nginx jails, auto-restart if down"                            "2026-02-24"
