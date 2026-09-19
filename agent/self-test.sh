@@ -3912,8 +3912,38 @@ marvin_log "INFO" "Self-test: computing security score"
 SEC_SCORE=100
 SEC_DETAILS=()
 
+# Resolve the EFFECTIVE ssh config once, shared by 9a/9g below. A raw grep
+# against sshd_config only proves a directive is PRESENT, not that it WINS —
+# OpenSSH resolves repeated directives first-occurrence-wins, so a stock
+# uncommented "PermitRootLogin yes" earlier in the file silently shadows our
+# hardened block appended below it. That gap let SSH root/password hardening
+# sit shadowed for ~6 months without this score (or anything else) ever
+# catching it (#1057) — a raw-grep check on the source can't tell "present"
+# from "effective" any more than a source⇆live diff can (see #1131/#1135's
+# same class of blind spot). `sshd -T` needs root; fall back to the raw-file
+# grep it replaces if unavailable, rather than silently skipping the check.
+_ssh_effective=""
+if [[ $EUID -eq 0 ]] && command -v sshd &>/dev/null; then
+    _ssh_effective=$(sshd -T 2>/dev/null || true)
+fi
+
 # 9a. SSH root access (rkhunter flags this as a warning)
-if grep -q "^PermitRootLogin no" /etc/ssh/sshd_config 2>/dev/null; then
+if [[ -n "$_ssh_effective" ]]; then
+    _ssh_root_effective=$(echo "$_ssh_effective" | grep -oP '^permitrootlogin \K\S+' || echo "")
+    case "$_ssh_root_effective" in
+        no)
+            SEC_DETAILS+=("ssh_root_login: disabled (+0)")
+            ;;
+        without-password|prohibit-password)
+            SEC_DETAILS+=("ssh_root_login: key-only (-5)")
+            SEC_SCORE=$((SEC_SCORE - 5))
+            ;;
+        *)
+            SEC_DETAILS+=("ssh_root_login: allowed (-15)")
+            SEC_SCORE=$((SEC_SCORE - 15))
+            ;;
+    esac
+elif grep -q "^PermitRootLogin no" /etc/ssh/sshd_config 2>/dev/null; then
     SEC_DETAILS+=("ssh_root_login: disabled (+0)")
 elif grep -q "^PermitRootLogin prohibit-password" /etc/ssh/sshd_config 2>/dev/null; then
     SEC_DETAILS+=("ssh_root_login: key-only (-5)")
@@ -4039,8 +4069,17 @@ else
     SEC_SCORE=$((SEC_SCORE - 10))
 fi
 
-# 9g. Password authentication disabled for SSH
-if grep -qE "^PasswordAuthentication no" /etc/ssh/sshd_config 2>/dev/null; then
+# 9g. Password authentication disabled for SSH (effective config — see the
+# _ssh_effective note above 9a for why a raw grep isn't sufficient here)
+if [[ -n "$_ssh_effective" ]]; then
+    _ssh_pwauth_effective=$(echo "$_ssh_effective" | grep -oP '^passwordauthentication \K\S+' || echo "")
+    if [[ "$_ssh_pwauth_effective" == "no" ]]; then
+        SEC_DETAILS+=("ssh_password_auth: disabled (+0)")
+    else
+        SEC_DETAILS+=("ssh_password_auth: enabled (-10)")
+        SEC_SCORE=$((SEC_SCORE - 10))
+    fi
+elif grep -qE "^PasswordAuthentication no" /etc/ssh/sshd_config 2>/dev/null; then
     SEC_DETAILS+=("ssh_password_auth: disabled (+0)")
 else
     SEC_DETAILS+=("ssh_password_auth: enabled (-10)")
