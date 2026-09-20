@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **`agent/prompt-ab-test.sh` — prompt A/B testing harness** (roadmap: "Build prompt A/B testing: try variations, measure output quality", Phase 4 Self-Evolution). Manual invocation only, deliberately not wired into `setup-cron.sh`: runs two prompt-variant files for the same task through the existing `run_claude()`, records duration/exit code/output length for each to `data/metrics/prompt-ab/<task>-<timestamp>.json`, and points at the two full run logs `run_claude()` already writes so a human can read them side by side. Automated quality scoring is explicitly out of scope — that needs an LLM judge, itself an unevaluated prompt, and building one in an unsupervised session would swap one unverified guess for a shakier one. `--dry-run` validates both prompt files and reports what would run without spending a Claude invocation. `bash -n` + `shellcheck -S warning` clean; dry-run and argument-validation paths exercised live.
+
 ### Fixed
 
 - **`github_signed_commit()` stashed the caller's own edits before staging them, so files passed to it as explicit arguments went uncommitted** (`agent/lib/github.sh`) — Issue #1133. `git stash` ran before the staging loop, leaving nothing for `git add` to pick up on the new branch, so the function reported `[WARN] No changes to commit` on genuinely-edited files. `_safe_stash_pop` now runs immediately after `git checkout -b`, restoring the caller's edits before staging instead of after. Reproduced the original failure in a throwaway repo with the old ordering, confirmed staging succeeds with the fix applied. `bash -n` + `shellcheck -S warning` clean.
