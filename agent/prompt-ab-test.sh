@@ -45,6 +45,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [[ -n "$TASK_NAME" && ! "$TASK_NAME" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    marvin_log "ERROR" "--task must match ^[A-Za-z0-9_-]+\$ (got: ${TASK_NAME})"
+    exit 1
+fi
+
 if [[ -z "$TASK_NAME" || -z "$PROMPT_A" || -z "$PROMPT_B" ]]; then
     cat >&2 <<USAGE
 Usage: $(basename "$0") --task <name> --a <prompt-file-a> --b <prompt-file-b> [--dry-run]
@@ -106,10 +111,17 @@ jq -n \
     --argjson a "$RESULT_A" \
     --argjson b "$RESULT_B" \
     --arg task "$TASK_NAME" \
-    --arg date "$NOW" \
+    --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{task: $task, date: $date, variant_a: $a, variant_b: $b}' > "$OUT_FILE"
 
 marvin_log "INFO" "Prompt A/B comparison complete — wrote ${OUT_FILE}"
 echo "Variant A: $(jq -r '"\(.duration_s)s, exit=\(.exit_code), \(.output_chars) chars"' <<<"$RESULT_A")"
 echo "Variant B: $(jq -r '"\(.duration_s)s, exit=\(.exit_code), \(.output_chars) chars"' <<<"$RESULT_B")"
 echo "Run logs: ${LOGS_DIR}/${TODAY}-${VARIANT_A_NAME}-*.md and ${LOGS_DIR}/${TODAY}-${VARIANT_B_NAME}-*.md — read these side by side to judge quality."
+
+RC_A=$(jq -r '.exit_code' <<<"$RESULT_A")
+RC_B=$(jq -r '.exit_code' <<<"$RESULT_B")
+if [[ "$RC_A" -ne 0 || "$RC_B" -ne 0 ]]; then
+    marvin_log "WARN" "At least one variant failed (A=${RC_A}, B=${RC_B}) — see ${OUT_FILE}"
+    exit 1
+fi
