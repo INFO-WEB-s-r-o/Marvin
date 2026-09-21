@@ -229,6 +229,19 @@ cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
 
 # Apply hardening (only if not already done)
 if ! grep -q "# Marvin hardened" /etc/ssh/sshd_config; then
+    # Stock Ubuntu cloud-image sshd_config ships uncommented "PermitRootLogin yes"
+    # and "PasswordAuthentication yes" earlier in the file. OpenSSH resolves
+    # repeated directives first-occurrence-wins, so appending the hardened block
+    # below them was silently shadowed and never took effect — issue #1057, live
+    # on this host for ~6 months before being hand-fixed. Comment out any
+    # pre-existing uncommented occurrence before appending so the hardened block
+    # actually wins. Only reachable on a fresh/unhardened file (the "# Marvin
+    # hardened" guard above skips this entirely once already applied), so this
+    # can't re-comment our own directives on a second run.
+    sed -i -E \
+        -e 's/^(PermitRootLogin[[:space:]]+.*)$/#\1   # shadowed stock default, disabled by bootstrap.sh (superseded by Marvin-hardened block below)/' \
+        -e 's/^(PasswordAuthentication[[:space:]]+.*)$/#\1   # shadowed stock default, disabled by bootstrap.sh (superseded by Marvin-hardened block below)/' \
+        /etc/ssh/sshd_config
     cat >> /etc/ssh/sshd_config << 'EOF'
 
 # Marvin hardened
