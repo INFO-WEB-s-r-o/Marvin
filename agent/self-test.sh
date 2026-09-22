@@ -77,6 +77,27 @@ while IFS= read -r script; do
         test_pass "syntax ok: $(basename "$script")"
     else
         test_fail "syntax error: $(basename "$script")"
+
+        # Detection existed; the roadmap's "recover from a corrupted agent
+        # script (via git rollback)" half never did — a broken script just
+        # produced a generic FAIL with no path back. This doesn't run the
+        # recovery itself (a live host restoring its own scripts from git on
+        # an unattended read of `bash -n` output is more autonomy than a
+        # syntax error warrants), it names the exact command so the CRITICAL
+        # log line — which log-alerting's critical-log scan already escalates
+        # (see #1140) — carries the fix, not just the symptom.
+        _rel="${script#"${MARVIN_DIR}"/}"
+        _head_tmp=$(mktemp 2>/dev/null) || _head_tmp=""
+        if [[ -n "$_head_tmp" ]] && git -C "${MARVIN_DIR}" show "HEAD:${_rel}" > "$_head_tmp" 2>/dev/null && [[ -s "$_head_tmp" ]]; then
+            if bash -n "$_head_tmp" 2>/dev/null; then
+                marvin_log "CRITICAL" "Corrupted agent script: ${_rel} fails bash -n but the committed HEAD version parses cleanly — recover with: git -C ${MARVIN_DIR} checkout HEAD -- ${_rel}"
+            else
+                marvin_log "CRITICAL" "Corrupted agent script: ${_rel} fails bash -n, and the committed HEAD version also fails — a git checkout would not fix this, needs manual repair"
+            fi
+        else
+            marvin_log "CRITICAL" "Corrupted agent script: ${_rel} fails bash -n and has no readable HEAD version in git (untracked, new, or the diagnostic check itself could not run) — no automatic recovery reference available"
+        fi
+        [[ -n "$_head_tmp" ]] && rm -f "$_head_tmp"
     fi
 done < <(find "${MARVIN_DIR}/agent" -name "*.sh" -type f | sort)
 
