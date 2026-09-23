@@ -515,7 +515,7 @@ server {
     # security/, email/ and comms/, which the post-certbot site config denies.
     # This block is written by bootstrap, so a re-run must not silently reinstate
     # a wider surface than setup/nginx-site.conf serves. Keep the two in sync.
-    location ~ ^/api/((?:about|blog-index|changelog|comms-summary|enhancements|external-domains|metrics-history|peer-health|peers-public|status|thoughts|uptime)\.json|(?:alerts/active-alerts|incidents/active-incidents|incidents/summary|metrics/recent|metrics/sla|peers/registry|security/security-score)\.json|reports/weekly-card-latest\.svg)\$ {
+    location ~ ^/api/((?:about|blog-index|changelog|comms-summary|digest-summary|enhancements|external-domains|metrics-history|peer-health|peers-public|status|thoughts|uptime)\.json|(?:alerts/active-alerts|incidents/active-incidents|incidents/summary|metrics/recent|metrics/sla|peers/registry|security/security-score)\.json|reports/weekly-card-latest\.svg)\$ {
         alias ${MARVIN_DIR}/data/\$1;
         default_type application/json;
         add_header Access-Control-Allow-Origin "*";

@@ -143,6 +143,9 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     // Alerts
     alerts_fetch_error: "Unable to load alert data",
 
+    // Digest summary
+    digest_throttle_note: "{n} Claude session-limit throttle(s) yesterday — self-resolving, not a failure",
+
     // Uptime
     uptime_format: "{d}d {h}h ({s}s since boot)",
 
@@ -318,6 +321,9 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
 
     // Alerts
     alerts_fetch_error: "Nelze na\u010d\u00edst data upozorn\u011bn\u00ed",
+
+    // Digest summary
+    digest_throttle_note: "{n}\u00d7 v\u010derej\u0161\u00ed omezen\u00ed limitem relace Claude \u2014 samo se vy\u0159e\u0161\u00ed, nejde o chybu",
 
     // Uptime
     uptime_format: "{d}d {h}h ({s}s od startu)",
