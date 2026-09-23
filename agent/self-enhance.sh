@@ -20,9 +20,29 @@ trap marvin_error_trap ERR
 # #1130: the rollback `git checkout -- agent/ web/` below runs directly, never
 # through lib/github.sh, so cron's root euid can leave .git internals
 # root-owned exactly like #1120's fix-issues.sh failure mode.
+#
+# #1140: a dirty-tree check placed only at a specific line in the script's
+# normal flow never runs if the script is cut off before reaching that line
+# (Claude's own turn budget ending mid-session, or the process being
+# interrupted) — exactly what happened on 2026-09-19, twice-over from #1091.
+# An EXIT trap fires on every exit path — early "exit 0" skips, a rollback,
+# and normal completion alike — so it is the one place this check cannot be
+# skipped by the run ending somewhere unexpected. Runs after
+# _fix_git_ownership so `git status` isn't itself blocked by dubious
+# ownership under cron's root euid.
+#
+# #1146: the pre-flight dirty-tree guard below (its own explicit CRITICAL +
+# `exit 1`, for a tree that was ALREADY dirty before this run even started)
+# also exits through this trap, which would re-check the same still-dirty
+# tree and log a second, differently-worded CRITICAL for the same event.
+# _PREFLIGHT_DIRTY_TREE_LOGGED lets that one call site opt out since it has
+# already reported the condition by name.
 _git_ownership_exit_trap() {
     local _rc=$?
     declare -f _fix_git_ownership >/dev/null 2>&1 && _fix_git_ownership
+    if [[ -z "${_PREFLIGHT_DIRTY_TREE_LOGGED:-}" ]] && [[ -n "$(git -C "$MARVIN_DIR" status --porcelain 2>/dev/null)" ]]; then
+        marvin_log "CRITICAL" "Self-enhancement exiting (rc=${_rc}) with a dirty working tree — the session may have been cut off before committing/opening a PR (#1091, #1140). Uncommitted changes are still on disk on main; a scheduled pull could discard them. Manual recovery needed: git -C ${MARVIN_DIR} status"
+    fi
     exit "$_rc"
 }
 trap _git_ownership_exit_trap EXIT
@@ -64,6 +84,7 @@ fi
 # runs both before every pull). Fail loud and stop rather than build on it.
 if [[ -n "$(git -C "$MARVIN_DIR" status --porcelain 2>/dev/null)" ]]; then
     marvin_log "CRITICAL" "Working tree is dirty before self-enhancement even started — a previous run likely got cut off after editing but before commit/PR (#1091). Skipping this run. Manual recovery needed: git -C ${MARVIN_DIR} status"
+    _PREFLIGHT_DIRTY_TREE_LOGGED=1
     exit 1
 fi
 
@@ -545,17 +566,6 @@ EOF
 fi
 
 marvin_log "INFO" "Post-enhancement validation passed"
-
-# ─── Post-run: assert a clean tree ──────────────────────────────────────────
-# enhance.md step 6 requires Claude to commit, push, and open a PR before the
-# session ends. If it got cut off before that step, valid-looking edits are
-# left uncommitted directly on main — the exact exposure #1091 recovered from
-# by hand. Escalate at CRITICAL (picked up by log-alerting.sh/incident-report.sh)
-# rather than a plain log line, since a quiet WARN here reads identically to
-# "nothing to see" until the next scheduled pull silently discards the diff.
-if [[ -n "$(git -C "$MARVIN_DIR" status --porcelain 2>/dev/null)" ]]; then
-    marvin_log "CRITICAL" "Self-enhancement ended with a dirty working tree — Claude likely ran out of turns before committing/opening a PR (#1091). Uncommitted changes are still on disk on main; a scheduled pull could discard them. Manual recovery needed: git -C ${MARVIN_DIR} status"
-fi
 
 # ─── Auto-rebuild web if source files changed ────────────────────────────────
 # Detects web/ source modifications and triggers a full Next.js rebuild+restart.
