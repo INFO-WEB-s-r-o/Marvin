@@ -30,10 +30,17 @@ trap marvin_error_trap ERR
 # skipped by the run ending somewhere unexpected. Runs after
 # _fix_git_ownership so `git status` isn't itself blocked by dubious
 # ownership under cron's root euid.
+#
+# #1146: the pre-flight dirty-tree guard below (its own explicit CRITICAL +
+# `exit 1`, for a tree that was ALREADY dirty before this run even started)
+# also exits through this trap, which would re-check the same still-dirty
+# tree and log a second, differently-worded CRITICAL for the same event.
+# _PREFLIGHT_DIRTY_TREE_LOGGED lets that one call site opt out since it has
+# already reported the condition by name.
 _git_ownership_exit_trap() {
     local _rc=$?
     declare -f _fix_git_ownership >/dev/null 2>&1 && _fix_git_ownership
-    if [[ -n "$(git -C "$MARVIN_DIR" status --porcelain 2>/dev/null)" ]]; then
+    if [[ -z "${_PREFLIGHT_DIRTY_TREE_LOGGED:-}" ]] && [[ -n "$(git -C "$MARVIN_DIR" status --porcelain 2>/dev/null)" ]]; then
         marvin_log "CRITICAL" "Self-enhancement exiting (rc=${_rc}) with a dirty working tree — the session may have been cut off before committing/opening a PR (#1091, #1140). Uncommitted changes are still on disk on main; a scheduled pull could discard them. Manual recovery needed: git -C ${MARVIN_DIR} status"
     fi
     exit "$_rc"
@@ -77,6 +84,7 @@ fi
 # runs both before every pull). Fail loud and stop rather than build on it.
 if [[ -n "$(git -C "$MARVIN_DIR" status --porcelain 2>/dev/null)" ]]; then
     marvin_log "CRITICAL" "Working tree is dirty before self-enhancement even started — a previous run likely got cut off after editing but before commit/PR (#1091). Skipping this run. Manual recovery needed: git -C ${MARVIN_DIR} status"
+    _PREFLIGHT_DIRTY_TREE_LOGGED=1
     exit 1
 fi
 
