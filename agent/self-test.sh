@@ -3904,6 +3904,48 @@ else
     test_pass "deploy-web failure trend: 'deploy-web.sh failed' appeared on ${_dwf_days}/${_dwf_checked} of the last daily logs (below the recurring-failure threshold)"
 fi
 
+# ─── 9w. chkrootkit Xor.DDoS filter drift (#1147) ─────────────────────────────
+# setup/chkrootkit.ignore and setup/chkrootkit-xorddos-filter.awk are installed
+# live by bootstrap.sh to /etc/chkrootkit/{chkrootkit.ignore,xorddos-filter.awk}
+# and wired into /etc/chkrootkit/chkrootkit.conf's FILTER= line — both are dpkg
+# conffiles a package upgrade could revert independently of this repo. WARN,
+# don't fail: this only affects alert-fatigue on a benign false positive, never
+# actual rootkit detection (the awk script passes real hits through untouched).
+_ckw_ignore_src="${MARVIN_DIR}/setup/chkrootkit.ignore"
+_ckw_ignore_live="/etc/chkrootkit/chkrootkit.ignore"
+_ckw_awk_src="${MARVIN_DIR}/setup/chkrootkit-xorddos-filter.awk"
+_ckw_awk_live="/etc/chkrootkit/xorddos-filter.awk"
+_ckw_conf="/etc/chkrootkit/chkrootkit.conf"
+
+if [[ ! -d /etc/chkrootkit ]]; then
+    test_warn "chkrootkit filter drift: /etc/chkrootkit not present — chkrootkit not installed on this host"
+else
+    if [[ ! -f "$_ckw_ignore_live" ]]; then
+        test_warn "chkrootkit filter drift: ${_ckw_ignore_live} missing (bootstrap.sh should have installed it)"
+    elif ! cmp -s "$_ckw_ignore_src" "$_ckw_ignore_live"; then
+        test_warn "chkrootkit filter drift: ${_ckw_ignore_live} does not match tracked ${_ckw_ignore_src} — rerun bootstrap.sh or check for a manual live edit"
+    else
+        test_pass "config in sync: chkrootkit.ignore (tracked ⇆ live)"
+    fi
+
+    if [[ ! -f "$_ckw_awk_live" ]]; then
+        test_warn "chkrootkit filter drift: ${_ckw_awk_live} missing (bootstrap.sh should have installed it)"
+    elif ! cmp -s "$_ckw_awk_src" "$_ckw_awk_live"; then
+        test_warn "chkrootkit filter drift: ${_ckw_awk_live} does not match tracked ${_ckw_awk_src} — rerun bootstrap.sh or check for a manual live edit"
+    else
+        test_pass "config in sync: chkrootkit-xorddos-filter.awk (tracked ⇆ live)"
+    fi
+
+    if [[ ! -f "$_ckw_conf" ]]; then
+        test_warn "chkrootkit filter drift: ${_ckw_conf} missing"
+    elif ! grep -q "xorddos-filter.awk" "$_ckw_conf"; then
+        test_warn "chkrootkit filter drift: ${_ckw_conf}'s FILTER= line does not reference xorddos-filter.awk — a package upgrade may have reset the conffile; rerun bootstrap.sh (#1147)"
+    else
+        test_pass "config in sync: chkrootkit.conf FILTER stage references xorddos-filter.awk"
+    fi
+fi
+unset _ckw_ignore_src _ckw_ignore_live _ckw_awk_src _ckw_awk_live _ckw_conf
+
 # ─── 10. Security scoring system ──────────────────────────────────────────────
 # Grades the server A-F across multiple security dimensions
 
