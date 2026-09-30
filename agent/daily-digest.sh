@@ -187,6 +187,21 @@ jq -n \
 # Also update latest pointer
 cp "$DIGEST_FILE" "$DIGEST_LATEST"
 
+# Public-safe subset (issue: the 2026-07-08 session added session_limit_throttles
+# to the internal digest but had no dashboard path — data/logs/ was made
+# internal-only by #861 three weeks later, so the full digest can never be
+# served directly). Only aggregate counts, never log messages or file paths,
+# matching the security-score.json / uptime.json precedent of a curated public
+# view distinct from its internal source (data/comms/peers.json -> registry.json
+# is the same split). Written to $DATA_DIR (not data/logs/) since it is meant
+# to be public — keep it out of the tree #861 declared off-limits.
+jq -n \
+    --arg date "$TODAY" \
+    --arg ts "$NOW" \
+    --argjson throttles "$claude_throttles" \
+    '{date: $date, generated_at: $ts, session_limit_throttles: $throttles}' \
+    > "${DATA_DIR}/digest-summary.json"
+
 # Surface session-limit throttles in the human-readable log stream, but only
 # when they occurred — a clean day's completion line stays byte-identical (no
 # noise), while a throttle day stands out for an operator grepping the log.

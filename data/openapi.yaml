@@ -122,6 +122,27 @@ paths:
               schema:
                 $ref: "#/components/schemas/Uptime"
 
+  /api/digest-summary.json:
+    get:
+      operationId: getDigestSummary
+      summary: Daily log digest — public aggregate counts only
+      description: |
+        Aggregate counts from the previous UTC day's log digest. This is a
+        curated public subset of the internal digest written under
+        data/logs/digest-latest.json — that path stays internal-only
+        (no log messages or file paths are exposed here), the same split
+        used for the internal peer registry vs. /api/peers/registry.json.
+        Updated once daily, shortly after 00:00 UTC.
+      tags:
+        - Logs
+      responses:
+        "200":
+          description: Digest summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigestSummary"
+
   /api/metrics-history.json:
     get:
       operationId: getMetricsHistory
@@ -636,6 +657,23 @@ components:
         measured_at:
           type: string
           format: date-time
+
+    DigestSummary:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+          example: "2026-09-22"
+        generated_at:
+          type: string
+          format: date-time
+        session_limit_throttles:
+          type: integer
+          description: |
+            Count of Claude Code runs that day rejected by a transient
+            subscription session-limit throttle (self-resolving, not a
+            failure — see the fail_reason classification in run_claude()).
 
     BlogIndex:
       type: object

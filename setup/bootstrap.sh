@@ -331,6 +331,38 @@ if systemctl list-unit-files chkrootkit.service &>/dev/null; then
 fi
 unset _ck_dropin_src _ck_dropin_dir _ck_dropin_dst _ck_dropin_changed
 
+# chkrootkit-daily's diff-mode alerting compares the whole $FILTER/$IGNORE_FILE
+# output against log.expected line-by-line. The ignore file's `^/tmp/[^.]`
+# pattern hides this host's own test-harness scratch files from the
+# Linux.Xor.DDoS file list, but it can't drop the "WARNING" header the check
+# leaves behind once that list is empty — so a transient /tmp executable at
+# scan time still flips the header and triggers a false alert (#1147).
+# setup/chkrootkit-xorddos-filter.awk runs as part of $FILTER (before
+# $IGNORE_FILE) and collapses the header back to "not found" only when every
+# listed path matches the same benign pattern; any other path is passed
+# through unfiltered, so a genuine hit still alerts. Both the ignore file and
+# the FILTER line are dpkg conffiles (chkrootkit.conffiles), so editing them
+# here is the same "local override, dpkg preserves it" model as any other
+# conffile tweak — not a bootstrap security setting.
+_ck_ignore_src="${MARVIN_DIR}/setup/chkrootkit.ignore"
+_ck_ignore_dst="/etc/chkrootkit/chkrootkit.ignore"
+_ck_awk_src="${MARVIN_DIR}/setup/chkrootkit-xorddos-filter.awk"
+_ck_awk_dst="/etc/chkrootkit/xorddos-filter.awk"
+_ck_conf="/etc/chkrootkit/chkrootkit.conf"
+if [[ -d /etc/chkrootkit ]]; then
+    install -m 644 "${_ck_ignore_src}" "${_ck_ignore_dst}"
+    install -m 644 "${_ck_awk_src}" "${_ck_awk_dst}"
+    if [[ -f "${_ck_conf}" ]] && grep -q '^FILTER="' "${_ck_conf}"; then
+        if ! grep -q "xorddos-filter.awk" "${_ck_conf}"; then
+            sed -i -E "s@^FILTER=\"(.*)\"\$@FILTER=\"\1 | awk -f ${_ck_awk_dst}\"@" "${_ck_conf}"
+            log "Wired xorddos-filter.awk into chkrootkit.conf's FILTER stage."
+        fi
+    else
+        warn "chkrootkit.conf has no active FILTER= line — xorddos-filter.awk installed but not wired in"
+    fi
+fi
+unset _ck_ignore_src _ck_ignore_dst _ck_awk_src _ck_awk_dst _ck_conf
+
 # =============================================================================
 # 3. Install Node.js (for Claude Code CLI)
 # =============================================================================
@@ -515,7 +547,7 @@ server {
     # security/, email/ and comms/, which the post-certbot site config denies.
     # This block is written by bootstrap, so a re-run must not silently reinstate
     # a wider surface than setup/nginx-site.conf serves. Keep the two in sync.
-    location ~ ^/api/((?:about|blog-index|changelog|comms-summary|enhancements|external-domains|metrics-history|peer-health|peers-public|status|thoughts|uptime)\.json|(?:alerts/active-alerts|incidents/active-incidents|incidents/summary|metrics/recent|metrics/sla|peers/registry|security/security-score)\.json|reports/weekly-card-latest\.svg)\$ {
+    location ~ ^/api/((?:about|blog-index|changelog|comms-summary|digest-summary|enhancements|external-domains|metrics-history|peer-health|peers-public|status|thoughts|uptime)\.json|(?:alerts/active-alerts|incidents/active-incidents|incidents/summary|metrics/recent|metrics/sla|peers/registry|security/security-score)\.json|reports/weekly-card-latest\.svg)\$ {
         alias ${MARVIN_DIR}/data/\$1;
         default_type application/json;
         add_header Access-Control-Allow-Origin "*";

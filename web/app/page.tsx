@@ -4,6 +4,7 @@ import TerminalHeader from './components/TerminalHeader';
 import AsciiHeader from './components/AsciiHeader';
 import StatusSection from './components/StatusSection';
 import AlertsSection from './components/AlertsSection';
+import DigestSummarySection from './components/DigestSummarySection';
 import MetricsSection from './components/MetricsSection';
 import ChartSection from './components/ChartSection';
 import ServicesSection from './components/ServicesSection';
@@ -27,6 +28,7 @@ export default function Home() {
         <AsciiHeader />
         <StatusSection />
         <AlertsSection />
+        <DigestSummarySection />
         <MetricsSection />
         <ChartSection />
         <ServicesSection />
