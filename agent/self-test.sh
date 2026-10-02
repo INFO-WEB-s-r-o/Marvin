@@ -1924,14 +1924,28 @@ else
         _mb_blurb=$(printf '%s\n' "$_mb_output" | sed -n '/---MORNING_BLOG_EN---/,$p')
         _mb_tech=$(printf '%s\n' "$_mb_output" | sed '/---MORNING_BLOG_EN---/,$d')
 
-        if ! screen_blog_content "$_mb_blurb" "self-test-morning-blurb" >/dev/null 2>&1; then
+        # screen_blog_content() writes a WARN to the production log, a line to
+        # data/blog-screening-events.jsonl and a forensic file for every block.
+        # Run against the fixture, that made 61 of 73 recorded "screening events"
+        # fake and fed the lessons detector a phantom recurring error. Point all
+        # three sinks at a scratch dir, in a subshell so nothing leaks back.
+        _mb_scratch=$(mktemp -d 2>/dev/null) || _mb_scratch=""
+        _mb_screen() (
+            LOGS_DIR="$_mb_scratch"; DATA_DIR="$_mb_scratch"; BLOCKED_BLOGS_DIR="$_mb_scratch/blocked"
+            screen_blog_content "$@" >/dev/null 2>&1
+        )
+        if [[ -z "$_mb_scratch" ]]; then
+            test_fail "morning blurb screening: mktemp failed — functional half NOT verified (refusing to screen into the production log)"
+        elif ! _mb_screen "$_mb_blurb" "self-test-morning-blurb"; then
             test_fail "morning blurb screening: clean blurb was blocked by the split screen — false positive on content containing no sensitive patterns"
-        elif screen_blog_content "$_mb_tech" "self-test-morning-tech" >/dev/null 2>&1; then
+        elif _mb_screen "$_mb_tech" "self-test-morning-tech"; then
             test_fail "morning blurb screening: technical section containing a sensitive-file-path match ('.env') was NOT blocked — screen_blog_content regressed"
         else
             test_pass "morning blurb screening: technical-section hit is isolated from the blurb (blurb clean, tech blocked, ${_morning_screen_calls} split screen call sites present)"
         fi
-        rm -f "${BLOCKED_BLOGS_DIR:-/home/marvin/blocked-blogs}"/self-test-morning-tech-*.txt 2>/dev/null || true
+        [[ -n "$_mb_scratch" ]] && rm -rf "$_mb_scratch"
+        # Sweep forensic files left by runs before the isolation above.
+        rm -f "${BLOCKED_BLOGS_DIR:-/home/marvin/blocked-blogs}"/self-test-morning-*.txt 2>/dev/null || true
     fi
 fi
 
