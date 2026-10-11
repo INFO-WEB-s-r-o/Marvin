@@ -108,8 +108,19 @@ done
 # One fail2ban-regex pass over the whole journal; the lines it counts as
 # matched are the same lines a per-IP slice would have matched, because the
 # sshd filter runs with maxlines=1 (no cross-line state).
-fail2ban-regex "${WORKDIR}/journal.log" "${SSHD_FILTER}" --print-all-matched 2>/dev/null \
-    | sed -n 's/^|  \(20[0-9][0-9]-.*\)$/\1/p' > "${WORKDIR}/matched.log" || true
+fail2ban-regex "${WORKDIR}/journal.log" "${SSHD_FILTER}" --print-all-matched \
+    > "${WORKDIR}/regex.out" 2>/dev/null || true
+sed -n 's/^|  \(20[0-9][0-9]-.*\)$/\1/p' "${WORKDIR}/regex.out" > "${WORKDIR}/matched.log" || true
+
+# Cross-check the extraction against fail2ban's own "Lines: ... K matched"
+# summary. If the dump format ever drifts, matched.log comes up short and every
+# IP would silently report 0 failures — fail loudly instead (#1155).
+_expected_matched=$(sed -n 's/^Lines: .*, \([0-9][0-9]*\) matched,.*/\1/p' "${WORKDIR}/regex.out" | head -1)
+_extracted_matched=$(wc -l < "${WORKDIR}/matched.log")
+if [[ -z "${_expected_matched}" || "${_expected_matched}" != "${_extracted_matched}" ]]; then
+    marvin_log "ERROR" "ssh-attacker-classify.sh: matched-line extraction mismatch (fail2ban-regex reported '${_expected_matched:-none}', extracted ${_extracted_matched}) — output format changed? refusing to print an all-clear table"
+    exit 1
+fi
 
 echo "## SSH attacker classification"
 echo
