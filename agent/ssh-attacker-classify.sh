@@ -27,9 +27,9 @@
 #
 # Usage: agent/ssh-attacker-classify.sh [--min-failures N]
 # Output: a markdown table to stdout. Read-only — makes no changes.
-# Runtime: one `fail2ban-regex` subprocess per not-yet-banned, not-yet-accepted
-# IP — a multi-day journal with several hundred candidate IPs takes low
-# minutes, not seconds. Fine for a once-a-morning run; not for hourly polling.
+# Runtime: one `fail2ban-regex` run over the whole journal (its matched lines
+# are bucketed per IP afterwards). It used to be one subprocess per candidate
+# IP, ~0.6s of startup each — ~14 minutes for 760 IPs (#1153).
 # =============================================================================
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
@@ -105,6 +105,23 @@ for ip in ${_ALL_IPS}; do
     _is_private_ip "${_ip_for_privacy_check}" || CANDIDATE_IPS+="${ip} "
 done
 
+# One fail2ban-regex pass over the whole journal; the lines it counts as
+# matched are the same lines a per-IP slice would have matched, because the
+# sshd filter runs with maxlines=1 (no cross-line state).
+fail2ban-regex "${WORKDIR}/journal.log" "${SSHD_FILTER}" --print-all-matched \
+    > "${WORKDIR}/regex.out" 2>/dev/null || true
+sed -n 's/^|  \(20[0-9][0-9]-.*\)$/\1/p' "${WORKDIR}/regex.out" > "${WORKDIR}/matched.log" || true
+
+# Cross-check the extraction against fail2ban's own "Lines: ... K matched"
+# summary. If the dump format ever drifts, matched.log comes up short and every
+# IP would silently report 0 failures — fail loudly instead (#1155).
+_expected_matched=$(sed -n 's/^Lines: .*, \([0-9][0-9]*\) matched,.*/\1/p' "${WORKDIR}/regex.out" | head -1)
+_extracted_matched=$(wc -l < "${WORKDIR}/matched.log")
+if [[ -z "${_expected_matched}" || "${_expected_matched}" != "${_extracted_matched}" ]]; then
+    marvin_log "ERROR" "ssh-attacker-classify.sh: matched-line extraction mismatch (fail2ban-regex reported '${_expected_matched:-none}', extracted ${_extracted_matched}) — output format changed? refusing to print an all-clear table"
+    exit 1
+fi
+
 echo "## SSH attacker classification"
 echo
 echo "Window: \`${WINDOW_START}\` .. \`${WINDOW_END}\` (this host's live sshd journal — not \"today\")"
@@ -118,7 +135,8 @@ for ip in ${CANDIDATE_IPS}; do
     # "5.6.7.80". No character that can extend an IPv4 or IPv6 literal
     # (hex digit, colon, dot) is allowed on either side of the match.
     ip_anchored="(?<![0-9a-fA-F:.])${ip//./\.}(?![0-9a-fA-F:.])"
-    accepted_count=$(grep -P "${ip_anchored}" "${WORKDIR}/journal.log" | grep -c "Accepted " || true)
+    grep -P "${ip_anchored}" "${WORKDIR}/journal.log" > "${WORKDIR}/ip.log" || true
+    accepted_count=$(grep -c "Accepted " "${WORKDIR}/ip.log" || true)
     is_banned="no"
     if grep -qF " ${ip} " <<< " ${BANNED_IPS} "; then
         is_banned="yes"
@@ -129,9 +147,7 @@ for ip in ${CANDIDATE_IPS}; do
         continue
     fi
 
-    grep -P "${ip_anchored}" "${WORKDIR}/journal.log" > "${WORKDIR}/ip.log" || true
-    summary=$(fail2ban-regex "${WORKDIR}/ip.log" "${SSHD_FILTER}" 2>/dev/null | grep -E '^Lines: ' || true)
-    matched=$(grep -oP '(?<=, )\d+(?= matched)' <<< "${summary}" || echo 0)
+    matched=$(grep -cP "${ip_anchored}" "${WORKDIR}/matched.log" || true)
     matched=${matched:-0}
 
     if [[ "${accepted_count}" -gt 0 ]]; then
