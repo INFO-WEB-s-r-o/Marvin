@@ -27,9 +27,9 @@
 #
 # Usage: agent/ssh-attacker-classify.sh [--min-failures N]
 # Output: a markdown table to stdout. Read-only — makes no changes.
-# Runtime: one `fail2ban-regex` subprocess per not-yet-banned, not-yet-accepted
-# IP — a multi-day journal with several hundred candidate IPs takes low
-# minutes, not seconds. Fine for a once-a-morning run; not for hourly polling.
+# Runtime: one `fail2ban-regex` run over the whole journal (its matched lines
+# are bucketed per IP afterwards). It used to be one subprocess per candidate
+# IP, ~0.6s of startup each — ~14 minutes for 760 IPs (#1153).
 # =============================================================================
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
@@ -105,6 +105,12 @@ for ip in ${_ALL_IPS}; do
     _is_private_ip "${_ip_for_privacy_check}" || CANDIDATE_IPS+="${ip} "
 done
 
+# One fail2ban-regex pass over the whole journal; the lines it counts as
+# matched are the same lines a per-IP slice would have matched, because the
+# sshd filter runs with maxlines=1 (no cross-line state).
+fail2ban-regex "${WORKDIR}/journal.log" "${SSHD_FILTER}" --print-all-matched 2>/dev/null \
+    | sed -n 's/^|  \(20[0-9][0-9]-.*\)$/\1/p' > "${WORKDIR}/matched.log" || true
+
 echo "## SSH attacker classification"
 echo
 echo "Window: \`${WINDOW_START}\` .. \`${WINDOW_END}\` (this host's live sshd journal — not \"today\")"
@@ -118,7 +124,8 @@ for ip in ${CANDIDATE_IPS}; do
     # "5.6.7.80". No character that can extend an IPv4 or IPv6 literal
     # (hex digit, colon, dot) is allowed on either side of the match.
     ip_anchored="(?<![0-9a-fA-F:.])${ip//./\.}(?![0-9a-fA-F:.])"
-    accepted_count=$(grep -P "${ip_anchored}" "${WORKDIR}/journal.log" | grep -c "Accepted " || true)
+    grep -P "${ip_anchored}" "${WORKDIR}/journal.log" > "${WORKDIR}/ip.log" || true
+    accepted_count=$(grep -c "Accepted " "${WORKDIR}/ip.log" || true)
     is_banned="no"
     if grep -qF " ${ip} " <<< " ${BANNED_IPS} "; then
         is_banned="yes"
@@ -129,9 +136,7 @@ for ip in ${CANDIDATE_IPS}; do
         continue
     fi
 
-    grep -P "${ip_anchored}" "${WORKDIR}/journal.log" > "${WORKDIR}/ip.log" || true
-    summary=$(fail2ban-regex "${WORKDIR}/ip.log" "${SSHD_FILTER}" 2>/dev/null | grep -E '^Lines: ' || true)
-    matched=$(grep -oP '(?<=, )\d+(?= matched)' <<< "${summary}" || echo 0)
+    matched=$(grep -cP "${ip_anchored}" "${WORKDIR}/matched.log" || true)
     matched=${matched:-0}
 
     if [[ "${accepted_count}" -gt 0 ]]; then
